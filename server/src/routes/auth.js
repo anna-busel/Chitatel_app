@@ -1,38 +1,88 @@
 const { Router } = require('express');
+const { z } = require('zod');
+const { validate } = require('../middleware/validate');
+const { requireAuth } = require('../middleware/auth');
 const { success } = require('../utils/response');
+const authService = require('../services/auth.service');
 
 const router = Router();
 
-// Заглушки — реализация в задаче 1.2
-
-// POST /api/auth/register
-router.post('/register', (_req, res) => {
-  return success(res, { message: 'Not implemented yet' }, 501);
+/**
+ * Zod-схемы валидации
+ * MASTER 7.5: email format, password 8-72 символов, name 1-100 символов
+ */
+const registerSchema = z.object({
+  email: z.string().email('Некорректный email'),
+  password: z.string().min(8, 'Пароль минимум 8 символов').max(72, 'Пароль максимум 72 символа'),
+  name: z.string().min(1, 'Имя обязательно').max(100, 'Имя максимум 100 символов'),
 });
 
-// POST /api/auth/login
-router.post('/login', (_req, res) => {
-  return success(res, { message: 'Not implemented yet' }, 501);
+const loginSchema = z.object({
+  email: z.string().email('Некорректный email'),
+  password: z.string().min(1, 'Пароль обязателен'),
 });
 
-// POST /api/auth/refresh
-router.post('/refresh', (_req, res) => {
-  return success(res, { message: 'Not implemented yet' }, 501);
+const refreshSchema = z.object({
+  refreshToken: z.string().min(1, 'Refresh token обязателен'),
 });
 
-// POST /api/auth/logout
-router.post('/logout', (_req, res) => {
-  return success(res, { message: 'Not implemented yet' }, 501);
+const logoutSchema = z.object({
+  refreshToken: z.string().min(1, 'Refresh token обязателен'),
 });
 
-// POST /api/auth/apple
-router.post('/apple', (_req, res) => {
-  return success(res, { message: 'Not implemented yet' }, 501);
+/**
+ * POST /api/auth/register
+ * MASTER 7.4: { email, password, name } → { accessToken, refreshToken, user }
+ */
+router.post('/register', validate(registerSchema), async (req, res, next) => {
+  try {
+    const result = await authService.register(req.body);
+    return success(res, result, 201);
+  } catch (err) {
+    return next(err);
+  }
 });
 
-// POST /api/auth/google
-router.post('/google', (_req, res) => {
-  return success(res, { message: 'Not implemented yet' }, 501);
+/**
+ * POST /api/auth/login
+ * MASTER 7.4: { email, password } → { accessToken, refreshToken, user }
+ */
+router.post('/login', validate(loginSchema), async (req, res, next) => {
+  try {
+    const result = await authService.login(req.body);
+    return success(res, result);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/auth/refresh
+ * MASTER 12.1: refresh rotation
+ */
+router.post('/refresh', validate(refreshSchema), async (req, res, next) => {
+  try {
+    const result = await authService.refresh(req.body);
+    return success(res, result);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/auth/logout
+ * Инвалидировать refresh token
+ */
+router.post('/logout', requireAuth, validate(logoutSchema), async (req, res, next) => {
+  try {
+    await authService.logout({
+      refreshToken: req.body.refreshToken,
+      userId: req.user.userId,
+    });
+    return success(res, { message: 'Вы вышли из аккаунта' });
+  } catch (err) {
+    return next(err);
+  }
 });
 
 module.exports = router;

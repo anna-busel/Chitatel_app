@@ -20,14 +20,14 @@
 ## ТЕКУЩИЙ СТАТУС
 
 **Фаза:** 1 — скелет (пишем код, инфраструктура параллельно)
-**Следующая задача:** 1.2 (аутентификация Email)
-**Блокеры:** нет
+**Следующая задача:** 1.4 (Google Sign In)
+**Блокеры:** 1.3 (Apple Sign In) ждёт покупки Apple Dev Account
 
 ---
 
 ## ПРОГРЕСС
 
-**Готовые задачи:** 0.5, 1.1
+**Готовые задачи:** 0.5, 1.1, 1.2
 
 ---
 
@@ -48,6 +48,7 @@
 | 0.3 | VPS настройка | Не куплен | Перед деплоем (после 1.1-1.2) |
 | 0.4 | Домен и SSL | Зависит от 0.3 | После 0.3 |
 | 0.6 | Xcode проект Flutter | Xcode устанавливается | Как установится — сразу |
+| 1.3 | Apple Sign In | Нет Apple Dev Account | После 0.1-0.2 |
 
 > ⚠️ Без 0.1-0.2 нельзя делать: 1.3 (Apple Sign In), 3.x (платежи)
 > ⚠️ Без 0.3-0.4 нельзя: деплоить бэкенд (но код писать можно!)
@@ -58,7 +59,7 @@
 
 ```
 СЕЙЧАС (код без сервера):
-  1.1 ✅ → 1.2 → 1.4 → 1.5 → 1.6 → 1.7 (без Apple auth)
+  1.1 ✅ → 1.2 ✅ → 1.4 → 1.5 → 1.6 → 1.7 (без Apple auth)
 
 КОГДА XCODE ГОТОВ:
   0.6 → 1.5 параллельно с бэкендом
@@ -74,7 +75,7 @@
 
 ## ПРОШЛАЯ СЕССИЯ
 
-_10.03.2026 — Задача 1.1 выполнена: каркас Express + JS. Создано 10 файлов: app.js, server.js, config/index.js, config/logger.js, middleware/auth.js, middleware/validate.js, middleware/error.js, models/User.js, routes/auth.js (заглушки — ошибка, в будущем не делать), utils/response.js. package.json обновлён с зависимостями. Следующая: 1.2 (auth email)._
+_10.03.2026 — Задачи 1.1 и 1.2 выполнены. 1.1: каркас Express (app.js, server.js, config, middleware, models/User.js, utils/response.js). 1.2: полная email-аутентификация — register, login, refresh (rotation), logout. Добавлен auth.service.js, rate-limit middleware (express-rate-limit, 10/мин на auth). Zod-валидация на всех endpoints. Следующая: 1.4 (Google Sign In)._
 
 ---
 
@@ -90,6 +91,7 @@ _10.03.2026 — Задача 1.1 выполнена: каркас Express + JS. 
 | 10.03.2026 | CommonJS вместо ESM | Express стандарт, убрали sourceType: module из eslintrc |
 | 10.03.2026 | Никаких заглушек | Файл создаётся только когда пишется его реализация |
 | 10.03.2026 | AI-CONTEXT в одном коммите с кодом | Не забывать обновлять, не плодить лишние коммиты |
+| 10.03.2026 | express-rate-limit добавлен | Нужен для rate limiting auth (MASTER 12.2) |
 
 ---
 

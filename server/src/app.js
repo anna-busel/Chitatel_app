@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const { errorHandler } = require('./middleware/error');
+const { authLimiter } = require('./middleware/rate-limit');
 const { success } = require('./utils/response');
 const authRoutes = require('./routes/auth');
 
@@ -28,7 +29,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Routes
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 
 // 404 handler
 app.use((_req, res) => {
