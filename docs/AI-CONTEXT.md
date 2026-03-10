@@ -20,7 +20,7 @@
 ## ТЕКУЩИЙ СТАТУС
 
 **Фаза:** 1 — скелет (пишем код, инфраструктура параллельно)
-**Следующая задача:** 1.4 (Google Sign In)
+**Следующая задача:** 1.4 (Google Sign In) — нужен Google Client ID из Cloud Console
 **Блокеры:** 1.3 (Apple Sign In) ждёт покупки Apple Dev Account
 
 ---
@@ -47,7 +47,7 @@
 | 0.2 | App ID и Certificates | Зависит от 0.1 | После 0.1 |
 | 0.3 | VPS настройка | Не куплен | Перед деплоем (после 1.1-1.2) |
 | 0.4 | Домен и SSL | Зависит от 0.3 | После 0.3 |
-| 0.6 | Xcode проект Flutter | Xcode устанавливается | Как установится — сразу |
+| 0.6 | Xcode проект Flutter | Xcode 15.2 установлен, iOS 17.2 | Следующая Flutter-задача |
 | 1.3 | Apple Sign In | Нет Apple Dev Account | После 0.1-0.2 |
 
 > ⚠️ Без 0.1-0.2 нельзя делать: 1.3 (Apple Sign In), 3.x (платежи)
@@ -75,7 +75,7 @@
 
 ## ПРОШЛАЯ СЕССИЯ
 
-_10.03.2026 — Задачи 1.1 и 1.2 выполнены. 1.1: каркас Express (app.js, server.js, config, middleware, models/User.js, utils/response.js). 1.2: полная email-аутентификация — register, login, refresh (rotation), logout. Добавлен auth.service.js, rate-limit middleware (express-rate-limit, 10/мин на auth). Zod-валидация на всех endpoints. Следующая: 1.4 (Google Sign In)._
+_10.03.2026 — Задачи 1.1 и 1.2 выполнены. 1.1: каркас Express (app.js, server.js, config, middleware, models/User.js, utils/response.js). 1.2: полная email-аутентификация — register, login, refresh (rotation), logout. Добавлен auth.service.js, rate-limit middleware (express-rate-limit, 10/мин на auth). Zod-валидация на всех endpoints. Xcode 15.2 установлен с iOS 17.2. Следующая: 1.4 (Google Sign In)._
 
 ---
 
@@ -104,6 +104,8 @@ _10.03.2026 — Задачи 1.1 и 1.2 выполнены. 1.1: каркас Ex
 | Цены на тарифы не утверждены | Фазу 3 | Ждём от Анны |
 | Аудиофайлы не получены | Задачу 2.3 | Ждём от Анны |
 | Обложки книг не готовы | Задачу 2.4 | Ждём от Анны |
+| Mac 2017 + macOS Ventura 13.7 | Фазу 7 (App Store) | Для релиза нужен Xcode 16+ → macOS Sonoma 14+ → мак 2017 не поддерживает. Решить до фазы 7: новый мак или облачный Mac |
+| Xcode 15.2 (старый) | Фазу 7 | Для разработки хватает, для App Store нужен Xcode 16+. Связано с проблемой мака |
 
 ---
 
