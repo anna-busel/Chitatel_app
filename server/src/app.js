@@ -1,0 +1,48 @@
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const { errorHandler } = require('./middleware/error');
+const { success } = require('./utils/response');
+const authRoutes = require('./routes/auth');
+
+const app = express();
+
+// Security
+app.use(helmet());
+
+// CORS
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production'
+    ? ['https://chitatel.app', 'https://admin.chitatel.app']
+    : '*',
+  credentials: true,
+}));
+
+// Body parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Health check
+app.get('/api/health', (_req, res) => {
+  return success(res, { status: 'ok' });
+});
+
+// Routes
+app.use('/api/auth', authRoutes);
+
+// 404 handler
+app.use((_req, res) => {
+  return res.status(404).json({
+    success: false,
+    error: {
+      code: 'NOT_FOUND',
+      message: 'Маршрут не найден',
+      details: {},
+    },
+  });
+});
+
+// Global error handler (должен быть последним)
+app.use(errorHandler);
+
+module.exports = app;
