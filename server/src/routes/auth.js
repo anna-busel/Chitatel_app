@@ -4,6 +4,7 @@ const { validate } = require('../middleware/validate');
 const { requireAuth } = require('../middleware/auth');
 const { success } = require('../utils/response');
 const authService = require('../services/auth.service');
+const googleAuthService = require('../services/google-auth.service');
 
 const router = Router();
 
@@ -30,6 +31,10 @@ const logoutSchema = z.object({
   refreshToken: z.string().min(1, 'Refresh token обязателен'),
 });
 
+const googleSchema = z.object({
+  idToken: z.string().min(1, 'Google ID token обязателен'),
+});
+
 /**
  * POST /api/auth/register
  * MASTER 7.4: { email, password, name } → { accessToken, refreshToken, user }
@@ -51,6 +56,20 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
   try {
     const result = await authService.login(req.body);
     return success(res, result);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/auth/google
+ * MASTER 7.4: { idToken } → { accessToken, refreshToken, user, isNewUser }
+ */
+router.post('/google', validate(googleSchema), async (req, res, next) => {
+  try {
+    const result = await googleAuthService.authenticateWithGoogle(req.body);
+    const statusCode = result.isNewUser ? 201 : 200;
+    return success(res, result, statusCode);
   } catch (err) {
     return next(err);
   }
