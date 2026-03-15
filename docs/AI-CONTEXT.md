@@ -20,14 +20,14 @@
 ## ТЕКУЩИЙ СТАТУС
 
 **Фаза:** 1 — скелет (пишем код, инфраструктура параллельно)
-**Следующая задача:** 1.5 (Flutter — дизайн-система)
+**Следующая задача:** 1.6 (Flutter — навигация GoRouter)
 **Блокеры:** 1.3 (Apple Sign In) ждёт покупки Apple Dev Account.
 
 ---
 
 ## ПРОГРЕСС
 
-**Готовые задачи:** 0.5, 0.6, 1.1, 1.2, 1.4
+**Готовые задачи:** 0.5, 0.6, 1.1, 1.2, 1.4, 1.5
 **Протестировано:** бэкенд auth (health, register, login, google) — всё работает локально ✅
 **Протестировано:** Flutter-проект запускается на симуляторе iPhone 15 ✅
 **Исправлено:** дублированные индексы в User.js
@@ -79,7 +79,7 @@
 
 ```
 СЕЙЧАС (код без сервера):
-  1.1 ✅ → 1.2 ✅ → 1.4 ✅ → 0.6 ✅ → 1.5 → 1.6 → 1.7 (без Apple auth)
+  1.1 ✅ → 1.2 ✅ → 1.4 ✅ → 0.6 ✅ → 1.5 ✅ → 1.6 → 1.7 (без Apple auth)
 
 КОГДА APPLE DEV КУПЛЕН:
   0.1 → 0.2 → 1.3 (Apple Sign In)
@@ -92,7 +92,7 @@
 
 ## ПРОШЛАЯ СЕССИЯ
 
-_15.03.2026 — Задача 0.6: создан Flutter-проект (`flutter create --org app.chitatel --platforms ios`), запущен на симуляторе iPhone 15. Добавлен Info.plist с permission strings (фото, камера, ATT, background audio), portrait-only ориентация, display name «ЧИТАТЕЛЬ». Создан PrivacyInfo.xcprivacy (MASTER 6.8). Настроен git push через PAT + osxkeychain. Следующая задача: 1.5 (дизайн-система)._
+_15.03.2026 — Задача 1.5: создана полная дизайн-система Flutter. 13 файлов: app_colors.dart (все цвета MASTER 5.1), app_typography.dart (Playfair Display + системный, все размеры MASTER 5.2), app_theme.dart (ThemeData), app_spacing.dart (отступы MASTER 5.3), app_sizes.dart (размеры элементов), app_button.dart (primary/outline/danger), app_card.dart (тень из прототипа), app_text_field.dart (фон #F0EDE8), app_bottom_bar.dart (4 вкладки), app_top_bar.dart (back + title), shimmer_loading.dart (HomeShimmer), error_view.dart (retry), no_connection.dart (4.38). Добавлен DesignSystemShowcase для проверки. pubspec.yaml: google_fonts + shimmer. Следующая задача: 1.6 (навигация GoRouter)._
 
 ---
 
@@ -105,6 +105,18 @@ _15.03.2026 — Задача 0.6: создан Flutter-проект (`flutter cr
 4. **Team:** выбрать Personal Team (для разработки) или Apple Dev Account когда купят
 
 После этих изменений — пересобрать: `cd ~/Chitatel_app/app && flutter run`
+
+---
+
+## ЗАДАЧА 1.5 — ЧТО СДЕЛАТЬ ПОСЛЕ PULL
+
+После `git pull` на маке:
+```bash
+cd ~/Chitatel_app/app
+flutter pub get
+flutter run
+```
+Откроется DesignSystemShowcase — проверить все компоненты визуально.
 
 ---
 
@@ -123,6 +135,7 @@ _15.03.2026 — Задача 0.6: создан Flutter-проект (`flutter cr
 | 10.03.2026 | express-rate-limit добавлен | Нужен для rate limiting auth (MASTER 12.2) |
 | 12.03.2026 | Flutter 3.22.3 (не latest) | macOS 13.7 не поддерживает Flutter 3.24+ (требует macOS 14) |
 | 15.03.2026 | Node.js через nvm, MongoDB из бинарников | Homebrew на macOS 13 не может компилировать из исходников |
+| 15.03.2026 | Playfair Display через google_fonts | Не Onest. MASTER и прототип используют Playfair Display |
 
 ---
 
