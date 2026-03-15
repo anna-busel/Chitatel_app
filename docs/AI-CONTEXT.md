@@ -30,6 +30,7 @@
 **Готовые задачи:** 0.5, 0.6, 1.1, 1.2, 1.4, 1.5
 **Протестировано:** бэкенд auth (health, register, login, google) — всё работает локально ✅
 **Протестировано:** Flutter-проект запускается на симуляторе iPhone 15 ✅
+**Протестировано:** DesignSystemShowcase — все компоненты отображаются, Playfair Display загружается ✅
 **Исправлено:** дублированные индексы в User.js
 
 ---
@@ -40,15 +41,18 @@
 - **Xcode:** 15.2 + iOS 17.2 симулятор (достаточно для разработки, для App Store нужен Xcode 16+)
 - **Flutter:** 3.22.3 (не latest — latest требует macOS 14+)
 - **CocoaPods:** 1.16.2 через rbenv Ruby 3.2.2
+- **rbenv:** установлен через Homebrew в `/usr/local/bin/rbenv`. Инициализация в `~/.bash_profile`: `eval "$(/usr/local/bin/rbenv init - bash)"`
+- **SSL для Ruby/CocoaPods:** сертификаты в `~/.ssl_certs/cacert.pem`, переменная `SSL_CERT_FILE` в `~/.bash_profile`. Без этого `pod install` падает с SSL-ошибкой
 - **Shell:** bash (не zsh!), PATH в `~/.bash_profile`
 - **Google Cloud:** проект создан, OAuth Client ID (iOS): `29430814146-6i4kal1nihgo8l4685i53009dg1tjm81.apps.googleusercontent.com`
 - **Node.js:** 20.20.1 (установлен через nvm) ✅
 - **MongoDB:** 7.0.20 (бинарники в ~/mongodb/bin, данные в ~/mongodb/data) ✅
 - **Запуск MongoDB:** `mongod --dbpath ~/mongodb/data` (в отдельном окне терминала)
 - **Запуск бэкенда:** `cd ~/Chitatel_app/server && npm run dev`
+- **Запуск Flutter:** `cd ~/Chitatel_app/app && flutter run`
+- **Открытие симулятора:** `open /Applications/Xcode.app/Contents/Developer/Applications/Simulator.app` (в отдельном окне терминала)
 - **Homebrew:** 5.0.16 (но на macOS 13 компиляция из исходников не работает — использовать nvm/бинарники)
 - **Git push:** настроен через Personal Access Token + osxkeychain
-- **iOS симулятор:** запуск через `xcrun simctl boot "iPhone 15"` (команда `open -a Simulator` не работает на этом маке)
 
 ---
 
@@ -63,7 +67,7 @@
 ## ПРОПУЩЕННЫЕ ЗАДАЧИ (вернуться позже)
 
 | Задача | Что | Почему пропущена | Когда вернуться |
-|--------|-----|-----------------|-----------------|
+|--------|-----|-----------------|-----------------| 
 | 0.1 | Apple Developer Account | Не куплен | Перед задачей 1.3 (Apple Sign In) |
 | 0.2 | App ID и Certificates | Зависит от 0.1 | После 0.1 |
 | 0.3 | VPS настройка | Не куплен | Перед деплоем |
@@ -92,7 +96,7 @@
 
 ## ПРОШЛАЯ СЕССИЯ
 
-_15.03.2026 — Задача 1.5: создана полная дизайн-система Flutter. 13 файлов: app_colors.dart (все цвета MASTER 5.1), app_typography.dart (Playfair Display + системный, все размеры MASTER 5.2), app_theme.dart (ThemeData), app_spacing.dart (отступы MASTER 5.3), app_sizes.dart (размеры элементов), app_button.dart (primary/outline/danger), app_card.dart (тень из прототипа), app_text_field.dart (фон #F0EDE8), app_bottom_bar.dart (4 вкладки), app_top_bar.dart (back + title), shimmer_loading.dart (HomeShimmer), error_view.dart (retry), no_connection.dart (4.38). Добавлен DesignSystemShowcase для проверки. pubspec.yaml: google_fonts + shimmer. Следующая задача: 1.6 (навигация GoRouter)._
+_15.03.2026 — Задача 1.5: создана полная дизайн-система Flutter. 13 файлов: app_colors.dart (все цвета MASTER 5.1), app_typography.dart (Playfair Display + системный, все размеры MASTER 5.2), app_theme.dart (ThemeData), app_spacing.dart (отступы MASTER 5.3), app_sizes.dart (размеры элементов), app_button.dart (primary/outline/danger), app_card.dart (тень из прототипа), app_text_field.dart (фон #F0EDE8), app_bottom_bar.dart (4 вкладки), app_top_bar.dart (back + title), shimmer_loading.dart (HomeShimmer), error_view.dart (retry), no_connection.dart (4.38). Добавлен DesignSystemShowcase для проверки. pubspec.yaml: google_fonts + shimmer. Исправлен SSL для CocoaPods (cacert.pem). Исправлен rbenv init в bash_profile. Следующая задача: 1.6 (навигация GoRouter)._
 
 ---
 
@@ -108,22 +112,10 @@ _15.03.2026 — Задача 1.5: создана полная дизайн-си�
 
 ---
 
-## ЗАДАЧА 1.5 — ЧТО СДЕЛАТЬ ПОСЛЕ PULL
-
-После `git pull` на маке:
-```bash
-cd ~/Chitatel_app/app
-flutter pub get
-flutter run
-```
-Откроется DesignSystemShowcase — проверить все компоненты визуально.
-
----
-
 ## РЕШЕНИЯ
 
 | Дата | Решение | Причина |
-|------|---------|---------|
+|------|---------|---------| 
 | 28.02.2026 | Вечный доступ к архиву — POST-MVP | Мало контента на старте |
 | 28.02.2026 | Возрастной рейтинг 13+ (не 12+) | Apple убрала 12+ в июле 2025 |
 | 03.03.2026 | MVP = только iOS. Android — post-MVP | Flutter готов, но запуск после стабилизации iOS |
@@ -151,7 +143,6 @@ flutter run
 | Mac 2017 + macOS Ventura 13.7 | Фазу 7 (App Store) | Для релиза нужен Xcode 16+ → macOS Sonoma 14+. Решить до фазы 7: новый мак или облачный Mac |
 | Flutter 3.22.3 (не latest) | Возможно фазу 7 | Для разработки хватает. Перед релизом может потребоваться обновление на более новом маке |
 | Homebrew на macOS 13 | Установка пакетов | Tier 2/3 — компиляция не работает. Использовать nvm и бинарники |
-| `open -a Simulator` не работает | — | Использовать `xcrun simctl boot "iPhone 15"` вместо |
 
 ---
 
