@@ -55,9 +55,4 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-userSchema.index({ email: 1 });
-userSchema.index({ appleUserId: 1 });
-userSchema.index({ googleUserId: 1 });
-userSchema.index({ referralCode: 1 });
-
 module.exports = mongoose.model('User', userSchema);
