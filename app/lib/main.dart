@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
-import 'design_system_showcase.dart';
+import 'core/router/app_router.dart';
 
 void main() {
-  runApp(const ChitatelApp());
+  runApp(const ProviderScope(child: ChitatelApp()));
 }
 
-class ChitatelApp extends StatelessWidget {
+class ChitatelApp extends ConsumerWidget {
   const ChitatelApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(routerProvider);
+
+    return MaterialApp.router(
       title: 'ЧИТАТЕЛЬ',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      // Временно показываем DesignSystemShowcase для проверки компонентов.
-      // Заменится на GoRouter в задаче 1.6.
-      home: const DesignSystemShowcase(),
+      routerConfig: router,
     );
   }
 }

@@ -20,14 +20,14 @@
 ## ТЕКУЩИЙ СТАТУС
 
 **Фаза:** 1 — скелет (пишем код, инфраструктура параллельно)
-**Следующая задача:** 1.6 (Flutter — навигация GoRouter)
+**Следующая задача:** 1.7 (Flutter — Auth экраны + API)
 **Блокеры:** 1.3 (Apple Sign In) ждёт покупки Apple Dev Account.
 
 ---
 
 ## ПРОГРЕСС
 
-**Готовые задачи:** 0.5, 0.6, 1.1, 1.2, 1.4, 1.5
+**Готовые задачи:** 0.5, 0.6, 1.1, 1.2, 1.4, 1.5, 1.6
 **Протестировано:** бэкенд auth (health, register, login, google) — всё работает локально ✅
 **Протестировано:** Flutter-проект запускается на симуляторе iPhone 15 ✅
 **Протестировано:** DesignSystemShowcase — все компоненты отображаются, Playfair Display загружается ✅
@@ -67,7 +67,7 @@
 ## ПРОПУЩЕННЫЕ ЗАДАЧИ (вернуться позже)
 
 | Задача | Что | Почему пропущена | Когда вернуться |
-|--------|-----|-----------------|-----------------| 
+|--------|-----|-----------------|-----------------|
 | 0.1 | Apple Developer Account | Не куплен | Перед задачей 1.3 (Apple Sign In) |
 | 0.2 | App ID и Certificates | Зависит от 0.1 | После 0.1 |
 | 0.3 | VPS настройка | Не куплен | Перед деплоем |
@@ -83,7 +83,7 @@
 
 ```
 СЕЙЧАС (код без сервера):
-  1.1 ✅ → 1.2 ✅ → 1.4 ✅ → 0.6 ✅ → 1.5 ✅ → 1.6 → 1.7 (без Apple auth)
+  1.1 ✅ → 1.2 ✅ → 1.4 ✅ → 0.6 ✅ → 1.5 ✅ → 1.6 ✅ → 1.7 (без Apple auth)
 
 КОГДА APPLE DEV КУПЛЕН:
   0.1 → 0.2 → 1.3 (Apple Sign In)
@@ -96,7 +96,7 @@
 
 ## ПРОШЛАЯ СЕССИЯ
 
-_15.03.2026 — Задача 1.5: создана полная дизайн-система Flutter. 13 файлов: app_colors.dart (все цвета MASTER 5.1), app_typography.dart (Playfair Display + системный, все размеры MASTER 5.2), app_theme.dart (ThemeData), app_spacing.dart (отступы MASTER 5.3), app_sizes.dart (размеры элементов), app_button.dart (primary/outline/danger), app_card.dart (тень из прототипа), app_text_field.dart (фон #F0EDE8), app_bottom_bar.dart (4 вкладки), app_top_bar.dart (back + title), shimmer_loading.dart (HomeShimmer), error_view.dart (retry), no_connection.dart (4.38). Добавлен DesignSystemShowcase для проверки. pubspec.yaml: google_fonts + shimmer. Исправлен SSL для CocoaPods (cacert.pem). Исправлен rbenv init в bash_profile. Следующая задача: 1.6 (навигация GoRouter)._
+_15.03.2026 — Задача 1.6: навигация GoRouter. Создан app_router.dart с полной картой маршрутов (22 маршрута из MASTER 4.47). ShellRoute с 4 табами (Главная/Каталог/Клуб/Профиль) + AppBottomBar. Guard: onboarding_seen через SharedPreferences. Все экраны — placeholder "Экран в разработке" (заменятся реальными в следующих задачах). routes.dart — константы всех путей. main.dart: ProviderScope + MaterialApp.router. pubspec.yaml: go_router, flutter_riverpod, shared_preferences. Следующая задача: 1.7 (Auth экраны + API)._
 
 ---
 
@@ -115,7 +115,7 @@ _15.03.2026 — Задача 1.5: создана полная дизайн-си�
 ## РЕШЕНИЯ
 
 | Дата | Решение | Причина |
-|------|---------|---------| 
+|------|---------|---------|
 | 28.02.2026 | Вечный доступ к архиву — POST-MVP | Мало контента на старте |
 | 28.02.2026 | Возрастной рейтинг 13+ (не 12+) | Apple убрала 12+ в июле 2025 |
 | 03.03.2026 | MVP = только iOS. Android — post-MVP | Flutter готов, но запуск после стабилизации iOS |
