@@ -27,6 +27,25 @@
 
 ---
 
+## ПРОПУЩЕННЫЕ ЗАДАЧИ (вернуться позже)
+
+| Задача | Что | Почему пропущена | Когда вернуться |
+|--------|-----|-----------------|-----------------| 
+| 0.1 | Apple Developer Account | Не куплен | Перед задачей 1.3 |
+| 0.2 | App ID и Certificates | Зависит от 0.1 | После 0.1 |
+| 0.3 | VPS настройка | Не куплен | Перед деплоем |
+| 0.4 | Домен и SSL | Зависит от 0.3 | После 0.3 |
+| 1.3 | Apple Sign In | Нет Apple Dev Account | После 0.1-0.2 |
+| 2.3 | Аудио стриминг (signed URLs + nginx) | Нет аудиофайлов от Анны | Когда Анна пришлёт MP3 |
+| 2.7 | Аудиоплеер Flutter | Зависит от 2.3 | После 2.3 |
+| Фаза 3 | Платежи (StoreKit 2) | Нет Apple Dev Account | После 0.1-0.2 |
+
+> ⚠️ Без Apple Dev нельзя: 1.3 (Apple Sign In), фазу 3 (платежи), фазу 7 (TestFlight)
+> ⚠️ Без аудиофайлов нельзя: 2.3 (стриминг), 2.7 (плеер)
+> ⚠️ Без VPS нельзя: деплоить бэкенд (но код писать можно!)
+
+---
+
 ## РАБОЧАЯ СРЕДА
 
 - **Mac:** MacBook Pro 2017, macOS Ventura 13.7
@@ -51,10 +70,11 @@
 
 ```
 СЕЙЧАС:
-  1.1–2.2 ✅ → 2.4 → 2.5 → 2.6
+  1.1–2.2 ✅ → 2.4 → 2.5 → 2.6 → Фаза 4 → Фаза 5 → Фаза 6
   (2.3 и 2.7 ждут аудиофайлы от Анны)
 
 КОГДА APPLE DEV: 0.1 → 0.2 → 1.3 → Фаза 3
+КОГДА АУДИОФАЙЛЫ: 2.3 → 2.7
 КОГДА VPS: 0.3 → 0.4 → деплой
 ```
 
@@ -62,7 +82,7 @@
 
 ## ПРОШЛАЯ СЕССИЯ
 
-_30.03.2026 — Задачи 1.5–2.2: дизайн-система (13 файлов), навигация GoRouter (22 маршрута), экраны входа (Login/Email/Register/ForgotPassword + auth_provider + api_client + secure_storage), модели Book.js и Package.js, API каталога (routes/books.js: GET books, featured, search, :id, :id/audio/:partNumber; routes/packages.js: GET packages, :id; routes/home.js: GET home). app.js обновлён с новыми роутами. Следующая задача: 2.4._
+_30.03.2026 — Задачи 1.5–2.2: дизайн-система (13 файлов), навигация GoRouter (22 маршрута), экраны входа (Login/Email/Register/ForgotPassword + auth_provider + api_client + secure_storage), модели Book.js и Package.js, API каталога (routes/books.js: GET books, featured, search, :id, :id/audio/:partNumber; routes/packages.js: GET packages, :id; routes/home.js: GET home). app.js обновлён с новыми роутами. Исправлен rbenv init, SSL для CocoaPods, зависший симулятор. Следующая задача: 2.4._
 
 ---
 
