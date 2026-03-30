@@ -1804,7 +1804,7 @@ class DiaryScreen extends ConsumerWidget {
   title: String,                   // 'Бегство от свободы'
   startsAt: Date,
   endsAt: Date,
-  archiveUntilDate: Date,          // 3 дня после окончания
+  archiveUntilDate: Date,          // 15 дней после окончания
   participantCount: { type: Number, default: 0 },
   isActive: { type: Boolean, default: false }
 }
