@@ -46,6 +46,17 @@
 
 ---
 
+## ТРЕБУЕТСЯ ОБНОВИТЬ MASTER.md (в начале следующего чата)
+
+**Доступ к записям клуба — 15 дней, не 3:**
+- В MASTER сейчас: «3 дня доступа к записям клуба после отмены» (секция 2, экран 4.37)
+- Правильно: после окончания клуба месяца записи доступны участникам ещё **15 дней**
+- Это НЕ связано с отменой подписки. Это архивный доступ для всех участников клуба
+- Пример: клуб марта заканчивается 31 марта → записи марта доступны до ~15 апреля → клуб апреля стартует 1 апреля параллельно
+- Обновить: секция 2 (типы пользователей), экран 4.37, схема ClubMonth (`archiveUntilDate` = endsAt + 15 дней)
+
+---
+
 ## РАБОЧАЯ СРЕДА
 
 - **Mac:** MacBook Pro 2017, macOS Ventura 13.7
@@ -82,7 +93,16 @@
 
 ## ПРОШЛАЯ СЕССИЯ
 
-_30.03.2026 — Задачи 1.5–2.2: дизайн-система (13 файлов), навигация GoRouter (22 маршрута), экраны входа (Login/Email/Register/ForgotPassword + auth_provider + api_client + secure_storage), модели Book.js и Package.js, API каталога (routes/books.js: GET books, featured, search, :id, :id/audio/:partNumber; routes/packages.js: GET packages, :id; routes/home.js: GET home). app.js обновлён с новыми роутами. Исправлен rbenv init, SSL для CocoaPods, зависший симулятор. Следующая задача: 2.4._
+_30.03.2026 — Задачи 1.5–2.2: дизайн-система (13 файлов), навигация GoRouter (22 маршрута), экраны входа (Login/Email/Register/ForgotPassword + auth_provider + api_client + secure_storage), модели Book.js и Package.js, API каталога (routes/books.js: GET books, featured, search, :id, :id/audio/:partNumber; routes/packages.js: GET packages, :id; routes/home.js: GET home). app.js обновлён с новыми роутами. Исправлен rbenv init, SSL для CocoaPods, зависший симулятор. Уточнение от заказчика: доступ к записям клуба 15 дней после окончания (не 3 как в MASTER). Следующая задача: 2.4._
+
+---
+
+## РЕШЕНИЯ
+
+| Дата | Решение | Причина |
+|------|---------|---------| 
+| 30.03.2026 | Доступ к записям клуба — 15 дней после окончания | Уточнение от заказчика. MASTER написано 3 дня — исправить |
+| 15.03.2026 | Playfair Display через google_fonts | Не Onest. MASTER и прототип используют Playfair Display |
 
 ---
 
