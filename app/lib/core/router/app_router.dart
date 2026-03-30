@@ -7,6 +7,10 @@ import '../../shared/widgets/app_bottom_bar.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/constants/app_spacing.dart';
+import '../../features/auth/screens/login_screen.dart';
+import '../../features/auth/screens/email_login_screen.dart';
+import '../../features/auth/screens/email_register_screen.dart';
+import '../../features/auth/screens/forgot_password_screen.dart';
 
 // — Key для ShellRoute navigator —
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -22,39 +26,42 @@ final routerProvider = Provider<GoRouter>((ref) {
       final onboardingSeen = prefs.getBool('onboarding_seen') ?? false;
       final location = state.matchedLocation;
 
-      // Если онбординг не пройден и не на экране онбординга — редирект
+      // Если онбординг не пройден — на экран входа
+      // (онбординг слайды будут в задаче 6.3, пока сразу на login)
       if (!onboardingSeen &&
-          location != Routes.onboarding &&
           location != Routes.login &&
           location != Routes.emailLogin &&
           location != Routes.register &&
-          location != Routes.forgotPassword) {
-        return Routes.onboarding;
+          location != Routes.forgotPassword &&
+          location != Routes.survey &&
+          location != Routes.aiConsent &&
+          location != Routes.pushConsent) {
+        return Routes.login;
       }
 
       return null;
     },
     routes: [
-      // — Онбординг и Auth (без tab bar) —
-      GoRoute(
-        path: Routes.onboarding,
-        builder: (context, state) => const _Placeholder('Онбординг'),
-      ),
+      // — Auth (без tab bar) —
       GoRoute(
         path: Routes.login,
-        builder: (context, state) => const _Placeholder('Вход'),
+        builder: (context, state) => const LoginScreen(),
       ),
       GoRoute(
         path: Routes.emailLogin,
-        builder: (context, state) => const _Placeholder('Email вход'),
+        builder: (context, state) => const EmailLoginScreen(),
       ),
       GoRoute(
         path: Routes.register,
-        builder: (context, state) => const _Placeholder('Регистрация'),
+        builder: (context, state) => const EmailRegisterScreen(),
       ),
       GoRoute(
         path: Routes.forgotPassword,
-        builder: (context, state) => const _Placeholder('Восстановление пароля'),
+        builder: (context, state) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: Routes.onboarding,
+        builder: (context, state) => const _Placeholder('Онбординг'),
       ),
       GoRoute(
         path: Routes.survey,
