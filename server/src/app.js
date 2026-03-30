@@ -5,6 +5,9 @@ const { errorHandler } = require('./middleware/error');
 const { authLimiter } = require('./middleware/rate-limit');
 const { success } = require('./utils/response');
 const authRoutes = require('./routes/auth');
+const bookRoutes = require('./routes/books');
+const packageRoutes = require('./routes/packages');
+const homeRoutes = require('./routes/home');
 
 const app = express();
 
@@ -30,6 +33,9 @@ app.get('/api/health', (_req, res) => {
 
 // Routes
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/books', bookRoutes);
+app.use('/api/packages', packageRoutes);
+app.use('/api/home', homeRoutes);
 
 // 404 handler
 app.use((_req, res) => {

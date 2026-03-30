@@ -16,14 +16,14 @@
 ## ТЕКУЩИЙ СТАТУС
 
 **Фаза:** 2 — контент и аудиоплеер
-**Следующая задача:** 2.2 (API каталога)
+**Следующая задача:** 2.4 (Flutter — главная страница)
 **Блокеры:** 1.3 (Apple Sign In) ждёт Apple Dev Account. 2.3 (аудио стриминг) ждёт аудиофайлы от Анны.
 
 ---
 
 ## ПРОГРЕСС
 
-**Готовые задачи:** 0.5, 0.6, 1.1, 1.2, 1.4, 1.5, 1.6, 1.7, 2.1
+**Готовые задачи:** 0.5, 0.6, 1.1, 1.2, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2
 
 ---
 
@@ -51,7 +51,7 @@
 
 ```
 СЕЙЧАС:
-  1.1–1.7 ✅ → 2.1 ✅ → 2.2 → 2.4 → 2.5 → 2.6
+  1.1–2.2 ✅ → 2.4 → 2.5 → 2.6
   (2.3 и 2.7 ждут аудиофайлы от Анны)
 
 КОГДА APPLE DEV: 0.1 → 0.2 → 1.3 → Фаза 3
@@ -62,7 +62,7 @@
 
 ## ПРОШЛАЯ СЕССИЯ
 
-_30.03.2026 — Задачи 1.5–1.7 и 2.1: дизайн-система (13 файлов), навигация GoRouter (22 маршрута + ShellRoute + guard), экраны входа (Login/Email/Register/ForgotPassword + auth_provider + api_client с JWT refresh + secure_storage), модели Book.js и Package.js (MASTER 7.3, с индексами text search и фильтрации). Исправлен rbenv init, SSL для CocoaPods, зависший симулятор. Следующая задача: 2.2._
+_30.03.2026 — Задачи 1.5–2.2: дизайн-система (13 файлов), навигация GoRouter (22 маршрута), экраны входа (Login/Email/Register/ForgotPassword + auth_provider + api_client + secure_storage), модели Book.js и Package.js, API каталога (routes/books.js: GET books, featured, search, :id, :id/audio/:partNumber; routes/packages.js: GET packages, :id; routes/home.js: GET home). app.js обновлён с новыми роутами. Следующая задача: 2.4._
 
 ---
 
