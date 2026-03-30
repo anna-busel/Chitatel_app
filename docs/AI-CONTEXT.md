@@ -15,15 +15,15 @@
 
 ## ТЕКУЩИЙ СТАТУС
 
-**Фаза:** 1 — скелет (пишем код, инфраструктура параллельно)
-**Следующая задача:** 2.1 (Mongoose-схемы Book, Package)
-**Блокеры:** 1.3 (Apple Sign In) ждёт покупки Apple Dev Account.
+**Фаза:** 2 — контент и аудиоплеер
+**Следующая задача:** 2.2 (API каталога)
+**Блокеры:** 1.3 (Apple Sign In) ждёт Apple Dev Account. 2.3 (аудио стриминг) ждёт аудиофайлы от Анны.
 
 ---
 
 ## ПРОГРЕСС
 
-**Готовые задачи:** 0.5, 0.6, 1.1, 1.2, 1.4, 1.5, 1.6, 1.7
+**Готовые задачи:** 0.5, 0.6, 1.1, 1.2, 1.4, 1.5, 1.6, 1.7, 2.1
 
 ---
 
@@ -43,6 +43,7 @@
 - **Запуск бэкенда:** `cd ~/Chitatel_app/server && npm run dev`
 - **Запуск Flutter:** `cd ~/Chitatel_app/app && flutter run`
 - **Открытие симулятора:** `open /Applications/Xcode.app/Contents/Developer/Applications/Simulator.app`
+- **Симулятор зависает:** если launchd_sim ошибка → `killall -9 com.apple.CoreSimulator.CoreSimulatorService`, `xcrun simctl shutdown all`, подождать, перезапустить
 
 ---
 
@@ -50,9 +51,10 @@
 
 ```
 СЕЙЧАС:
-  1.1 ✅ → 1.2 ✅ → 1.4 ✅ → 0.6 ✅ → 1.5 ✅ → 1.6 ✅ → 1.7 ✅ → 2.1 → 2.2 → 2.4 → 2.5 → 2.6
+  1.1–1.7 ✅ → 2.1 ✅ → 2.2 → 2.4 → 2.5 → 2.6
+  (2.3 и 2.7 ждут аудиофайлы от Анны)
 
-КОГДА APPLE DEV: 0.1 → 0.2 → 1.3
+КОГДА APPLE DEV: 0.1 → 0.2 → 1.3 → Фаза 3
 КОГДА VPS: 0.3 → 0.4 → деплой
 ```
 
@@ -60,7 +62,7 @@
 
 ## ПРОШЛАЯ СЕССИЯ
 
-_15.03.2026 — Задача 1.7: Auth экраны + API. Созданы: login_screen.dart (Apple/Google/Email кнопки, GDPR чекбокс, «Пропустить»), email_login_screen.dart, email_register_screen.dart, forgot_password_screen.dart, auth_provider.dart (Riverpod: login, register, googleSignIn, logout, checkAuth), auth_service.dart (HTTP calls к /api/auth/*), api_client.dart (Dio + JWT refresh interceptor), api_endpoints.dart, secure_storage.dart (Keychain). Apple Sign In — кнопка есть, показывает сообщение «Будет доступно после Apple Dev Account». Guard обновлён: новые пользователи видят LoginScreen, после входа/пропуска — Главную. pubspec.yaml: dio, flutter_secure_storage, google_sign_in. Следующая задача: 2.1._
+_30.03.2026 — Задачи 1.5–1.7 и 2.1: дизайн-система (13 файлов), навигация GoRouter (22 маршрута + ShellRoute + guard), экраны входа (Login/Email/Register/ForgotPassword + auth_provider + api_client с JWT refresh + secure_storage), модели Book.js и Package.js (MASTER 7.3, с индексами text search и фильтрации). Исправлен rbenv init, SSL для CocoaPods, зависший симулятор. Следующая задача: 2.2._
 
 ---
 
@@ -71,4 +73,4 @@ _15.03.2026 — Задача 1.7: Auth экраны + API. Созданы: login
 
 ---
 
-*Последнее обновление: 15.03.2026*
+*Последнее обновление: 30.03.2026*
