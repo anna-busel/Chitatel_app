@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../../core/storage/secure_storage.dart';
@@ -198,5 +199,3 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return 'Произошла ошибка';
   }
 }
-
-import 'package:dio/dio.dart';
