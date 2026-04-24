@@ -1,0 +1,293 @@
+/**
+ * Seed-скрипт для заливки каталога Анны в MongoDB.
+ *
+ * Использование:
+ *   cd server
+ *   npm run seed
+ *
+ * Что делает:
+ * 1. Подключается к MongoDB (config.mongoUri)
+ * 2. Очищает коллекции Book и Package (скрипт идемпотентный — можно гонять повторно)
+ * 3. Читает reader-bot-catalog.json (42 книги + 6 пакетов)
+ * 4. Вставляет 42 платных разбора + 3 бесплатных (Alice/EatPrayLove/Маленький принц)
+ * 5. Вставляет 6 пакетов, сопоставляя bookSlugs → ObjectId уже вставленных книг
+ *
+ * Цены BYN → USD по Apple Price Tier (ближайший Tier вниз для юзер-френдли цены).
+ * coverImageUrl указывает на Flutter-ассеты (app/assets/book-covers/{slug}.png).
+ * audioFilename у всех книг пустой — аудио пришлёт Анна позже.
+ *
+ * Шаг 2.3.5-c из AI-CONTEXT.
+ */
+
+const path = require('path');
+const fs = require('fs');
+const mongoose = require('mongoose');
+const config = require('../config');
+const Book = require('../models/Book');
+const Package = require('../models/Package');
+
+// --- Конвертация цен ---
+
+/**
+ * Маппинг BYN → USD по Apple Price Tier (Tier = цена в USD).
+ * Источник курса: ~3.1 BYN = $1 (апрель 2026).
+ * Округление вниз к ближайшему Tier для юзер-френдли цен.
+ */
+function bynToUsd(byn) {
+  if (byn === 80) return 24.99;   // ~$25.80 → Tier 25
+  if (byn === 100) return 29.99;  // ~$32.25 → Tier 30
+  if (byn === 150) return 44.99;  // ~$48.38 → Tier 45
+  if (byn === 280) return 84.99;  // ~$90.32 → Tier 85 (для пакетов)
+  // Фоллбек для нестандартной цены — считаем и округляем вниз к ближайшему доллару с центом 99
+  const raw = byn / 3.1;
+  return Math.floor(raw) + 0.99;
+}
+
+// --- Обложки пакетов: slug из JSON → имя файла в app/assets/book-covers/ ---
+
+const packageCoverFilenames = {
+  facultativ_dostoevsky: 'facultativ_dostoevsky',
+  facultativ_nabokov: 'facultativ_nabokov',
+  facultativ_children: 'facultativ_children_classics',
+  facultativ_tolstoy: null, // обложки нет — будет fallback на градиент
+  facultativ_foreign: 'facultativ_foreign_classics',
+  facultativ_russian: 'facultativ_russian_classics',
+};
+
+// --- Список бесплатных промо-разборов (без цены, isFree: true) ---
+// См. g1orgi89/reader-bot/mini-app/assets/audio-covers/ — у этих 3 есть обложки плеера.
+
+const FREE_BOOKS = [
+  {
+    title: 'Алиса в стране чудес',
+    author: 'Льюис Кэрролл',
+    description:
+      'Классическая детская сказка о путешествии в волшебный мир. ' +
+      'Бесплатный разбор — попробуйте формат прежде чем купить платный контент.',
+    bookSlug: 'alice_wonderland',
+    categories: ['ПОИСК СЕБЯ'],
+    tags: ['сказка', 'детская классика', 'Кэрролл', 'бесплатно'],
+  },
+  {
+    title: 'Ешь, молись, люби',
+    author: 'Элизабет Гилберт',
+    description:
+      'Автобиографический роман о путешествии по Италии, Индии и Индонезии в поисках себя. ' +
+      'Бесплатный разбор — попробуйте формат прежде чем купить платный контент.',
+    bookSlug: 'eat_pray_love',
+    categories: ['Я — ЖЕНЩИНА', 'ПОИСК СЕБЯ'],
+    tags: ['путешествие', 'женщина', 'самопознание', 'Гилберт', 'бесплатно'],
+  },
+  {
+    title: 'Маленький принц',
+    author: 'Антуан де Сент-Экзюпери',
+    description:
+      'Философская сказка о дружбе, любви и одиночестве. ' +
+      'Бесплатный разбор — попробуйте формат прежде чем купить платный контент.',
+    bookSlug: 'malenkii_princ',
+    categories: ['ОДИНОЧЕСТВО', 'ПОИСК СЕБЯ'],
+    tags: ['классика', 'философская сказка', 'Сент-Экзюпери', 'бесплатно'],
+  },
+];
+
+// --- Маппинг одной записи из JSON в документ Book ---
+
+function mapPaidBook(src) {
+  return {
+    title: src.title,
+    author: src.author || '',
+    description: src.description,
+
+    coverImageUrl: `asset://book-covers/${src.bookSlug}.png`,
+    coverGradientColors: ['#1A0E08', '#3A2018'],
+    coverLabel: '',
+
+    durationTotal: 0, // будет обновлено когда Анна пришлёт аудио
+
+    categories: src.categories || [],
+    tags: src.targetThemes || [],
+
+    priceUsd: bynToUsd(src.priceByn),
+    priceRub: null, // в JSON Анны у книг RUB не указан
+    priceByn: src.priceByn,
+    isFree: false,
+    appleProductId: `book.${src.bookSlug}`,
+
+    bookSlug: src.bookSlug,
+    purchaseUrl: src.purchaseUrl || '',
+
+    isPartOfClub: false,
+    clubMonth: null,
+    freeChapterIndex: 0,
+
+    rating: 0,
+    reviewCount: 0,
+
+    parts: [], // пустой массив — наполнится когда Анна пришлёт аудиофайлы
+
+    isPublished: true,
+    publishedAt: new Date(),
+  };
+}
+
+function mapFreeBook(src) {
+  return {
+    title: src.title,
+    author: src.author,
+    description: src.description,
+
+    coverImageUrl: `asset://book-covers/${src.bookSlug}.png`,
+    coverGradientColors: ['#1A0E08', '#3A2018'],
+    coverLabel: '',
+
+    durationTotal: 0,
+
+    categories: src.categories,
+    tags: src.tags,
+
+    priceUsd: null,
+    priceRub: null,
+    priceByn: null,
+    isFree: true,
+    appleProductId: null, // бесплатным не нужен Product ID
+
+    bookSlug: src.bookSlug,
+    purchaseUrl: '',
+
+    isPartOfClub: false,
+    clubMonth: null,
+    freeChapterIndex: 0,
+
+    rating: 0,
+    reviewCount: 0,
+
+    parts: [],
+
+    isPublished: true,
+    publishedAt: new Date(),
+  };
+}
+
+async function mapPackage(src, bookSlugToId) {
+  // Находим ObjectId книг по их slug'ам (не все книги пакета могут быть в каталоге — например,
+  // "Бедные люди", "Дар", "Процесс" и сказки отсутствуют — их Анна добавит позже).
+  const bookIds = src.booksInPackage
+    .map((slug) => bookSlugToId.get(slug))
+    .filter((id) => id != null);
+
+  const coverFilename = packageCoverFilenames[src.packageSlug];
+  const coverImageUrl = coverFilename ? `asset://book-covers/${coverFilename}.png` : '';
+
+  return {
+    title: src.title,
+    description: src.description,
+
+    coverImageUrl,
+    coverGradientColors: ['#1A0E08', '#3A2018'],
+    coverLabel: '',
+
+    packageSlug: src.packageSlug,
+
+    books: bookIds,
+    bookSlugs: src.booksInPackage,
+
+    priceUsd: bynToUsd(src.priceByn),
+    priceRub: src.priceRub || null,
+    priceByn: src.priceByn,
+
+    appleProductId: `package.${src.packageSlug}`,
+
+    purchaseUrl: src.purchaseUrl || '',
+
+    isPublished: true,
+  };
+}
+
+// --- Основная функция seed ---
+
+async function seed() {
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('🌱 Seed каталога ЧИТАТЕЛЬ');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  // 1. Подключение к MongoDB
+  console.log(`\n📡 Подключение к MongoDB: ${config.mongoUri}`);
+  await mongoose.connect(config.mongoUri);
+  console.log('✅ Подключено');
+
+  // 2. Чтение JSON
+  const jsonPath = path.join(__dirname, 'reader-bot-catalog.json');
+  console.log(`\n📖 Чтение каталога: ${jsonPath}`);
+  const raw = fs.readFileSync(jsonPath, 'utf8');
+  const data = JSON.parse(raw);
+  console.log(`✅ Прочитано: ${data.books.length} книг, ${data.packages.length} пакетов`);
+
+  // 3. Очистка коллекций
+  console.log('\n🧹 Очистка коллекций Book и Package...');
+  await Book.deleteMany({});
+  await Package.deleteMany({});
+  console.log('✅ Коллекции очищены');
+
+  // 4. Вставка платных книг
+  console.log(`\n📚 Вставка ${data.books.length} платных разборов...`);
+  const paidBookDocs = data.books.map(mapPaidBook);
+  const insertedPaid = await Book.insertMany(paidBookDocs);
+  console.log(`✅ Вставлено: ${insertedPaid.length} платных`);
+
+  // 5. Вставка бесплатных разборов
+  console.log(`\n🎁 Вставка ${FREE_BOOKS.length} бесплатных промо-разборов...`);
+  const freeBookDocs = FREE_BOOKS.map(mapFreeBook);
+  const insertedFree = await Book.insertMany(freeBookDocs);
+  console.log(`✅ Вставлено: ${insertedFree.length} бесплатных`);
+
+  // 6. Строим карту slug → ObjectId для пакетов
+  const bookSlugToId = new Map();
+  for (const book of [...insertedPaid, ...insertedFree]) {
+    bookSlugToId.set(book.bookSlug, book._id);
+  }
+
+  // 7. Вставка пакетов
+  console.log(`\n📦 Вставка ${data.packages.length} пакетов...`);
+  const packageDocs = await Promise.all(data.packages.map((p) => mapPackage(p, bookSlugToId)));
+  const insertedPackages = await Package.insertMany(packageDocs);
+
+  // Предупреждаем о пакетах с неполным составом
+  for (let i = 0; i < data.packages.length; i++) {
+    const src = data.packages[i];
+    const inserted = insertedPackages[i];
+    const missingSlugs = src.booksInPackage.filter((s) => !bookSlugToId.has(s));
+    if (missingSlugs.length > 0) {
+      console.log(
+        `   ⚠️  ${src.title}: отсутствует в каталоге ${missingSlugs.length}/${src.booksInPackage.length} — ${missingSlugs.join(', ')}`
+      );
+    }
+    if (!inserted.coverImageUrl) {
+      console.log(`   ⚠️  ${src.title}: нет обложки (packageSlug=${src.packageSlug})`);
+    }
+  }
+  console.log(`✅ Вставлено: ${insertedPackages.length} пакетов`);
+
+  // 8. Итог
+  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('📊 Итого в БД:');
+  console.log(`   Книг платных:     ${insertedPaid.length}`);
+  console.log(`   Книг бесплатных:  ${insertedFree.length}`);
+  console.log(`   Пакетов:          ${insertedPackages.length}`);
+  console.log(`   ВСЕГО книг:       ${insertedPaid.length + insertedFree.length}`);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  await mongoose.disconnect();
+  console.log('\n👋 Отключено от MongoDB');
+}
+
+// --- Запуск ---
+
+seed()
+  .then(() => {
+    console.log('\n✅ Seed завершён успешно');
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error('\n❌ Seed упал:', err);
+    mongoose.disconnect().finally(() => process.exit(1));
+  });
