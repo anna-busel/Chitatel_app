@@ -2,7 +2,11 @@ const mongoose = require('mongoose');
 
 /**
  * Mongoose-схема Book.
- * Источник: MASTER.md секция 7.3
+ *
+ * ВАЖНО: источник истины для схемы — этот файл, НЕ MASTER.md секция 7.3.
+ * MASTER описывает общую архитектуру приложения, схема Book расширена после
+ * изучения реального контента Анны (repo g1orgi89/reader-bot, 24.04.2026).
+ * См. docs/AI-CONTEXT.md → «РАСХОЖДЕНИЯ С MASTER.md» для деталей.
  *
  * Книга = аудиоразбор. Может быть бесплатной, платной (one-time),
  * или частью клуба месяца (подписка).
@@ -21,21 +25,32 @@ const partSchema = new mongoose.Schema(
 const bookSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
-    author: { type: String, required: true },
+    author: { type: String, default: '' },
     description: { type: String, required: true },
-    coverGradientColors: { type: [String], default: ['#1A0E08', '#3A2018'] }, // ['#hex1', '#hex2']
-    coverLabel: { type: String, default: '' }, // 'МП' (2 буквы)
-    durationTotal: { type: Number, default: 0 }, // секунды
-    category: {
-      type: String,
-      enum: ['classic', 'psychology'],
-      required: true,
-    },
 
-    // Ценообразование
-    price: { type: Number, default: null }, // null для бесплатных (USD)
+    // Обложка
+    coverImageUrl: { type: String, default: '' }, // основной способ: URL реальной обложки
+    coverGradientColors: { type: [String], default: ['#1A0E08', '#3A2018'] }, // fallback + фон плеера
+    coverLabel: { type: String, default: '' }, // fallback: 'МП' (2 буквы) если нет coverImageUrl
+
+    durationTotal: { type: Number, default: 0 }, // секунды
+
+    // Категоризация (14 категорий Анны, одна книга в нескольких)
+    categories: { type: [String], default: [] },
+    // Темы для поиска и AI-рекомендаций (не видны юзеру напрямую)
+    tags: { type: [String], default: [] },
+
+    // Ценообразование (три валюты; USD — для Apple IAP)
+    priceUsd: { type: Number, default: null }, // null для бесплатных
+    priceRub: { type: Number, default: null },
+    priceByn: { type: Number, default: null }, // оригинал Анны
     isFree: { type: Boolean, default: false },
-    appleProductId: { type: String, default: null }, // 'book.{id}' для IAP
+    appleProductId: { type: String, default: null }, // 'book.{slug}' для IAP
+
+    // Идентификатор для ссылок/обложек (совпадает с именем файла обложки)
+    bookSlug: { type: String, default: '', index: true },
+    // Ссылка на покупку на внешнем сайте (anna-busel.com) — для фоллбека/админки
+    purchaseUrl: { type: String, default: '' },
 
     // Клуб
     isPartOfClub: { type: Boolean, default: false },
@@ -62,7 +77,8 @@ const bookSchema = new mongoose.Schema(
 bookSchema.index({ title: 'text', author: 'text', description: 'text' });
 
 // Индексы для фильтрации
-bookSchema.index({ category: 1, isPublished: 1 });
+bookSchema.index({ categories: 1, isPublished: 1 });
+bookSchema.index({ tags: 1, isPublished: 1 });
 bookSchema.index({ isFree: 1, isPublished: 1 });
 bookSchema.index({ isPartOfClub: 1, clubMonth: 1 });
 
