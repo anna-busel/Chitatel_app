@@ -85,7 +85,7 @@ class ClubMonthCard extends StatelessWidget {
                           ? book!.author
                           : 'Узнайте книгу месяца',
                       style: AppTypography.caption.copyWith(
-                        color: Colors.white.withValues(alpha: 0.75),
+                        color: Colors.white.withOpacity(0.75),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -97,10 +97,10 @@ class ClubMonthCard extends StatelessWidget {
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.12),
+                        color: Colors.white.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.3),
+                          color: Colors.white.withOpacity(0.3),
                         ),
                       ),
                       child: const Text(

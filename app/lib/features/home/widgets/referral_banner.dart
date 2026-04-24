@@ -29,7 +29,7 @@ class ReferralBanner extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
+                  color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 alignment: Alignment.center,
@@ -54,7 +54,7 @@ class ReferralBanner extends StatelessWidget {
                     Text(
                       'Получите месяц клуба в подарок',
                       style: AppTypography.caption.copyWith(
-                        color: Colors.white.withValues(alpha: 0.85),
+                        color: Colors.white.withOpacity(0.85),
                       ),
                     ),
                   ],
