@@ -12,7 +12,7 @@ const router = Router();
 router.get('/', async (_req, res, next) => {
   try {
     const packages = await Package.find({ isPublished: true })
-      .populate('books', 'title author coverGradientColors coverLabel durationTotal rating reviewCount')
+      .populate('books', 'title author coverImageUrl coverGradientColors coverLabel durationTotal rating reviewCount')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -32,7 +32,7 @@ router.get('/:id', async (req, res, next) => {
       _id: req.params.id,
       isPublished: true,
     })
-      .populate('books', 'title author description coverGradientColors coverLabel durationTotal category price isFree rating reviewCount parts')
+      .populate('books', 'title author description coverImageUrl coverGradientColors coverLabel durationTotal categories priceUsd priceRub priceByn isFree rating reviewCount parts bookSlug')
       .lean();
 
     if (!pkg) {
