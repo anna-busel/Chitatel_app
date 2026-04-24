@@ -55,7 +55,7 @@ class _FreeBookCard extends StatelessWidget {
     return SizedBox(
       width: 140,
       child: InkWell(
-        onTap: () => context.push(Routes.bookDetails(book.id)),
+        onTap: () => context.push(Routes.book(book.id)),
         borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
