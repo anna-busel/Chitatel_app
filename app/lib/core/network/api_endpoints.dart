@@ -29,6 +29,13 @@ class ApiEndpoints {
   static const String profileSurvey = '/profile/survey';
   static const String profileReferral = '/profile/referral';
 
+  // — Home & Catalog —
+  static const String home = '/home';
+  static const String books = '/books';
+  static const String booksFeatured = '/books/featured';
+  static const String booksSearch = '/books/search';
+  static const String packages = '/packages';
+
   // — Health —
   static const String health = '/health';
 }
