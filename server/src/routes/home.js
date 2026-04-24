@@ -8,13 +8,21 @@ const router = Router();
 /**
  * GET /api/home
  * MASTER 7.4: данные для главной страницы
- * { clubMonth, dailyQuote, freeBooks, progress }
+ * { clubMonth, dailyQuote, freeBooks, popularBooks }
+ *
+ * Поля `.select()` соответствуют расширенной схеме Book (см. AI-CONTEXT →
+ * РАСХОЖДЕНИЯ С MASTER.md): coverImageUrl, bookSlug, priceUsd/Rub/Byn, isFree.
  */
 router.get('/', optionalAuth, async (req, res, next) => {
   try {
+    const bookFields =
+      'title author coverImageUrl coverGradientColors coverLabel bookSlug ' +
+      'durationTotal rating reviewCount priceUsd priceRub priceByn isFree isPartOfClub ' +
+      'categories';
+
     // Бесплатные разборы
     const freeBooks = await Book.find({ isPublished: true, isFree: true })
-      .select('title author coverGradientColors coverLabel durationTotal rating')
+      .select(bookFields)
       .sort({ publishedAt: -1 })
       .limit(6)
       .lean();
@@ -27,7 +35,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
       isPartOfClub: true,
       clubMonth: currentMonth,
     })
-      .select('title author coverGradientColors coverLabel durationTotal')
+      .select(bookFields)
       .lean();
 
     // Популярные разборы (для авторизованных)
@@ -38,7 +46,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
         isFree: false,
         isPartOfClub: false,
       })
-        .select('title author coverGradientColors coverLabel durationTotal price rating reviewCount')
+        .select(bookFields)
         .sort({ rating: -1, reviewCount: -1 })
         .limit(4)
         .lean();
