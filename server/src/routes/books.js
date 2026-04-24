@@ -13,6 +13,9 @@ const router = Router();
  * GET /api/books
  * MASTER 7.4: список всех книг (с пагинацией, фильтрами)
  * Query: ?category=&isFree=&page=&limit=
+ *
+ * Примечание: ?category=КРИЗИСЫ матчится против массива Book.categories
+ * (одна книга может быть в нескольких категориях — см. AI-CONTEXT РАСХОЖДЕНИЯ).
  */
 router.get('/', async (req, res, next) => {
   try {
@@ -22,7 +25,7 @@ router.get('/', async (req, res, next) => {
 
     const filter = { isPublished: true };
     if (req.query.category) {
-      filter.category = req.query.category;
+      filter.categories = req.query.category;
     }
     if (req.query.isFree !== undefined) {
       filter.isFree = req.query.isFree === 'true';
