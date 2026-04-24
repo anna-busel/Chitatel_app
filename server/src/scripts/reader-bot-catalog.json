@@ -1,0 +1,485 @@
+{
+  "_meta": {
+    "source": "https://github.com/g1orgi89/reader-bot/blob/main/data/bookCatalog.import.json",
+    "copiedAt": "2026-04-24",
+    "notes": "Исправлен синтаксис оригинала (в исходнике пропущена запятая/закрывающая скобка между books и packages). Данные идентичны оригиналу. 42 платные книги + 6 пакетов-факультативов. Цены в BYN, ссылки на anna-busel.com. Маппинг в нашу схему Book — в seed.js."
+  },
+  "books": [
+    {
+      "title": "Тысячеликий герой",
+      "author": "Джозеф Кэмпбелл",
+      "description": "Как найти свой путь и смысл жизни, преодолевая кризисы",
+      "priceByn": 150,
+      "categories": ["КРИЗИСЫ", "СМЫСЛ ЖИЗНИ", "ВРЕМЯ И ПРИВЫЧКИ", "ПОИСК СЕБЯ"],
+      "targetThemes": ["Кризисы", "смысл жизни", "трудности", "растерянность", "лень", "не знаю что делать", "нет сил"],
+      "bookSlug": "tysyachelikiy_geroy",
+      "purchaseUrl": "https://bebusel.info/hero"
+    },
+    {
+      "title": "Гроздья гнева",
+      "author": "Джон Стейнбек",
+      "description": "Как выжить в мире, который рушится, сохранив семью и желание жить",
+      "priceByn": 100,
+      "categories": ["КРИЗИСЫ", "ПОИСК СЕБЯ"],
+      "targetThemes": ["Кризисы", "изменения", "стресс", "растерянность", "страх", "торможение", "невыносимость изменений", "нежелание", "замирание", "мир"],
+      "bookSlug": "grozdya_gneva",
+      "purchaseUrl": "https://bebusel.info/facult-foreign-books"
+    },
+    {
+      "title": "Идиот",
+      "author": "Фёдор Достоевский",
+      "description": "Как сохранить чистоту души в цинизме и жадности",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ"],
+      "targetThemes": ["Кризисы", "классика", "Достоевский", "русская классика", "школьная программа", "факультатив"],
+      "bookSlug": "idiot",
+      "purchaseUrl": "https://bebusel.info/idiot"
+    },
+    {
+      "title": "Игрок",
+      "author": "Фёдор Достоевский",
+      "description": "Откровения о том, как зависимость рушит любовь и всю жизнь",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ"],
+      "targetThemes": ["Кризисы", "классика", "Достоевский", "русская классика", "школьная программа", "факультатив"],
+      "bookSlug": "igrok",
+      "purchaseUrl": "https://bebusel.info/razbor-igrok"
+    },
+    {
+      "title": "Все дороги ведут к себе",
+      "author": "Юлия Пирумова",
+      "description": "Как вернуть себе ценность? Как перестать постоянно сомневаться в себе?",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Я — женщина", "сексуальность", "женственность", "расслабление", "тело", "самооценка", "любовь к себе", "самоценность", "работа над собой", "принятие"],
+      "bookSlug": "vse_dorogi_vedut_k_sebe",
+      "purchaseUrl": "https://bebusel.info/pirumova"
+    },
+    {
+      "title": "Я у себя одна, или Веретено Василисы",
+      "author": "Екатерина Михайлова",
+      "description": "Про женские кризисы и как их преодолеть, чтобы вырасти и понять себя как женщину.",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Я — женщина", "сексуальность", "женственность", "расслабление", "тело", "самооценка", "любовь к себе", "самоценность", "работа над собой", "принятие"],
+      "bookSlug": "ya_u_sebya_odna_ili_vereteno_vasilisy",
+      "purchaseUrl": "https://bebusel.info/razbor-ya-odna-mih"
+    },
+    {
+      "title": "Нелюбимая дочь",
+      "author": "Пег Стрип",
+      "description": "Если вас беспокоят отношения со своей матерью. Как стать достаточно хорошей мамой для своих детей?",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Я — женщина", "сексуальность", "женственность", "расслабление", "тело", "самооценка", "любовь к себе", "самоценность", "работа над собой", "принятие"],
+      "bookSlug": "nelyubimaya_doch",
+      "purchaseUrl": "https://bebusel.info/razbor-nelyubimaya-doch"
+    },
+    {
+      "title": "Искусство любить",
+      "author": "Эрих Фромм",
+      "description": "Что такое любовь? Почему так сложно любить? Что делать, если не удается полюбить?",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость", "любимый", "любимая"],
+      "bookSlug": "iskusstvo_lyubit",
+      "purchaseUrl": "https://bebusel.info/razbor-iskusstvo-fromm"
+    },
+    {
+      "title": "Госпожа Бовари",
+      "author": "Гюстав Флобер",
+      "description": "В чем опасность иллюзий, которые не совпадают с реальностью? Что такое любовь и как можно разрушить семью.",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость", "любимый", "любимая"],
+      "bookSlug": "gospozha_bovari",
+      "purchaseUrl": "https://bebusel.info/razbor-gospozha-bovari"
+    },
+    {
+      "title": "«Люди, которые играют в игры» + «Игры, в которые играют люди»",
+      "author": "Эрик Берн",
+      "description": "Первая книга для вас, если вы хотите лучше понимать других и выстраивать с ними хорошие отношения\n\nВторая: если вы хотите понимать поведение людей - вам нужен этот разбор",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость", "любимый", "любимая"],
+      "bookSlug": "lyudi_kotorye_igrayut_v_igry_igry_v_kotorye_igrayut_lyudi",
+      "purchaseUrl": "https://bebusel.info/erik-bern"
+    },
+    {
+      "title": "Неверность",
+      "author": "Марина Травкова",
+      "description": "Как строить близкие отношения? Кто изменяет и почему?",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость", "любимый", "любимая"],
+      "bookSlug": "nevernost",
+      "purchaseUrl": "https://bebusel.info/razbor-nevernovst"
+    },
+    {
+      "title": "Невыносимая легкость бытия",
+      "author": "Милан Кундера",
+      "description": "Свободная жизнь - она какая? Как можно заиграться в свободу и остаться несчастным?",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость", "любимый", "любимая"],
+      "bookSlug": "nevynosimaya_legkost_bytiya",
+      "purchaseUrl": "https://bebusel.info/razbor-legkost-bytiya"
+    },
+    {
+      "title": "Герой нашего времени",
+      "author": "Михаил Лермонтов",
+      "description": "Почему так сложно строить близкие отношения? Пустота, цинизм и потеря идеалов",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость", "любимый", "любимая"],
+      "bookSlug": "geroy_nashego_vremeni",
+      "purchaseUrl": "https://bebusel.info/lermontov-hero"
+    },
+    {
+      "title": "Анна Каренина",
+      "author": "Лев Толстой",
+      "description": "Конфликт между страстью и долгом. Разрушительная сила фантазий о других и жизни: как сохраниться?",
+      "priceByn": 100,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость", "любимый", "любимая"],
+      "bookSlug": "anna_karenina",
+      "purchaseUrl": "https://bebusel.info/facult-tolstoy-books"
+    },
+    {
+      "title": "Война и мир",
+      "author": "Лев Толстой",
+      "description": "Как решить конфликт между личным и общественным. Как остановить влияние социума на жизнь.",
+      "priceByn": 100,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость", "любимый", "любимая"],
+      "bookSlug": "voyna_i_mir",
+      "purchaseUrl": "https://bebusel.info/facult-tolstoy-books"
+    },
+    {
+      "title": "Вишнёвый сад",
+      "author": "Антон Чехов",
+      "description": "Как оставить прошлое в прошлом? Почему так сложно строить свою реальность?",
+      "priceByn": 100,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость", "любимый", "любимая"],
+      "bookSlug": "vishnyovyy_sad",
+      "purchaseUrl": "https://bebusel.info/facult-russian-books"
+    },
+    {
+      "title": "Уйти, чтобы вырасти",
+      "author": "Юлия Пирумова",
+      "description": "Сепарация от родителей и взросление. Как пройти этот этап?",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ"],
+      "targetThemes": ["Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость", "любимый", "любимая"],
+      "bookSlug": "uyti_chtoby_vyrasti",
+      "purchaseUrl": "https://bebusel.info/razbor-uyti-pirumova"
+    },
+    {
+      "title": "Время — деньги",
+      "author": "Бенджамин Франклин",
+      "description": "Как управлять своим временем, чтобы достичь успеха",
+      "priceByn": 80,
+      "categories": ["ДЕНЬГИ"],
+      "targetThemes": ["Деньги"],
+      "bookSlug": "vremya_dengi",
+      "purchaseUrl": "https://bebusel.info/razbor-vremya-dengi"
+    },
+    {
+      "title": "Сто лет одиночества",
+      "author": "Габриэль Гарсиа Маркес",
+      "description": "Одиночество: что с ним делать? Почему так сложно? Виды одиночества",
+      "priceByn": 100,
+      "categories": ["ОДИНОЧЕСТВО"],
+      "targetThemes": ["Одиночество"],
+      "bookSlug": "sto_let_odinochestva",
+      "purchaseUrl": "https://bebusel.info/facult-foreign-books"
+    },
+    {
+      "title": "Тошнота",
+      "author": "Жан-Поль Сартр",
+      "description": "Встреча со своей пустотой: как справиться? Как найти смысл жизни, когда внутри пусто?",
+      "priceByn": 80,
+      "categories": ["ОДИНОЧЕСТВО"],
+      "targetThemes": ["Одиночество"],
+      "bookSlug": "toshnota",
+      "purchaseUrl": "https://bebusel.info/razbor-toshnota-sartr"
+    },
+    {
+      "title": "Парадокс одиночества",
+      "author": "Норина Герц",
+      "description": "Почему люди чувствует себя одинокими, несмотря на связанность с миром? Как быть? Как строить жизнь?",
+      "priceByn": 80,
+      "categories": ["ОДИНОЧЕСТВО"],
+      "targetThemes": ["Одиночество"],
+      "bookSlug": "paradoks_odinochestva",
+      "purchaseUrl": "https://bebusel.info/razbor-paradox-odinochestva"
+    },
+    {
+      "title": "Возраст",
+      "author": "Пилар Сордо",
+      "description": "Страх старения у женщин: как успокоить себя и принять свои изменения?",
+      "priceByn": 80,
+      "categories": ["ОДИНОЧЕСТВО"],
+      "targetThemes": ["Одиночество"],
+      "bookSlug": "vozrast",
+      "purchaseUrl": "https://bebusel.info/razbor-vozrast"
+    },
+    {
+      "title": "Вглядываясь в солнце",
+      "author": "Ирвин Ялом",
+      "description": "Как перестать бояться смерти и обрести покой. Как найти свой собственный смысл жизни?",
+      "priceByn": 80,
+      "categories": ["СМЕРТЬ"],
+      "targetThemes": ["Смерть"],
+      "bookSlug": "vglyadyvayas_v_solntse",
+      "purchaseUrl": "https://bebusel.info/yalom"
+    },
+    {
+      "title": "Смерть Ивана Ильича",
+      "author": "Лев Толстой",
+      "description": "Что делать в жизни, чтобы в итоге сказать себе: «Я сделал(а) и успел(а) многое и я собой доволен(льна)»?",
+      "priceByn": 80,
+      "categories": ["СМЕРТЬ"],
+      "targetThemes": ["Смерть"],
+      "bookSlug": "smert_ivana_ilicha",
+      "purchaseUrl": "https://bebusel.info/razbor-smert-ivana-ilyicha"
+    },
+    {
+      "title": "Всё дело в папе",
+      "author": "Юлия Зотова",
+      "description": "Как отношения с отцом формируют характер и судьбу? Как взять силы у фигуры отца, чтобы достигать всех своих целей",
+      "priceByn": 80,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ", "ОТНОШЕНИЯ", "СЕМЕЙНЫЕ ОТНОШЕНИЯ"],
+      "targetThemes": ["Семейные отношения", "семья", "Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость"],
+      "bookSlug": "vsyo_delo_v_pape",
+      "purchaseUrl": "https://bebusel.info/razbor-otec-zotova"
+    },
+    {
+      "title": "Братья Карамазовы",
+      "author": "Фёдор Достоевский",
+      "description": "Почему так сложно выбирать? Как учиться брать ответственность за свою жизнь? Сложность поиска смысла",
+      "priceByn": 100,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ", "ОТНОШЕНИЯ", "СЕМЕЙНЫЕ ОТНОШЕНИЯ"],
+      "targetThemes": ["Семейные отношения", "семья", "Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость"],
+      "bookSlug": "bratya_karamazovy",
+      "purchaseUrl": "https://bebusel.info/facult-dostoevsky-books"
+    },
+    {
+      "title": "Бесы",
+      "author": "Фёдор Достоевский",
+      "description": "Что такое фанатизм и как он может разрушить всю жизнь?",
+      "priceByn": 100,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ", "ОТНОШЕНИЯ", "СЕМЕЙНЫЕ ОТНОШЕНИЯ"],
+      "targetThemes": ["Семейные отношения", "семья", "Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость"],
+      "bookSlug": "besy",
+      "purchaseUrl": "https://bebusel.info/facult-dostoevsky-books"
+    },
+    {
+      "title": "Отцы и дети",
+      "author": "Иван Тургенев",
+      "description": "Вечный конфликт конфликт поколений между «новыми» и «старыми» людьми.",
+      "priceByn": 100,
+      "categories": ["КРИЗИСЫ", "Я — ЖЕНЩИНА", "ЛЮБОВЬ", "ОТНОШЕНИЯ", "СЕМЕЙНЫЕ ОТНОШЕНИЯ"],
+      "targetThemes": ["Семейные отношения", "семья", "Любовь", "созависимость", "контрзависимость", "принять себя", "принять другого", "м и ж", "мужчина и женщина", "близость"],
+      "bookSlug": "ottsy_i_deti",
+      "purchaseUrl": "https://bebusel.info/facult-russian-books"
+    },
+    {
+      "title": "Выбор",
+      "author": "Эдит Ева Эгер",
+      "description": "Как оставаться сильной, когда жизнь разрушена? Где найти силы построить новое?",
+      "priceByn": 80,
+      "categories": ["СМЫСЛ ЖИЗНИ"],
+      "targetThemes": ["Смысл жизни"],
+      "bookSlug": "vybor",
+      "purchaseUrl": "https://bebusel.info/choice"
+    },
+    {
+      "title": "12 правил жизни",
+      "author": "Джордан Питерсон",
+      "description": "Про хаос мира, как выработать дисциплину и взять ответственность за свою жизнь",
+      "priceByn": 80,
+      "categories": ["СМЫСЛ ЖИЗНИ"],
+      "targetThemes": ["Смысл жизни"],
+      "bookSlug": "12_pravil_zhizni",
+      "purchaseUrl": "https://bebusel.info/razbor-12pravil"
+    },
+    {
+      "title": "Поток",
+      "author": "Михай Чиксентмихайи",
+      "description": "Инструкция как быть счастливым человеком. Книга показана каждому!",
+      "priceByn": 80,
+      "categories": ["СЧАСТЬЕ"],
+      "targetThemes": ["Счастье"],
+      "bookSlug": "potok",
+      "purchaseUrl": "https://bebusel.info/potok"
+    },
+    {
+      "title": "Атомные привычки",
+      "author": "Джеймс Клир",
+      "description": "Как выработать привычки и получать от них удовольствие",
+      "priceByn": 80,
+      "categories": ["ВРЕМЯ И ПРИВЫЧКИ"],
+      "targetThemes": ["Время и привычки"],
+      "bookSlug": "atomnye_privychki",
+      "purchaseUrl": "https://bebusel.info/atomic-habits"
+    },
+    {
+      "title": "4000 недель",
+      "author": "Оливер Беркман",
+      "description": "Что такое время? Почему времени не хватает?",
+      "priceByn": 80,
+      "categories": ["ВРЕМЯ И ПРИВЫЧКИ"],
+      "targetThemes": ["Время и привычки"],
+      "bookSlug": "4000_nedel",
+      "purchaseUrl": "https://bebusel.info/4000weeks"
+    },
+    {
+      "title": "Ада, или Отрада",
+      "author": "Владимир Набоков",
+      "description": "Про запретную любовь и чувства. Что делать в такой ситуации?",
+      "priceByn": 100,
+      "categories": ["ВРЕМЯ И ПРИВЫЧКИ"],
+      "targetThemes": ["Время и привычки"],
+      "bookSlug": "ada_ili_otrada",
+      "purchaseUrl": "https://bebusel.info/facult-nabokov-books"
+    },
+    {
+      "title": "Преступление и наказание",
+      "author": "Фёдор Достоевский",
+      "description": "Про то, как можно заиграться в бога и навредить не только себе, но и другим. Про цену свободы",
+      "priceByn": 80,
+      "categories": ["ПОИСК СЕБЯ"],
+      "targetThemes": ["Классика", "факультатив", "Достоевский", "преступление и наказание", "раскольников"],
+      "bookSlug": "prestuplenie_i_nakazanie",
+      "purchaseUrl": "https://bebusel.info/prest-nakaz"
+    },
+    {
+      "title": "Фауст",
+      "author": "Иоганн Вольфганг фон Гёте",
+      "description": "Почему мы соблазняемся на «плохое»? Что такое добро и зло?",
+      "priceByn": 100,
+      "categories": ["ДОБРО И ЗЛО"],
+      "targetThemes": ["Добро и зло"],
+      "bookSlug": "faust",
+      "purchaseUrl": "https://bebusel.info/facult-foreign-books"
+    },
+    {
+      "title": "Горе от ума",
+      "author": "Александр Грибоедов",
+      "description": "Что делать с конфликтом между старым и новым? Почему человеку не нужно слишком много свободы",
+      "priceByn": 100,
+      "categories": ["ОБЩЕСТВО"],
+      "targetThemes": ["Общество"],
+      "bookSlug": "gore_ot_uma",
+      "purchaseUrl": "https://bebusel.info/facult-russian-books"
+    },
+    {
+      "title": "Собачье сердце",
+      "author": "Михаил Булгаков",
+      "description": "Про перемены и ответственность. Почему у всего своя цена и как научиться эту цену платить?",
+      "priceByn": 100,
+      "categories": ["ОБЩЕСТВО"],
+      "targetThemes": ["Общество"],
+      "bookSlug": "sobache_serdtse",
+      "purchaseUrl": "https://bebusel.info/razbor-sobachye-serdce"
+    },
+    {
+      "title": "Мёртвые души",
+      "author": "Николай Гоголь",
+      "description": "Пустота жизни: что делать? Как ее наполнить своими смыслами?",
+      "priceByn": 100,
+      "categories": ["ОБЩЕСТВО"],
+      "targetThemes": ["Общество"],
+      "bookSlug": "myortvye_dushi",
+      "purchaseUrl": "https://bebusel.info/facult-russian-books"
+    },
+    {
+      "title": "Защита Лужина",
+      "author": "Владимир Набоков",
+      "description": "Почему человек сам себя рушит? Как выйти из разрушения?",
+      "priceByn": 100,
+      "categories": ["ПОИСК СЕБЯ"],
+      "targetThemes": ["Поиск себя"],
+      "bookSlug": "zaschita_luzhina",
+      "purchaseUrl": "https://bebusel.info/facult-nabokov-books"
+    },
+    {
+      "title": "БИОГРАФИЯ Владимира Набокова",
+      "author": null,
+      "description": "БИОГРАФИЯ Владимира Набокова",
+      "priceByn": 100,
+      "categories": ["ПОИСК СЕБЯ"],
+      "targetThemes": ["Поиск себя"],
+      "bookSlug": "biografiya_vladimira_nabokova",
+      "purchaseUrl": "https://bebusel.info/facult-nabokov-books"
+    },
+    {
+      "title": "БИОГРАФИЯ Льва Толстого",
+      "author": null,
+      "description": "БИОГРАФИЯ Льва Толстого",
+      "priceByn": 100,
+      "categories": ["ПОИСК СЕБЯ"],
+      "targetThemes": ["Поиск себя"],
+      "bookSlug": "biografiya_lva_tolstogo",
+      "purchaseUrl": "https://bebusel.info/facult-tolstoy-books"
+    }
+  ],
+  "packages": [
+    {
+      "title": "ФАКУЛЬТАТИВ «Федор Достоевский»",
+      "description": "Входит:\n— Братья Карамазовы\n— Бесы\n— Бедные люди",
+      "booksInPackage": ["bratya_karamazovy", "besy", "bednye_lyudi"],
+      "priceByn": 280,
+      "priceRub": 8400,
+      "purchaseUrl": "https://bebusel.info/facult-dostoevskiy",
+      "packageSlug": "facultativ_dostoevsky"
+    },
+    {
+      "title": "ФАКУЛЬТАТИВ «Владимир Набоков»",
+      "description": "Входит:\n— Ада, или Отрада\n— Защита Лужина\n— Дар\n— биография Набокова",
+      "booksInPackage": ["ada_ili_otrada", "zaschita_luzhina", "dar", "biografiya_vladimira_nabokova"],
+      "priceByn": 280,
+      "priceRub": 8400,
+      "purchaseUrl": "https://bebusel.info/facult-nabokov",
+      "packageSlug": "facultativ_nabokov"
+    },
+    {
+      "title": "ФАКУЛЬТАТИВ «Детская классика»",
+      "description": "Входит:\n— Михаил Булгаков «Собачье сердце»\n— А. С. Пушкин «Сказка о рыбаке и рыбке»\n— Ханс Кристиан Андерсен «Русалочка»\n— Сестрица Аленушка и братец Иванушка\n— Сказка о мертвой царевне и семи богатырях",
+      "booksInPackage": ["sobache_serdtse", "skazka_o_rybake_i_rybke", "rusalochka", "alenushka_ivanushka", "skazka_o_mertvoy_tsarivne"],
+      "priceByn": 280,
+      "priceRub": 8400,
+      "purchaseUrl": "https://bebusel.info/facult-children",
+      "packageSlug": "facultativ_children"
+    },
+    {
+      "title": "ФАКУЛЬТАТИВ «Лев Толстой»",
+      "description": "Входит:\n— Анна Каренина\n— Война и мир\n— биография Толстого",
+      "booksInPackage": ["anna_karenina", "voyna_i_mir", "biografiya_lva_tolstogo"],
+      "priceByn": 280,
+      "priceRub": 8400,
+      "purchaseUrl": "https://bebusel.info/facult-tolstoy",
+      "packageSlug": "facultativ_tolstoy"
+    },
+    {
+      "title": "ФАКУЛЬТАТИВ «Зарубежная классика»",
+      "description": "Входит:\n— Фауст (Гёте)\n— Процесс (Кафка)\n— Гроздья гнева (Стейнбек)\n— Сто лет одиночества (Габриэль Гарсиа Маркес)",
+      "booksInPackage": ["faust", "protsess", "grozdya_gneva", "sto_let_odinochestva"],
+      "priceByn": 280,
+      "priceRub": 8400,
+      "purchaseUrl": "https://bebusel.info/facult-foreign",
+      "packageSlug": "facultativ_foreign"
+    },
+    {
+      "title": "ФАКУЛЬТАТИВ «Русская классика»",
+      "description": "Входит:\n— Мертвые души (Гоголь)\n— Горе от ума (Грибоедов)\n— Отцы и дети (Тургенев)\n— Вишнёвый сад (Чехов)",
+      "booksInPackage": ["myortvye_dushi", "gore_ot_uma", "ottsy_i_deti", "vishnyovyy_sad"],
+      "priceByn": 280,
+      "priceRub": 8400,
+      "purchaseUrl": "https://bebusel.info/facult-russian",
+      "packageSlug": "facultativ_russian"
+    }
+  ]
+}
