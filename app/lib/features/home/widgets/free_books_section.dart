@@ -30,7 +30,7 @@ class FreeBooksSection extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         SizedBox(
-          height: 250,
+          height: 260,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(
