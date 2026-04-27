@@ -12,6 +12,10 @@ class FreeBooksSection extends StatelessWidget {
   const FreeBooksSection({super.key, required this.books});
   final List<BookModel> books;
 
+  static const double _cardWidth = 140;
+  static const double _coverHeight = 180;
+  static const double _cardHeight = 270;
+
   @override
   Widget build(BuildContext context) {
     if (books.isEmpty) return const SizedBox.shrink();
@@ -30,7 +34,7 @@ class FreeBooksSection extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         SizedBox(
-          height: 250,
+          height: _cardHeight,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(
@@ -38,7 +42,11 @@ class FreeBooksSection extends StatelessWidget {
             ),
             itemCount: books.length,
             separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, index) => _FreeBookCard(book: books[index]),
+            itemBuilder: (context, index) => _FreeBookCard(
+              book: books[index],
+              width: _cardWidth,
+              coverHeight: _coverHeight,
+            ),
           ),
         ),
       ],
@@ -47,18 +55,25 @@ class FreeBooksSection extends StatelessWidget {
 }
 
 class _FreeBookCard extends StatelessWidget {
-  const _FreeBookCard({required this.book});
+  const _FreeBookCard({
+    required this.book,
+    required this.width,
+    required this.coverHeight,
+  });
   final BookModel book;
+  final double width;
+  final double coverHeight;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 140,
+      width: width,
       child: InkWell(
         onTap: () => context.push(Routes.book(book.id)),
         borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Stack(
               children: [
@@ -66,8 +81,8 @@ class _FreeBookCard extends StatelessWidget {
                   imageUrl: book.coverImageUrl,
                   gradientColors: book.coverGradientColors,
                   label: book.coverLabel,
-                  width: 140,
-                  height: 180,
+                  width: width,
+                  height: coverHeight,
                 ),
                 Positioned(
                   top: 8,
