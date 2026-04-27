@@ -12,6 +12,7 @@ import '../../features/auth/screens/email_login_screen.dart';
 import '../../features/auth/screens/email_register_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/home/screens/home_screen.dart';
+import '../../features/catalog/screens/catalog_screen.dart';
 
 // — Key для ShellRoute navigator —
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -93,7 +94,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: Routes.catalog,
             pageBuilder: (context, state) => const NoTransitionPage(
-              child: _Placeholder('Каталог'),
+              child: CatalogScreen(),
             ),
           ),
           GoRoute(
