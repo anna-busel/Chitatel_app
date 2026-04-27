@@ -13,10 +13,6 @@ class PopularBooksSection extends StatelessWidget {
   const PopularBooksSection({super.key, required this.books});
   final List<BookModel> books;
 
-  static const double _cardWidth = 140;
-  static const double _coverHeight = 180;
-  static const double _cardHeight = 295;
-
   @override
   Widget build(BuildContext context) {
     if (books.isEmpty) return const SizedBox.shrink();
@@ -35,7 +31,9 @@ class PopularBooksSection extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         SizedBox(
-          height: _cardHeight,
+          // Высота с запасом: обложка 180 + gap 8 + title 2 строки (~40) +
+          // gap 2 + author (~18) + gap 6 + price (~20) = ~274. Берём 295.
+          height: 295,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(
@@ -43,11 +41,7 @@ class PopularBooksSection extends StatelessWidget {
             ),
             itemCount: books.length,
             separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, index) => _PopularBookCard(
-              book: books[index],
-              width: _cardWidth,
-              coverHeight: _coverHeight,
-            ),
+            itemBuilder: (context, index) => _PopularBookCard(book: books[index]),
           ),
         ),
       ],
@@ -56,34 +50,28 @@ class PopularBooksSection extends StatelessWidget {
 }
 
 class _PopularBookCard extends StatelessWidget {
-  const _PopularBookCard({
-    required this.book,
-    required this.width,
-    required this.coverHeight,
-  });
+  const _PopularBookCard({required this.book});
   final BookModel book;
-  final double width;
-  final double coverHeight;
 
   @override
   Widget build(BuildContext context) {
     final price = book.displayPriceUsd;
 
     return SizedBox(
-      width: width,
+      width: 140,
       child: InkWell(
         onTap: () => context.push(Routes.book(book.id)),
         borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             BookCoverImage(
               imageUrl: book.coverImageUrl,
               gradientColors: book.coverGradientColors,
               label: book.coverLabel,
-              width: width,
-              height: coverHeight,
+              width: 140,
+              height: 180,
             ),
             const SizedBox(height: 8),
             Text(
