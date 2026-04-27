@@ -30,9 +30,7 @@ class FreeBooksSection extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         SizedBox(
-          // Высота с запасом: обложка 180 + gap 8 + title 2 строки (~40) +
-          // gap 2 + author 1 строка (~18) + внутренний padding = ~258. Берём 270.
-          height: 270,
+          height: 250,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(
@@ -60,7 +58,6 @@ class _FreeBookCard extends StatelessWidget {
         onTap: () => context.push(Routes.book(book.id)),
         borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Stack(

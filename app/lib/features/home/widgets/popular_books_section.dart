@@ -31,9 +31,7 @@ class PopularBooksSection extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         SizedBox(
-          // Высота с запасом: обложка 180 + gap 8 + title 2 строки (~40) +
-          // gap 2 + author (~18) + gap 6 + price (~20) = ~274. Берём 295.
-          height: 295,
+          height: 270,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(
@@ -63,7 +61,6 @@ class _PopularBookCard extends StatelessWidget {
         onTap: () => context.push(Routes.book(book.id)),
         borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             BookCoverImage(
