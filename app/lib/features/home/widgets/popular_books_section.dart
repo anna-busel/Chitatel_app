@@ -31,7 +31,7 @@ class PopularBooksSection extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         SizedBox(
-          height: 270,
+          height: 280,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(
