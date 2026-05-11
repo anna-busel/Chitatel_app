@@ -36,6 +36,9 @@ class ApiEndpoints {
   static const String booksSearch = '/books/search';
   static const String packages = '/packages';
 
+  /// GET /api/books/:id — детальная информация о книге.
+  static String bookById(String id) => '/books/$id';
+
   // — Health —
   static const String health = '/health';
 }
