@@ -13,6 +13,7 @@ import '../../features/auth/screens/email_register_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/catalog/screens/catalog_screen.dart';
+import '../../features/book/screens/book_screen.dart';
 
 // — Key для ShellRoute navigator —
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -118,7 +119,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) {
           final id = state.pathParameters['id'] ?? '';
-          return _Placeholder('Книга: $id');
+          return BookScreen(bookId: id);
         },
       ),
       GoRoute(
