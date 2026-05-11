@@ -1,5 +1,39 @@
 import 'package:flutter/foundation.dart';
 
+/// Часть аудиоразбора (глава).
+/// Соответствует partSchema в server/src/models/Book.js.
+@immutable
+class BookPart {
+  const BookPart({
+    required this.number,
+    required this.title,
+    required this.duration,
+    this.isPreviewAvailable = false,
+  });
+
+  /// Порядковый номер части (1, 2, 3...).
+  final int number;
+  final String title;
+
+  /// Длительность в секундах.
+  final int duration;
+
+  /// true для 1-й части платных книг (5-минутное превью).
+  final bool isPreviewAvailable;
+
+  factory BookPart.fromJson(Map<String, dynamic> json) {
+    return BookPart(
+      number: (json['number'] as num?)?.toInt() ?? 0,
+      title: json['title'] as String? ?? '',
+      duration: (json['duration'] as num?)?.toInt() ?? 0,
+      isPreviewAvailable: json['isPreviewAvailable'] as bool? ?? false,
+    );
+  }
+
+  /// Длительность для UI — «45 мин» или «1 ч 12 мин».
+  String get displayDuration => _formatDuration(duration);
+}
+
 /// Модель книги (аудиоразбора) на клиенте.
 /// Соответствует схеме server/src/models/Book.js (источник истины).
 ///
@@ -25,6 +59,10 @@ class BookModel {
     this.isPartOfClub = false,
     this.rating = 0,
     this.reviewCount = 0,
+    this.parts = const [],
+    this.purchaseUrl = '',
+    this.appleProductId,
+    this.freeChapterIndex = 0,
   });
 
   /// MongoDB ObjectId (строкой)
@@ -65,6 +103,21 @@ class BookModel {
   final double rating;
   final int reviewCount;
 
+  /// Список частей разбора. Пустой если аудио ещё не загружено.
+  final List<BookPart> parts;
+
+  /// Ссылка на покупку на внешнем сайте Анны (anna-busel.com).
+  /// Используется как фоллбек для юзеров где Apple IAP недоступен.
+  /// См. AI-CONTEXT → «Кнопка Купить на сайте для юзеров России».
+  final String purchaseUrl;
+
+  /// Product ID для Apple IAP (например `book.anna_karenina`).
+  /// Реальная покупка появится в задаче 3.5.
+  final String? appleProductId;
+
+  /// Индекс бесплатной части для превью платных (0-based).
+  final int freeChapterIndex;
+
   /// Парсинг JSON-ответа бэкенда.
   /// Все поля optional — бэкенд может отдавать урезанный projection.
   factory BookModel.fromJson(Map<String, dynamic> json) {
@@ -88,6 +141,10 @@ class BookModel {
       isPartOfClub: json['isPartOfClub'] as bool? ?? false,
       rating: (json['rating'] as num?)?.toDouble() ?? 0,
       reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
+      parts: _parseParts(json['parts']),
+      purchaseUrl: json['purchaseUrl'] as String? ?? '',
+      appleProductId: json['appleProductId'] as String?,
+      freeChapterIndex: (json['freeChapterIndex'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -98,8 +155,35 @@ class BookModel {
     return null;
   }
 
+  static List<BookPart> _parseParts(dynamic raw) {
+    if (raw is List) {
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(BookPart.fromJson)
+          .toList(growable: false);
+    }
+    return const [];
+  }
+
   /// Цена для отображения в UI (USD с долларом).
   /// Когда подключим StoreKit — будем использовать локализованную цену оттуда.
   String? get displayPriceUsd =>
       priceUsd != null ? '\$${priceUsd!.toStringAsFixed(2)}' : null;
+
+  /// Общая длительность для UI — «3 ч 45 мин» или «45 мин».
+  /// Возвращает пустую строку если durationTotal == 0.
+  String get displayDuration =>
+      durationTotal == 0 ? '' : _formatDuration(durationTotal);
+}
+
+/// Форматирует длительность в секундах в строку для UI.
+/// Примеры: 2700 → «45 мин», 4500 → «1 ч 15 мин», 3600 → «1 ч».
+String _formatDuration(int seconds) {
+  if (seconds <= 0) return '';
+  final totalMinutes = seconds ~/ 60;
+  final hours = totalMinutes ~/ 60;
+  final minutes = totalMinutes % 60;
+  if (hours == 0) return '$minutes мин';
+  if (minutes == 0) return '$hours ч';
+  return '$hours ч $minutes мин';
 }
