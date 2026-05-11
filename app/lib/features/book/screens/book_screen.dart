@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
@@ -377,9 +376,6 @@ class _ActionSection extends StatelessWidget {
       book: book,
       onBuy: () => _onBuyPressed(context),
       onPreview: () => _onListenPressed(context),
-      onBuyOnSite: book.purchaseUrl.isEmpty
-          ? null
-          : () => _openPurchaseUrl(context, book.purchaseUrl),
     );
   }
 
@@ -401,20 +397,6 @@ class _ActionSection extends StatelessWidget {
         duration: Duration(seconds: 2),
       ),
     );
-  }
-
-  Future<void> _openPurchaseUrl(BuildContext context, String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Не удалось открыть ссылку'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
   }
 }
 
@@ -459,19 +441,20 @@ class _FreeActions extends StatelessWidget {
 }
 
 // — 4.13 платная (не куплена) —
+// Apple запрещает в приложении призывать покупать вне Apple IAP
+// (правило 3.1.1, послабления 3.1.1(a) действуют только в US storefront).
+// Поэтому здесь ТОЛЬКО IAP-кнопка и превью. Никаких ссылок на внешние сайты.
 
 class _PaidActions extends StatelessWidget {
   const _PaidActions({
     required this.book,
     required this.onBuy,
     required this.onPreview,
-    required this.onBuyOnSite,
   });
 
   final BookModel book;
   final VoidCallback onBuy;
   final VoidCallback onPreview;
-  final VoidCallback? onBuyOnSite;
 
   @override
   Widget build(BuildContext context) {
@@ -489,30 +472,6 @@ class _PaidActions extends StatelessWidget {
           onPressed: onPreview,
           variant: AppButtonVariant.outline,
         ),
-        if (onBuyOnSite != null) ...[
-          const SizedBox(height: 10),
-          // Apple Guideline 3.1.1(a): вторая кнопка-ссылка на внешний сайт.
-          // Намеренно компактнее основной кнопки.
-          Center(
-            child: InkWell(
-              onTap: onBuyOnSite,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                child: Text(
-                  'Купить на сайте автора →',
-                  style: AppTypography.caption.copyWith(
-                    color: AppColors.textSecondary,
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
       ],
     );
   }
