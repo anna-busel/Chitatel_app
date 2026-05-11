@@ -177,11 +177,9 @@ class _TopBar extends StatelessWidget {
 /// Секция обложки книги.
 ///
 /// Обложки у Анны — вертикальные (стандартная пропорция книги ~2:3).
-/// Поэтому показываем обложку как «книгу на полке»:
-/// - Тёмный фон-баннер высотой 260px (градиент из coverGradientColors книги)
-/// - Сама обложка по центру: ширина 168px, высота 240px (пропорция 7:10)
-/// - Лёгкая тень под обложкой для объёма
-/// - Бейдж «БЕСПЛАТНО» — на углу обложки, не на баннере
+/// Решение: показываем обложку по центру на основном фоне приложения
+/// без баннера-фона (никаких чёрных/тёмных полей вокруг).
+/// Лёгкая тень даёт ощущение «карточки на полке» — как в Apple Books, Spotify.
 ///
 /// Если coverImageUrl пустой — BookCoverImage сам покажет fallback (градиент + label).
 class _CoverSection extends StatelessWidget {
@@ -189,85 +187,56 @@ class _CoverSection extends StatelessWidget {
 
   final BookModel book;
 
-  static const double _bannerHeight = 260;
-  static const double _coverWidth = 168;
-  static const double _coverHeight = 240;
+  static const double _coverWidth = 180;
+  static const double _coverHeight = 258; // пропорция ~10:14, близко к 2:3
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.screenPadding,
+      padding: const EdgeInsets.only(
+        left: AppSpacing.screenPadding,
+        right: AppSpacing.screenPadding,
+        top: 8,
+        bottom: 4,
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
-        child: Container(
-          width: double.infinity,
-          height: _bannerHeight,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: _bannerGradient(),
-            ),
-          ),
-          child: Center(
-            child: SizedBox(
-              width: _coverWidth,
-              height: _coverHeight,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.35),
-                          blurRadius: 18,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
+      child: Center(
+        child: SizedBox(
+          width: _coverWidth,
+          height: _coverHeight,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.18),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
                     ),
-                    child: BookCoverImage(
-                      imageUrl: book.coverImageUrl,
-                      gradientColors: book.coverGradientColors,
-                      label: book.coverLabel,
-                      width: _coverWidth,
-                      height: _coverHeight,
-                      borderRadius: 8,
-                    ),
-                  ),
-                  if (book.isFree)
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: _Badge.free(),
-                    ),
-                ],
+                  ],
+                ),
+                child: BookCoverImage(
+                  imageUrl: book.coverImageUrl,
+                  gradientColors: book.coverGradientColors,
+                  label: book.coverLabel,
+                  width: _coverWidth,
+                  height: _coverHeight,
+                  borderRadius: 12,
+                ),
               ),
-            ),
+              if (book.isFree)
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: _Badge.free(),
+                ),
+            ],
           ),
         ),
       ),
     );
-  }
-
-  /// Берём первый цвет градиента книги и затемняем его для фона-баннера.
-  /// Если данных нет — fallback на кофейный градиент дизайн-системы.
-  List<Color> _bannerGradient() {
-    final raw = book.coverGradientColors;
-    if (raw.length < 2) {
-      return const [AppColors.darkCoffee, AppColors.lightCoffee];
-    }
-    return [_hexToColor(raw[0]), _hexToColor(raw[1])];
-  }
-
-  Color _hexToColor(String hex) {
-    var cleaned = hex.replaceFirst('#', '');
-    if (cleaned.length == 6) cleaned = 'FF$cleaned';
-    final value = int.tryParse(cleaned, radix: 16);
-    return value == null ? AppColors.darkCoffee : Color(value);
   }
 }
 
@@ -752,7 +721,9 @@ class _BookShimmer extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const ShimmerBlock(width: double.infinity, height: 260),
+            Center(
+              child: ShimmerBlock(width: 180, height: 258, borderRadius: 12),
+            ),
             const SizedBox(height: 20),
             const ShimmerBlock(width: 260, height: 24),
             const SizedBox(height: 8),
