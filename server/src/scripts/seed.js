@@ -61,20 +61,19 @@ const packageCoverFilenames = {
 // В разработке: ~/Chitatel_app/audio-storage/malenkii_princ/part-N.mp3
 // В продакшене: /var/audio/chitatel/malenkii_princ/part-N.mp3
 //
-// duration — длительность в секундах. Пока приблизительные значения
-// (точные обновим после ffprobe на реальных файлах если потребуется).
+// duration — точные значения из ffprobe на реальных MP3 (192 kbps).
 // audioFilename — относительный путь от AUDIO_BASE_PATH.
 //
 // Книга бесплатная (isFree: true) — все части доступны без покупки.
 // isPreviewAvailable не нужно (актуально только для платных).
 
 const MALENKII_PRINC_PARTS = [
-  { number: 1, title: 'Часть 1', duration: 0, audioFilename: 'malenkii_princ/part-1.mp3' },
-  { number: 2, title: 'Часть 2', duration: 0, audioFilename: 'malenkii_princ/part-2.mp3' },
-  { number: 3, title: 'Часть 3', duration: 0, audioFilename: 'malenkii_princ/part-3.mp3' },
-  { number: 4, title: 'Часть 4', duration: 0, audioFilename: 'malenkii_princ/part-4.mp3' },
-  { number: 5, title: 'Часть 5', duration: 0, audioFilename: 'malenkii_princ/part-5.mp3' },
-  { number: 6, title: 'Часть 6', duration: 0, audioFilename: 'malenkii_princ/part-6.mp3' },
+  { number: 1, title: 'Часть 1', duration: 855, audioFilename: 'malenkii_princ/part-1.mp3' },
+  { number: 2, title: 'Часть 2', duration: 398, audioFilename: 'malenkii_princ/part-2.mp3' },
+  { number: 3, title: 'Часть 3', duration: 700, audioFilename: 'malenkii_princ/part-3.mp3' },
+  { number: 4, title: 'Часть 4', duration: 1377, audioFilename: 'malenkii_princ/part-4.mp3' },
+  { number: 5, title: 'Часть 5', duration: 1987, audioFilename: 'malenkii_princ/part-5.mp3' },
+  { number: 6, title: 'Часть 6', duration: 1896, audioFilename: 'malenkii_princ/part-6.mp3' },
 ];
 
 // --- Список бесплатных промо-разборов (без цены, isFree: true) ---
@@ -263,7 +262,11 @@ async function seed() {
   // Логируем какие бесплатные с реальным аудио
   const withAudio = insertedFree.filter((b) => b.parts.length > 0);
   if (withAudio.length > 0) {
-    console.log(`   🎧 С аудиофайлами: ${withAudio.map((b) => `${b.title} (${b.parts.length} частей)`).join(', ')}`);
+    console.log(`   🎧 С аудиофайлами:`);
+    for (const b of withAudio) {
+      const minutes = Math.round(b.durationTotal / 60);
+      console.log(`      ${b.title}: ${b.parts.length} частей, ~${minutes} мин`);
+    }
   }
 
   const bookSlugToId = new Map();
