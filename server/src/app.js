@@ -8,6 +8,8 @@ const authRoutes = require('./routes/auth');
 const bookRoutes = require('./routes/books');
 const packageRoutes = require('./routes/packages');
 const homeRoutes = require('./routes/home');
+const audioRoutes = require('./routes/audio');
+const progressRoutes = require('./routes/progress');
 
 const app = express();
 
@@ -31,11 +33,16 @@ app.get('/api/health', (_req, res) => {
   return success(res, { status: 'ok' });
 });
 
-// Routes
+// API Routes
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/books', bookRoutes);
 app.use('/api/packages', packageRoutes);
 app.use('/api/home', homeRoutes);
+app.use('/api/progress', progressRoutes);
+
+// Audio streaming (на корне, не под /api — это стриминг файлов, не JSON API)
+// Защита через signed URL — проверяется внутри роута.
+app.use('/audio', audioRoutes);
 
 // 404 handler
 app.use((_req, res) => {

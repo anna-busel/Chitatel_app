@@ -6,6 +6,7 @@ const { success, paginated } = require('../utils/response');
 const { AppError } = require('../middleware/error');
 const Book = require('../models/Book');
 const User = require('../models/User');
+const { generateSignedUrl } = require('../services/audio.service');
 
 const router = Router();
 
@@ -126,9 +127,13 @@ router.get('/:id', async (req, res, next) => {
 
 /**
  * GET /api/books/:id/audio/:partNumber
- * MASTER 7.4: signed URL для аудио
- * Для платных книг — требует авторизацию + проверку покупки/подписки
- * Для бесплатных — без авторизации (но через signed URL)
+ * Возвращает SIGNED URL для проигрывания аудио (задача 2.3).
+ * URL действует AUDIO_URL_TTL_SECONDS (по умолчанию 1 час).
+ *
+ * Доступ:
+ * - Бесплатная книга — без авторизации, любой может слушать
+ * - Платная часть с isPreviewAvailable: true — без авторизации (5-минутное превью)
+ * - Платная часть без превью — нужна авторизация + покупка/подписка/архив
  */
 router.get('/:id/audio/:partNumber', optionalAuth, async (req, res, next) => {
   try {
@@ -144,57 +149,64 @@ router.get('/:id/audio/:partNumber', optionalAuth, async (req, res, next) => {
     const partNumber = parseInt(req.params.partNumber, 10);
     const part = book.parts.find((p) => p.number === partNumber);
 
-    if (!part) {
-      throw new AppError('NOT_FOUND', 'Часть не найдена', 404);
+    if (!part || !part.audioFilename) {
+      throw new AppError('NOT_FOUND', 'Часть не найдена или аудио не загружено', 404);
     }
 
-    // Бесплатная книга — доступ всем
-    if (book.isFree) {
-      return success(res, {
-        audioFilename: part.audioFilename,
-        duration: part.duration,
-        // TODO (задача 2.3): signed URL вместо filename
-      });
-    }
-
-    // Платная книга — проверяем превью
-    if (part.isPreviewAvailable) {
-      return success(res, {
-        audioFilename: part.audioFilename,
-        duration: part.duration,
-        isPreview: true,
-      });
-    }
-
-    // Платная часть — нужна авторизация
-    if (!req.user) {
-      throw new AppError('UNAUTHORIZED', 'Требуется авторизация', 401);
-    }
-
-    // Проверяем покупку или подписку
-    const user = await User.findById(req.user.userId).lean();
-    if (!user) {
-      throw new AppError('UNAUTHORIZED', 'Пользователь не найден', 401);
-    }
-
-    const hasPurchased = user.purchasedBooks && user.purchasedBooks.some(
-      (id) => id.toString() === book._id.toString()
-    );
-    const hasSubscription = user.subscriptionStatus === 'basic' || user.subscriptionStatus === 'premium';
-    const hasArchive = user.hasArchiveAccess;
-
-    if (!hasPurchased && !hasSubscription && !hasArchive) {
+    // Проверка доступа
+    const isAccessible = await checkPartAccess(book, part, req.user);
+    if (!isAccessible) {
       throw new AppError('PURCHASE_REQUIRED', 'Контент платный, не куплен', 403);
     }
 
+    // Генерируем signed URL
+    const audioUrl = generateSignedUrl(part.audioFilename);
+
     return success(res, {
-      audioFilename: part.audioFilename,
+      audioUrl,
       duration: part.duration,
-      // TODO (задача 2.3): signed URL
+      partNumber: part.number,
+      title: part.title,
+      isPreview: !!part.isPreviewAvailable && !book.isFree,
     });
   } catch (err) {
     return next(err);
   }
 });
+
+/**
+ * Проверка доступа к части аудиоразбора.
+ * Возвращает true если можно проигрывать, false если нужна покупка/подписка.
+ */
+async function checkPartAccess(book, part, userPayload) {
+  // Бесплатная книга — всем
+  if (book.isFree) return true;
+
+  // Превью платной части (1-я часть платной книги) — всем
+  if (part.isPreviewAvailable) return true;
+
+  // Дальше нужна авторизация
+  if (!userPayload) return false;
+
+  // Загружаем юзера для проверки подписки/покупок
+  const user = await User.findById(userPayload.userId).lean();
+  if (!user) return false;
+
+  // Куплена ли книга отдельно
+  const hasPurchased = user.purchasedBooks && user.purchasedBooks.some(
+    (id) => id.toString() === book._id.toString()
+  );
+  if (hasPurchased) return true;
+
+  // Активная подписка
+  const hasSubscription =
+    user.subscriptionStatus === 'basic' || user.subscriptionStatus === 'premium';
+  if (hasSubscription) return true;
+
+  // Архивный доступ (21 день после окончания клуба)
+  if (user.hasArchiveAccess) return true;
+
+  return false;
+}
 
 module.exports = router;

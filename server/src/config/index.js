@@ -6,6 +6,7 @@ const config = {
   port: parseInt(process.env.PORT, 10) || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
   mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017/chitatel',
+  publicBaseUrl: process.env.PUBLIC_BASE_URL || 'http://localhost:3000',
 
   jwt: {
     secret: process.env.JWT_SECRET || 'dev-jwt-secret',
@@ -30,8 +31,12 @@ const config = {
   },
 
   audio: {
-    secret: process.env.AUDIO_SECRET || 'dev-audio-secret',
+    // HMAC-ключ для подписи временных URL
+    secret: process.env.AUDIO_SECRET || 'dev-audio-secret-CHANGE-IN-PROD-min-32-chars',
+    // Корневая папка с MP3 на файловой системе
     basePath: process.env.AUDIO_BASE_PATH || '/var/audio/chitatel',
+    // Срок действия signed URL в секундах (1 час по умолчанию)
+    urlTtlSeconds: parseInt(process.env.AUDIO_URL_TTL_SECONDS, 10) || 3600,
   },
 
   admin: {
