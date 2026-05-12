@@ -14,6 +14,7 @@ import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/catalog/screens/catalog_screen.dart';
 import '../../features/book/screens/book_screen.dart';
+import '../../features/search/screens/search_screen.dart';
 
 // — Key для ShellRoute navigator —
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -133,7 +134,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.search,
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _Placeholder('Поиск'),
+        builder: (context, state) => const SearchScreen(),
       ),
       GoRoute(
         path: Routes.paywall,
