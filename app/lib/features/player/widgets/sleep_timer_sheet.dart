@@ -1,0 +1,271 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_typography.dart';
+import '../../../core/constants/app_spacing.dart';
+import '../providers/player_provider.dart';
+
+/// Шторка таймера сна (MASTER 4.19).
+///
+/// 5 опций: 15 / 30 / 45 / 60 мин / Конец части.
+/// Если таймер уже активен — показывается счётчик и кнопка «Отменить».
+///
+/// Открывать через:
+/// ```
+/// showModalBottomSheet(
+///   context: context,
+///   backgroundColor: Colors.transparent,
+///   useRootNavigator: true,
+///   builder: (_) => const SleepTimerSheet(),
+/// );
+/// ```
+class SleepTimerSheet extends ConsumerWidget {
+  const SleepTimerSheet({super.key});
+
+  static const List<int> _minutesOptions = [15, 30, 45, 60];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final handler = ref.read(audioHandlerProvider);
+    final remainingAsync = ref.watch(sleepTimerRemainingProvider);
+
+    return SafeArea(
+      child: Container(
+        decoration: const BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _DragHandle(),
+            const SizedBox(height: 16),
+            Text(
+              'Таймер сна',
+              style: AppTypography.serifSectionTitle,
+            ),
+            const SizedBox(height: 20),
+
+            // Если таймер активен — счётчик + «Отменить»
+            remainingAsync.when(
+              data: (remaining) {
+                final isActive = remaining != null || handler.sleepUntilEndOfPart;
+                if (isActive) {
+                  return _ActiveTimerCard(
+                    remaining: remaining,
+                    isEndOfPart: handler.sleepUntilEndOfPart,
+                    onCancel: () {
+                      handler.cancelSleepTimer();
+                      Navigator.of(context).pop();
+                    },
+                  );
+                }
+                return _TimerOptions(
+                  onMinutesSelected: (m) {
+                    handler.setSleepTimer(Duration(minutes: m));
+                    Navigator.of(context).pop();
+                  },
+                  onEndOfPartSelected: () {
+                    handler.setSleepUntilEndOfPart();
+                    Navigator.of(context).pop();
+                  },
+                );
+              },
+              loading: () => _TimerOptions(
+                onMinutesSelected: (m) {
+                  handler.setSleepTimer(Duration(minutes: m));
+                  Navigator.of(context).pop();
+                },
+                onEndOfPartSelected: () {
+                  handler.setSleepUntilEndOfPart();
+                  Navigator.of(context).pop();
+                },
+              ),
+              error: (_, __) => _TimerOptions(
+                onMinutesSelected: (m) {
+                  handler.setSleepTimer(Duration(minutes: m));
+                  Navigator.of(context).pop();
+                },
+                onEndOfPartSelected: () {
+                  handler.setSleepUntilEndOfPart();
+                  Navigator.of(context).pop();
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DragHandle extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 36,
+        height: 4,
+        decoration: BoxDecoration(
+          color: AppColors.dividerWarm,
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActiveTimerCard extends StatelessWidget {
+  const _ActiveTimerCard({
+    required this.remaining,
+    required this.isEndOfPart,
+    required this.onCancel,
+  });
+
+  final Duration? remaining;
+  final bool isEndOfPart;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = isEndOfPart
+        ? 'До конца текущей части'
+        : 'Осталось ${_formatRemaining(remaining ?? Duration.zero)}';
+
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceLight,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+          ),
+          child: Column(
+            children: [
+              const Icon(Icons.bedtime_outlined,
+                  size: 28, color: AppColors.terracotta),
+              const SizedBox(height: 8),
+              Text(label, style: AppTypography.bodyMedium),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: Semantics(
+            label: 'Отменить таймер сна',
+            button: true,
+            child: Material(
+              color: AppColors.terracotta,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+              child: InkWell(
+                onTap: onCancel,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+                child: Center(
+                  child: Text(
+                    'Отменить',
+                    style: AppTypography.button.copyWith(color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatRemaining(Duration d) {
+    if (d.inHours > 0) {
+      final m = d.inMinutes.remainder(60);
+      return '${d.inHours} ч $m мин';
+    }
+    if (d.inMinutes > 0) {
+      return '${d.inMinutes} мин';
+    }
+    return '${d.inSeconds} сек';
+  }
+}
+
+class _TimerOptions extends StatelessWidget {
+  const _TimerOptions({
+    required this.onMinutesSelected,
+    required this.onEndOfPartSelected,
+  });
+
+  final ValueChanged<int> onMinutesSelected;
+  final VoidCallback onEndOfPartSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // 4 кнопки минут в 2 ряда (15/30 — первый ряд, 45/60 — второй)
+        Row(
+          children: [
+            Expanded(child: _TimerButton(label: '15 мин', onTap: () => onMinutesSelected(15))),
+            const SizedBox(width: 8),
+            Expanded(child: _TimerButton(label: '30 мин', onTap: () => onMinutesSelected(30))),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: _TimerButton(label: '45 мин', onTap: () => onMinutesSelected(45))),
+            const SizedBox(width: 8),
+            Expanded(child: _TimerButton(label: '60 мин', onTap: () => onMinutesSelected(60))),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _TimerButton(
+          label: 'Конец части',
+          onTap: onEndOfPartSelected,
+          isFullWidth: true,
+        ),
+      ],
+    );
+  }
+}
+
+class _TimerButton extends StatelessWidget {
+  const _TimerButton({
+    required this.label,
+    required this.onTap,
+    this.isFullWidth = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool isFullWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Таймер сна: $label',
+      button: true,
+      child: Material(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+          child: Container(
+            width: isFullWidth ? double.infinity : null,
+            height: 56,
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: AppTypography.button.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
