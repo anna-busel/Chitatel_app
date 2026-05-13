@@ -13,7 +13,7 @@ import '../providers/player_provider.dart';
 import '../widgets/speed_sheet.dart';
 import '../widgets/sleep_timer_sheet.dart';
 
-/// Развёрнутый плеер (MASTER 4.15, прототип v4.2).
+/// Развёрнутый плеер (MASTER 4.15).
 ///
 /// Открывается через `/player/:bookId`, может прийти с дополнительными
 /// параметрами в `extra`: `{'startPart': int?, 'startPosition': int?}`.
@@ -24,18 +24,17 @@ import '../widgets/sleep_timer_sheet.dart';
 ///    с новой частью (юзер тапнул часть 2 при играющей части 1).
 /// 3. Та же книга и часть → ничего не делаем (юзер пришёл из mini-player).
 ///
-/// Цвета — точный матч прототипа v4.2:
-/// - фон: градиент #1A0E08 → #0D0705 (180deg)
+/// Цвета (13.05.2026 v3 — шоколадные тона, согласовано с заказчиком):
+/// - фон: градиент #3A2018 (lightCoffee, сверху) → #1A0E08 (darkCoffee, снизу).
+///   Тот же тон что в карточке «Клуб месяца» на главной — визуальная связь.
 /// - status bar: светлые иконки (AnnotatedRegion)
 /// - обложка: 220×220 (точный матч прототипа)
 ///
 /// Apple HIG → Now Playing screen: deep immersive color, минимум элементов,
-/// фокус на воспроизведении. Контраст белого на #1A0E08 = 18.7:1.
-
-/// Нижний цвет градиента плеера. Используется только здесь.
-/// Точный матч прототипа docs/prototype-v4_2.jsx (строка 1080).
-const Color _gradientBottom = Color(0xFF0D0705);
-
+/// фокус на воспроизведении. Контраст белого:
+/// - на #3A2018 (верх) = 12.4:1
+/// - на #1A0E08 (низ) = 18.7:1
+/// WCAG AA минимум 4.5:1.
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({
     super.key,
@@ -54,8 +53,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// true после первого PostFrameCallback. Предотвращает повторный запуск
-  /// _ensureBookLoaded на каждом ребилде. Сама логика "что делать" — в
-  /// _ensureBookLoaded.
+  /// _ensureBookLoaded на каждом ребилде.
   bool _firstFrameProcessed = false;
 
   /// Загружает книгу в плеер с учётом параметров extra.
@@ -105,19 +103,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       child: Scaffold(
         backgroundColor: AppColors.darkCoffee,
         body: Container(
-          // Градиент фона — точный матч прототипа v4.2.
+          // Градиент фона — шоколадный, как в карточке «Клуб месяца» на главной.
+          // Сверху lightCoffee (#3A2018), снизу darkCoffee (#1A0E08).
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [AppColors.darkCoffee, _gradientBottom],
+              colors: [AppColors.lightCoffee, AppColors.darkCoffee],
             ),
           ),
           child: bookAsync.when(
             data: (book) {
-              // Первый билд с данными — запускаем _ensureBookLoaded.
-              // Защита от повторного запуска при каждом ребилде через
-              // _firstFrameProcessed.
               if (!_firstFrameProcessed) {
                 _firstFrameProcessed = true;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -221,7 +217,7 @@ class _TopBar extends StatelessWidget {
           Text(
             'Сейчас играет',
             style: AppTypography.microBold.copyWith(
-              color: Colors.white.withOpacity(0.5),
+              color: Colors.white.withOpacity(0.6),
               letterSpacing: 1.2,
             ),
           ),
@@ -304,7 +300,7 @@ class _TitleSection extends ConsumerWidget {
         Text(
           book.author,
           style: AppTypography.body.copyWith(
-            color: Colors.white.withOpacity(0.6),
+            color: Colors.white.withOpacity(0.75),
           ),
           textAlign: TextAlign.center,
         ),
@@ -313,13 +309,13 @@ class _TitleSection extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
+              color: Colors.white.withOpacity(0.12),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
               partTitle,
               style: AppTypography.captionMedium.copyWith(
-                color: Colors.white.withOpacity(0.85),
+                color: Colors.white.withOpacity(0.9),
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -392,13 +388,13 @@ class _ProgressSectionState extends ConsumerState<_ProgressSection> {
               Text(
                 _formatTime(displayPosition),
                 style: AppTypography.caption.copyWith(
-                  color: Colors.white.withOpacity(0.7),
+                  color: Colors.white.withOpacity(0.75),
                 ),
               ),
               Text(
                 _formatTime(state.duration),
                 style: AppTypography.caption.copyWith(
-                  color: Colors.white.withOpacity(0.7),
+                  color: Colors.white.withOpacity(0.75),
                 ),
               ),
             ],
@@ -481,7 +477,7 @@ class _SkipButton extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white.withOpacity(0.6),
+                    color: Colors.white.withOpacity(0.7),
                   ),
                 ),
               ],
@@ -628,7 +624,7 @@ class _BottomButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color =
-        isActive ? AppColors.terracotta : Colors.white.withOpacity(0.7);
+        isActive ? AppColors.terracotta : Colors.white.withOpacity(0.8);
 
     return Semantics(
       label: semanticLabel,
@@ -707,7 +703,7 @@ class _ErrorView extends StatelessWidget {
             Text(
               'Проверьте соединение и попробуйте снова',
               style: AppTypography.caption.copyWith(
-                color: Colors.white.withOpacity(0.7),
+                color: Colors.white.withOpacity(0.75),
               ),
               textAlign: TextAlign.center,
             ),

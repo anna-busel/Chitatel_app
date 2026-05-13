@@ -3,21 +3,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../providers/player_provider.dart';
 
-/// Мини-плеер — тёмная полоска между контентом и таб-баром (MASTER 4.16).
+/// Мини-плеер — шоколадная полоска между контентом и таб-баром (MASTER 4.16).
 ///
-/// Цвета — точный матч прототипа v4.2 (строка 1099):
-/// - background: AppColors.darkCoffee (#1A0E08)
-/// - текст: белый
-/// - кнопка play: обводка rgba(255,255,255,0.8)
+/// Цвета (13.05.2026 v3 — шоколадные тона, согласовано с заказчиком):
+/// - background: AppColors.lightCoffee (#3A2018) — заметно светлее темного
+///   низа развёрнутого плеера, явно выделяется на белом фоне приложения.
+///   Тот же оттенок что в карточке «Клуб месяца» на главной.
+/// - название книги: белый bold
+/// - метаданные (часть + время): rgba(255,255,255,0.75) — было 0.4, плохо
+///   читалось (контраст 3.5:1, ниже WCAG). Сейчас контраст 9.3:1.
+/// - кнопка play: обводка rgba(255,255,255,0.85)
 /// - обложка: 40×40
 ///
 /// Apple HIG → Persistent Playback Controls: «Provide a Now Playing indicator
 /// so people always know media is playing and can quickly access controls».
-/// Контраст белого на #1A0E08 = 18.7:1 (WCAG AA минимум 4.5:1).
+/// Контраст белого на #3A2018 = 12.4:1 (WCAG AA минимум 4.5:1).
 ///
 /// Показывается ТОЛЬКО когда в плеере что-то загружено (`hasContent == true`).
 /// Если ничего не играет — возвращает SizedBox.shrink (нулевая высота).
@@ -53,12 +56,12 @@ class _MiniPlayerBar extends ConsumerWidget {
       label: 'Сейчас играет: ${book.title}, ${state.partTitle}',
       container: true,
       child: Material(
-        color: AppColors.darkCoffee,
+        color: AppColors.lightCoffee,
         child: InkWell(
           onTap: () => context.push(Routes.player(book.id)),
           child: Container(
             height: MiniPlayer.height,
-            color: AppColors.darkCoffee,
+            color: AppColors.lightCoffee,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             child: Row(
               children: [
@@ -96,7 +99,7 @@ class _MiniPlayerBar extends ConsumerWidget {
                         '${state.partTitle} · ${_formatTime(state.position)}',
                         style: TextStyle(
                           fontSize: 11,
-                          color: Colors.white.withOpacity(0.4),
+                          color: Colors.white.withOpacity(0.75),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -105,7 +108,7 @@ class _MiniPlayerBar extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Кнопка play/pause с обводкой (как в прототипе)
+                // Кнопка play/pause с обводкой
                 _PlayPauseButton(playing: state.playing),
               ],
             ),
@@ -117,7 +120,6 @@ class _MiniPlayerBar extends ConsumerWidget {
 }
 
 /// Круглая кнопка play/pause с белой обводкой.
-/// Точный матч прототипа v4.2 (строка 1102).
 class _PlayPauseButton extends ConsumerWidget {
   const _PlayPauseButton({required this.playing});
   final bool playing;
@@ -150,14 +152,14 @@ class _PlayPauseButton extends ConsumerWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.8),
+                    color: Colors.white.withOpacity(0.85),
                     width: 1.5,
                   ),
                 ),
                 child: Icon(
                   playing ? Icons.pause : Icons.play_arrow,
                   size: 18,
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white,
                 ),
               ),
             ),
