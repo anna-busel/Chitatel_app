@@ -28,7 +28,8 @@ import '../widgets/sleep_timer_sheet.dart';
 /// - фон: градиент #3A2018 (lightCoffee, сверху) → #1A0E08 (darkCoffee, снизу).
 ///   Тот же тон что в карточке «Клуб месяца» на главной — визуальная связь.
 /// - status bar: светлые иконки (AnnotatedRegion)
-/// - обложка: 220×220 (точный матч прототипа)
+/// - обложка: 180×270 (соотношение 2:3 — как в каталоге, реальные PNG
+///   не обрезаются; см. `BookGridCard` где coverHeight = coverWidth * 1.5)
 ///
 /// Apple HIG → Now Playing screen: deep immersive color, минимум элементов,
 /// фокус на воспроизведении. Контраст белого:
@@ -163,15 +164,15 @@ class _PlayerBody extends ConsumerWidget {
                 ),
                 child: Column(
                   children: [
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
                     _CoverSection(book: book),
-                    const SizedBox(height: 32),
-                    _TitleSection(book: book),
-                    const SizedBox(height: 28),
-                    const _ProgressSection(),
                     const SizedBox(height: 24),
+                    _TitleSection(book: book),
+                    const SizedBox(height: 22),
+                    const _ProgressSection(),
+                    const SizedBox(height: 20),
                     const _MainControls(),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 24),
                     const _BottomControls(),
                   ],
                 ),
@@ -236,21 +237,26 @@ class _CoverSection extends StatelessWidget {
 
   final BookModel book;
 
-  // 220×220 — точный матч прототипа v4.2.
-  static const double _coverSize = 220;
+  /// Обложка в плеере: 180×270 (соотношение 2:3).
+  /// Совпадает с пропорциями карточек в каталоге (см. BookGridCard,
+  /// `coverHeight = coverWidth * 1.5`). Реальные PNG обложки книг —
+  /// вертикальные ~7:10, и при таком соотношении контейнера BoxFit.cover
+  /// показывает их без обрезки.
+  static const double _coverWidth = 180;
+  static const double _coverHeight = 270;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: _coverSize,
-      height: _coverSize,
+      width: _coverWidth,
+      height: _coverHeight,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.5),
-            blurRadius: 30,
-            offset: const Offset(0, 16),
+            blurRadius: 28,
+            offset: const Offset(0, 14),
           ),
         ],
       ),
@@ -260,8 +266,8 @@ class _CoverSection extends StatelessWidget {
           imageUrl: book.coverImageUrl,
           gradientColors: book.coverGradientColors,
           label: book.coverLabel,
-          width: _coverSize,
-          height: _coverSize,
+          width: _coverWidth,
+          height: _coverHeight,
           borderRadius: 16,
         ),
       ),
@@ -305,7 +311,7 @@ class _TitleSection extends ConsumerWidget {
           textAlign: TextAlign.center,
         ),
         if (partTitle.isNotEmpty) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
