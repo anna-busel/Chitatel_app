@@ -605,7 +605,7 @@ class _DisabledAudioHint extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-        border: Border.all(color: AppColors.dividerWarm),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
