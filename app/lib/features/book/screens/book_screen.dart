@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
@@ -20,12 +21,16 @@ import '../widgets/book_parts_list.dart';
 /// - `isPurchased == true` → 4.14 (кнопка «Слушать» + прогресс)
 /// - иначе → 4.13 (цена + «Купить» + замки на частях 2-4)
 ///
-/// onTap кнопок «Слушать» и «Купить» сейчас — SnackBar-заглушки.
-/// Реальная логика:
-/// - «Слушать» → задача 2.7 (Flutter — аудиоплеер)
-/// - «Купить» → задача 3.2 (Flutter — StoreKit 2 покупки)
-/// - `isPurchased`, `listenedPartNumbers`, `progressPercent` сейчас захардкожены —
-///   реальное состояние появится в Фазе 3 (для покупки) и после 2.7 (для прогресса).
+/// onTap кнопок:
+/// - «Слушать» / «Продолжить» / «Превью» → переход на /player/:bookId
+///   Плеер сам определит стартовую часть и позицию из прогресса.
+/// - «Купить» → задача 3.2 (Flutter — StoreKit 2 покупки), пока SnackBar.
+///
+/// Если у книги нет частей с аудио (parts.isEmpty) — кнопка прослушивания
+/// disabled с текстом «Аудио загружается». Apple Guideline 2.1: не открывать
+/// плеер с пустым контентом.
+///
+/// `_isPurchased`, `_listenedPartNumbers`, `_progressPercent` — заглушки до Фазы 3.
 class BookScreen extends ConsumerWidget {
   const BookScreen({super.key, required this.bookId});
 
@@ -62,7 +67,8 @@ class _BookContent extends StatelessWidget {
   final BookModel book;
 
   // TODO задача 3.2 (Фаза 3): получить реальное состояние из purchaseProvider.
-  // TODO после 2.7: получить прослушанные части и прогресс из progressProvider.
+  // listenedPartNumbers и progressPercent будут подтягиваться из ProgressService
+  // когда BookScreen начнёт это делать (отдельная микро-задача в Фазе 3).
   static const bool _isPurchased = false;
   static const Set<int> _listenedPartNumbers = <int>{};
   static const double _progressPercent = 0.0;
@@ -113,13 +119,15 @@ class _BookContent extends StatelessWidget {
     );
   }
 
+  /// Тап по части в списке → открыть плеер с этой части.
+  /// Передаём startPart явно, чтобы перезаписать прогресс сервера если он есть.
   void _onPartTap(BuildContext context, BookPart part) {
-    // TODO задача 2.7: context.push(Routes.player(book.id)) с указанием part.number
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Аудиоплеер появится в задаче 2.7 (часть ${part.number})'),
-        duration: const Duration(seconds: 2),
-      ),
+    context.push(
+      Routes.player(book.id),
+      extra: {
+        'startPart': part.number,
+        'startPosition': 0,
+      },
     );
   }
 }
@@ -358,14 +366,22 @@ class _ActionSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Если у книги нет аудио — все варианты показывают disabled-кнопку.
+    // Apple Guideline 2.1: не открывать плеер пустого контента.
+    final hasAudio = book.parts.isNotEmpty;
+
     // Вариант 4.12: бесплатная
     if (book.isFree) {
-      return _FreeActions(onListen: () => _onListenPressed(context));
+      return _FreeActions(
+        hasAudio: hasAudio,
+        onListen: () => _onListenPressed(context),
+      );
     }
 
     // Вариант 4.14: купленная
     if (isPurchased) {
       return _PurchasedActions(
+        hasAudio: hasAudio,
         progressPercent: progressPercent,
         onListen: () => _onListenPressed(context),
       );
@@ -374,19 +390,15 @@ class _ActionSection extends StatelessWidget {
     // Вариант 4.13: платная не купленная
     return _PaidActions(
       book: book,
+      hasAudio: hasAudio,
       onBuy: () => _onBuyPressed(context),
       onPreview: () => _onListenPressed(context),
     );
   }
 
-  // TODO задача 2.7: context.push(Routes.player(book.id))
+  /// Переход в плеер — без extra, плеер сам подтянет прогресс с сервера.
   void _onListenPressed(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Аудиоплеер появится в задаче 2.7'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    context.push(Routes.player(book.id));
   }
 
   // TODO задача 3.2: запуск StoreKit 2 покупки через purchase_provider
@@ -403,39 +415,20 @@ class _ActionSection extends StatelessWidget {
 // — 4.12 бесплатная —
 
 class _FreeActions extends StatelessWidget {
-  const _FreeActions({required this.onListen});
+  const _FreeActions({
+    required this.hasAudio,
+    required this.onListen,
+  });
 
+  final bool hasAudio;
   final VoidCallback onListen;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppColors.successLight,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onListen,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.play_arrow, color: Colors.white, size: 24),
-                const SizedBox(width: 8),
-                Text(
-                  'Слушать бесплатно',
-                  style: AppTypography.button.copyWith(color: Colors.white),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return _GreenListenButton(
+      label: 'Слушать бесплатно',
+      onTap: onListen,
+      enabled: hasAudio,
     );
   }
 }
@@ -448,11 +441,13 @@ class _FreeActions extends StatelessWidget {
 class _PaidActions extends StatelessWidget {
   const _PaidActions({
     required this.book,
+    required this.hasAudio,
     required this.onBuy,
     required this.onPreview,
   });
 
   final BookModel book;
+  final bool hasAudio;
   final VoidCallback onBuy;
   final VoidCallback onPreview;
 
@@ -467,11 +462,15 @@ class _PaidActions extends StatelessWidget {
       children: [
         AppButton(text: buyText, onPressed: onBuy),
         const SizedBox(height: 10),
-        AppButton(
-          text: 'Слушать превью (5 мин)',
-          onPressed: onPreview,
-          variant: AppButtonVariant.outline,
-        ),
+        // Превью доступно только если есть аудио.
+        if (hasAudio)
+          AppButton(
+            text: 'Слушать превью (5 мин)',
+            onPressed: onPreview,
+            variant: AppButtonVariant.outline,
+          )
+        else
+          _DisabledAudioHint(),
       ],
     );
   }
@@ -481,10 +480,12 @@ class _PaidActions extends StatelessWidget {
 
 class _PurchasedActions extends StatelessWidget {
   const _PurchasedActions({
+    required this.hasAudio,
     required this.progressPercent,
     required this.onListen,
   });
 
+  final bool hasAudio;
   final double progressPercent;
   final VoidCallback onListen;
 
@@ -506,39 +507,121 @@ class _PurchasedActions extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: AppColors.successLight,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onListen,
-                borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.play_arrow, color: Colors.white, size: 24),
-                    const SizedBox(width: 8),
-                    Text(
-                      progressPercent > 0 ? 'Продолжить' : 'Слушать',
-                      style: AppTypography.button.copyWith(color: Colors.white),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+        _GreenListenButton(
+          label: progressPercent > 0 ? 'Продолжить' : 'Слушать',
+          onTap: onListen,
+          enabled: hasAudio,
         ),
-        if (progressPercent > 0) ...[
+        if (progressPercent > 0 && hasAudio) ...[
           const SizedBox(height: 14),
           _ProgressCard(percent: progressPercent),
         ],
       ],
+    );
+  }
+}
+
+// — Зелёная кнопка «Слушать» с поддержкой disabled-state —
+
+class _GreenListenButton extends StatelessWidget {
+  const _GreenListenButton({
+    required this.label,
+    required this.onTap,
+    required this.enabled,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) {
+      // Disabled-вариант: серый фон, текст «Аудио загружается».
+      return SizedBox(
+        width: double.infinity,
+        height: 48,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceMedium,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.hourglass_empty,
+                  color: AppColors.textTertiary, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Аудио загружается',
+                style: AppTypography.button.copyWith(
+                  color: AppColors.textTertiary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.successLight,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.play_arrow, color: Colors.white, size: 24),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: AppTypography.button.copyWith(color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Подсказка-плейсхолдер для платной книги без аудио.
+class _DisabledAudioHint extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      height: 48,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+        border: Border.all(color: AppColors.dividerWarm),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.hourglass_empty,
+              color: AppColors.textTertiary, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            'Аудио будет доступно скоро',
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textTertiary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
