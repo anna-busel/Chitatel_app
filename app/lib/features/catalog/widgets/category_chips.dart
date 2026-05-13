@@ -10,6 +10,11 @@ import '../providers/catalog_provider.dart';
 ///
 /// Состав: [Все] [Бесплатные] [14 категорий Анны].
 /// Один активный чип в любой момент времени (radio-поведение).
+///
+/// ВАЖНО (13.05.2026): label чипа = `BookCategories.labelFor(category)`
+/// (sentence case для UI), но фильтрация — по исходному значению (КАПС из БД).
+/// Это нужно потому что `book.categories` в БД хранится капсом, и точное
+/// совпадение строк требуется для CategoryFilter.
 class CategoryChips extends ConsumerWidget {
   const CategoryChips({super.key});
 
@@ -33,7 +38,7 @@ class CategoryChips extends ConsumerWidget {
         final isActive =
             filter is CategoryFilter && filter.category == category;
         return _ChipItem(
-          label: category,
+          label: BookCategories.labelFor(category),
           isActive: isActive,
           onTap: () => notifier.setFilter(CategoryFilter(category)),
         );
