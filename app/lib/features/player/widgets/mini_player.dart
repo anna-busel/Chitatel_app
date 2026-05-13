@@ -61,8 +61,8 @@ class _MiniPlayerBar extends ConsumerWidget {
             decoration: const BoxDecoration(
               color: AppColors.cardBackground,
               border: Border(
-                top: BorderSide(color: AppColors.dividerWarm, width: 1),
-                bottom: BorderSide(color: AppColors.dividerWarm, width: 0.5),
+                top: BorderSide(color: AppColors.border, width: 1),
+                bottom: BorderSide(color: AppColors.border, width: 0.5),
               ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
