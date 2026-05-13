@@ -19,6 +19,14 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   google_sign_in: ^6.2.1
   url_launcher: ^6.2.6
+  # — Аудиоплеер (задача 2.7) —
+  # Версии зафиксированы: latest несовместим с Flutter 3.22.3
+  # just_audio 0.10+ ломает API стримов; audio_service 0.19+ требует Flutter 3.27+
+  just_audio: ^0.9.40
+  audio_service: ^0.18.15
+  audio_session: ^0.1.21
+  rxdart: ^0.27.7
+  path_provider: ^2.1.3
 
 dev_dependencies:
   flutter_test:

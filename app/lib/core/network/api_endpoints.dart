@@ -39,6 +39,22 @@ class ApiEndpoints {
   /// GET /api/books/:id — детальная информация о книге.
   static String bookById(String id) => '/books/$id';
 
+  /// GET /api/books/:id/audio/:partNumber — signed URL для аудио (задача 2.3/2.7).
+  /// Ответ: { audioUrl, duration, partNumber, title, isPreview }
+  /// TTL signed URL — 1 час (AUDIO_URL_TTL_SECONDS).
+  static String bookAudio(String bookId, int partNumber) =>
+      '/books/$bookId/audio/$partNumber';
+
+  // — Progress (задача 2.3 сервер / задача 2.7 клиент) —
+
+  /// POST /api/progress — сохранить прогресс прослушивания.
+  /// Body: { bookId, currentPartNumber, positionSeconds, markPartCompleted? }
+  static const String progress = '/progress';
+
+  /// GET /api/progress/:bookId — получить прогресс по конкретной книге.
+  /// Если прогресса нет — возвращает defaults (часть 1, позиция 0).
+  static String progressByBook(String bookId) => '/progress/$bookId';
+
   // — Health —
   static const String health = '/health';
 }
