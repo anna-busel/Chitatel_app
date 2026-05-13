@@ -15,6 +15,8 @@ import '../../features/home/screens/home_screen.dart';
 import '../../features/catalog/screens/catalog_screen.dart';
 import '../../features/book/screens/book_screen.dart';
 import '../../features/search/screens/search_screen.dart';
+import '../../features/player/screens/player_screen.dart';
+import '../../features/player/widgets/mini_player.dart';
 
 // — Key для ShellRoute navigator —
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -80,7 +82,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const _Placeholder('Разрешение push'),
       ),
 
-      // — Главные табы (ShellRoute с bottom bar) —
+      // — Главные табы (ShellRoute с bottom bar + mini-player) —
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
         builder: (context, state, child) {
@@ -128,7 +130,22 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) {
           final bookId = state.pathParameters['bookId'] ?? '';
-          return _Placeholder('Плеер: $bookId');
+          // Опциональные параметры из extra: { 'startPart': int, 'startPosition': int }
+          // Используются при нажатии на конкретную часть в списке книги.
+          final extra = state.extra;
+          int? startPart;
+          int? startPosition;
+          if (extra is Map) {
+            final part = extra['startPart'];
+            if (part is int) startPart = part;
+            final position = extra['startPosition'];
+            if (position is int) startPosition = position;
+          }
+          return PlayerScreen(
+            bookId: bookId,
+            startPart: startPart,
+            startPosition: startPosition,
+          );
         },
       ),
       GoRoute(
@@ -195,7 +212,15 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
-// — Scaffold с bottom bar для табовых экранов —
+/// Scaffold с bottom bar для табовых экранов.
+///
+/// Layout (снизу вверх):
+/// - bottom bar (4 таба, AppBottomBar)
+/// - mini-player (виден только когда что-то играет, MiniPlayer)
+/// - content (child)
+///
+/// MiniPlayer сам отображается/скрывается через ref.watch(playerUiStateProvider).
+/// Когда плеер пуст — возвращает SizedBox.shrink, не занимая места.
 class _ScaffoldWithBottomBar extends StatelessWidget {
   const _ScaffoldWithBottomBar({required this.child});
   final Widget child;
@@ -204,10 +229,16 @@ class _ScaffoldWithBottomBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(child: child),
-      bottomNavigationBar: AppBottomBar(
-        currentIndex: _currentIndex(context),
-        onTap: (index) => _onTabTap(context, index),
+      body: SafeArea(bottom: false, child: child),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const MiniPlayer(),
+          AppBottomBar(
+            currentIndex: _currentIndex(context),
+            onTap: (index) => _onTabTap(context, index),
+          ),
+        ],
       ),
     );
   }
