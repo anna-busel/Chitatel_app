@@ -81,7 +81,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     return Scaffold(
       // Тёмный фон плеера — стандарт media-приложений (Apple Music, Audible)
-      backgroundColor: AppColors.coffeeDark,
+      backgroundColor: AppColors.darkCoffee,
       body: bookAsync.when(
         data: (book) {
           // Запускаем загрузку как side-effect после первого билда с данными.
