@@ -5,18 +5,16 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../providers/player_provider.dart';
 
-/// Шторка выбора скорости воспроизведения (MASTER 4.18).
+/// Шторка выбора скорости воспроизведения (MASTER 4.18, прототип v4.2).
+///
+/// Цвета — точный матч прототипа (строка 1066):
+/// - background: AppColors.darkCoffee (#1A0E08)
+/// - текст: белый
+/// - drag-handle: rgba(255,255,255,0.2)
+/// - кнопки невыбранные: rgba(255,255,255,0.08)
+/// - кнопка выбранная: terracotta (#C73E28)
 ///
 /// 5 вариантов: 0.75× / 1.0× / 1.25× / 1.5× / 2.0×.
-/// Выбранная — заливка терракотой, остальные — полупрозрачный белый на тёмном.
-///
-/// Цвета (прототип v4.2):
-/// - Фон шторки: AppColors.darkCoffee (#1A0E08) — единая зона с плеером.
-/// - Drag handle: rgba(255,255,255,0.2).
-/// - Заголовок: белый.
-/// - Невыбранные кнопки: rgba(255,255,255,0.08), белый текст.
-/// - Выбранная кнопка: terracotta, белый текст.
-///
 /// Скорость сохраняется между сессиями (через playerSpeedProvider →
 /// SharedPreferences). Стандарт как у Apple Books, Audible.
 class SpeedSheet extends ConsumerWidget {
@@ -38,14 +36,16 @@ class SpeedSheet extends ConsumerWidget {
           children: [
             _DragHandle(),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               'Скорость',
-              style: AppTypography.serifSectionTitle.copyWith(
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
                 color: Colors.white,
               ),
             ),
             const SizedBox(height: 20),
-            // 5 кнопок скорости в строку.
+            // 5 кнопок скорости в строку
             Row(
               children: [
                 for (final speed in kPlayerSpeeds) ...[
@@ -102,28 +102,29 @@ class _SpeedButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = _formatSpeed(speed);
+    final backgroundColor = isSelected
+        ? AppColors.terracotta
+        : Colors.white.withOpacity(0.08);
 
     return Semantics(
       label: 'Скорость $label, ${isSelected ? "выбрана" : "не выбрана"}',
       button: true,
       selected: isSelected,
       child: Material(
-        color: isSelected
-            ? AppColors.terracotta
-            : Colors.white.withOpacity(0.08),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-          splashColor: Colors.white.withOpacity(0.08),
           child: Container(
             height: 56,
             alignment: Alignment.center,
             child: Text(
               label,
-              style: AppTypography.button.copyWith(
-                color: Colors.white,
+              style: const TextStyle(
+                fontSize: 14,
                 fontWeight: FontWeight.w700,
+                color: Colors.white,
               ),
             ),
           ),

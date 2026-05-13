@@ -5,18 +5,17 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../providers/player_provider.dart';
 
-/// Шторка таймера сна (MASTER 4.19).
+/// Шторка таймера сна (MASTER 4.19, прототип v4.2).
+///
+/// Цвета — точный матч прототипа (строка 1075):
+/// - background: AppColors.darkCoffee (#1A0E08)
+/// - текст: белый
+/// - drag-handle: rgba(255,255,255,0.2)
+/// - кнопки: rgba(255,255,255,0.08)
+/// - акцент: terracotta
 ///
 /// 5 опций: 15 / 30 / 45 / 60 мин / Конец части.
 /// Если таймер уже активен — показывается счётчик и кнопка «Отменить».
-///
-/// Цвета (прототип v4.2):
-/// - Фон шторки: AppColors.darkCoffee (#1A0E08) — единая зона с плеером.
-/// - Drag handle: rgba(255,255,255,0.2).
-/// - Заголовок: белый.
-/// - Кнопки опций: rgba(255,255,255,0.08), белый текст.
-/// - Карточка активного таймера: чуть светлее фона + белый текст.
-/// - Кнопка «Отменить»: terracotta фон + белый текст.
 class SleepTimerSheet extends ConsumerWidget {
   const SleepTimerSheet({super.key});
 
@@ -40,9 +39,11 @@ class SleepTimerSheet extends ConsumerWidget {
           children: [
             _DragHandle(),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               'Таймер сна',
-              style: AppTypography.serifSectionTitle.copyWith(
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
                 color: Colors.white,
               ),
             ),
@@ -51,7 +52,8 @@ class SleepTimerSheet extends ConsumerWidget {
             // Если таймер активен — счётчик + «Отменить»
             remainingAsync.when(
               data: (remaining) {
-                final isActive = remaining != null || handler.sleepUntilEndOfPart;
+                final isActive =
+                    remaining != null || handler.sleepUntilEndOfPart;
                 if (isActive) {
                   return _ActiveTimerCard(
                     remaining: remaining,
@@ -150,7 +152,11 @@ class _ActiveTimerCard extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 label,
-                style: AppTypography.bodyMedium.copyWith(color: Colors.white),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
               ),
             ],
           ),
@@ -205,8 +211,6 @@ class _TimerOptions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Берём опции из публичной константы SleepTimerSheet.minutesOptions.
-    // По 2 кнопки в ряд: первый ряд [0,1], второй ряд [2,3].
     final opts = SleepTimerSheet.minutesOptions;
     return Column(
       children: [
@@ -278,16 +282,16 @@ class _TimerButton extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-          splashColor: Colors.white.withOpacity(0.08),
           child: Container(
             width: isFullWidth ? double.infinity : null,
             height: 56,
             alignment: Alignment.center,
             child: Text(
               label,
-              style: AppTypography.button.copyWith(
-                color: Colors.white,
+              style: const TextStyle(
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
+                color: Colors.white,
               ),
             ),
           ),

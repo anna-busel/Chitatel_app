@@ -8,19 +8,17 @@ import '../../player/providers/player_provider.dart';
 
 /// Список частей разбора для экрана книги (MASTER 4.12–4.14).
 ///
-/// Поведение зависит от состояния:
-/// - **Бесплатная** (`isFree=true`): все части открыты, иконка play.
-/// - **Платная** (`isPurchased=false`): первая часть (или `freeChapterIndex`)
-///   с пометкой «Превью», остальные с замком и opacity 40%.
-/// - **Купленная** (`isPurchased=true`): прослушанные с галочкой, остальные с play.
+/// Состояния иконки слева (приоритет сверху вниз):
+/// - 🔒 **lock** — заблокирована (платная не куплена, нет превью)
+/// - 🎵 **graphic_eq** — СЕЙЧАС ИГРАЕТ (Apple Music/Books/Audible стандарт)
+/// - ✅ **check** — прослушана (есть в listenedPartNumbers)
+/// - ▶ **play** — обычная (терракота)
 ///
-/// Подсветка активной части (задача 2.7):
-/// - Если плеер сейчас играет часть из этой же книги — у активной строки
-///   иконка слева заменяется на `Icons.graphic_eq` (статичный equalizer).
-/// - Стандарт Apple Music / Apple Books / Audible.
-/// - Состояние слушается через playerUiStateProvider — реактивно.
+/// Активная часть определяется через playerUiStateProvider:
+/// book.id == state.book.id && part.number == state.partNumber.
 ///
-/// onTap вызывается с номером части. Заблокированные части — не нажимаются.
+/// При этом в строке с заголовком "Часть N" рядом появляется бейдж "СЕЙЧАС"
+/// чтобы юзер заметил даже если иконка не в фокусе.
 class BookPartsList extends ConsumerWidget {
   const BookPartsList({
     super.key,
@@ -41,13 +39,16 @@ class BookPartsList extends ConsumerWidget {
       return _emptyState();
     }
 
-    // Определяем номер активной части (если плеер играет ЭТУ книгу).
-    // ref.watch — реактивно обновляется когда меняется часть в плеере.
-    final playerState = ref.watch(playerUiStateProvider).valueOrNull;
-    final int? activePartNumber =
-        (playerState != null && playerState.book?.id == book.id)
-            ? playerState.partNumber
-            : null;
+    // Определяем номер сейчас играющей части (если она от этой же книги).
+    // null если плеер пуст, играет другую книгу, или ещё не loaded.
+    final playingPartNumber = ref.watch(playerUiStateProvider).maybeWhen(
+          data: (state) {
+            if (!state.hasContent) return null;
+            if (state.book?.id != book.id) return null;
+            return state.partNumber;
+          },
+          orElse: () => null,
+        );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -55,7 +56,10 @@ class BookPartsList extends ConsumerWidget {
         Text('Содержание', style: AppTypography.sectionHeader),
         const SizedBox(height: 12),
         ...book.parts.map(
-          (part) => _buildPartRow(part, isActive: part.number == activePartNumber),
+          (part) => _buildPartRow(
+            part,
+            isActive: part.number == playingPartNumber,
+          ),
         ),
       ],
     );
@@ -85,7 +89,8 @@ class BookPartsList extends ConsumerWidget {
   Widget _buildPartRow(BookPart part, {required bool isActive}) {
     final bool isLocked = _isPartLocked(part);
     final bool isListened = listenedPartNumbers.contains(part.number);
-    final bool isPreview = !isPurchased && !book.isFree && part.isPreviewAvailable;
+    final bool isPreview =
+        !isPurchased && !book.isFree && part.isPreviewAvailable;
 
     return Opacity(
       opacity: isLocked ? 0.4 : 1.0,
@@ -121,13 +126,13 @@ class BookPartsList extends ConsumerWidget {
                             letterSpacing: 0.5,
                           ),
                         ),
-                        if (isPreview) ...[
-                          const SizedBox(width: 8),
-                          _previewBadge(),
-                        ],
                         if (isActive) ...[
                           const SizedBox(width: 8),
-                          _playingBadge(),
+                          _nowPlayingBadge(),
+                        ],
+                        if (isPreview && !isActive) ...[
+                          const SizedBox(width: 8),
+                          _previewBadge(),
                         ],
                       ],
                     ),
@@ -166,13 +171,11 @@ class BookPartsList extends ConsumerWidget {
     required bool isListened,
     required bool isActive,
   }) {
-    // Активная часть имеет приоритет над isListened (если та же часть играет
-    // повторно — показываем что играет, а не что прослушана).
     if (isLocked) {
       return Container(
         width: 40,
         height: 40,
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: AppColors.surfaceMedium,
           shape: BoxShape.circle,
         ),
@@ -181,9 +184,9 @@ class BookPartsList extends ConsumerWidget {
       );
     }
 
+    // Apple Music / Books / Audible стандарт: эквалайзер на терракотовом фоне
+    // для активной (сейчас играющей) части.
     if (isActive) {
-      // Equalizer-индикатор: стандарт Apple Music / Apple Books / Audible.
-      // Терракотовый фон — тот же что у play (визуальная связь).
       return Container(
         width: 40,
         height: 40,
@@ -191,7 +194,7 @@ class BookPartsList extends ConsumerWidget {
           color: AppColors.terracotta,
           shape: BoxShape.circle,
         ),
-        child: const Icon(Icons.graphic_eq, size: 22, color: Colors.white),
+        child: const Icon(Icons.graphic_eq, size: 20, color: Colors.white),
       );
     }
 
@@ -218,6 +221,20 @@ class BookPartsList extends ConsumerWidget {
     );
   }
 
+  Widget _nowPlayingBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.terracotta,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        'СЕЙЧАС',
+        style: AppTypography.badge.copyWith(fontSize: 9),
+      ),
+    );
+  }
+
   Widget _previewBadge() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -227,22 +244,6 @@ class BookPartsList extends ConsumerWidget {
       ),
       child: Text(
         'ПРЕВЬЮ',
-        style: AppTypography.badge.copyWith(fontSize: 9),
-      ),
-    );
-  }
-
-  /// Бейдж «СЕЙЧАС» рядом с активной частью. Помогает юзеру быстро
-  /// идентифицировать активную часть даже если equalizer-иконка не считалась.
-  Widget _playingBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppColors.terracotta,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        'СЕЙЧАС',
         style: AppTypography.badge.copyWith(fontSize: 9),
       ),
     );

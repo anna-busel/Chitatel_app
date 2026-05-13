@@ -13,21 +13,29 @@ import '../providers/player_provider.dart';
 import '../widgets/speed_sheet.dart';
 import '../widgets/sleep_timer_sheet.dart';
 
-/// Развёрнутый плеер (MASTER 4.15).
+/// Развёрнутый плеер (MASTER 4.15, прототип v4.2).
 ///
 /// Открывается через `/player/:bookId`, может прийти с дополнительными
 /// параметрами в `extra`: `{'startPart': int?, 'startPosition': int?}`.
 ///
-/// Логика загрузки книги (см. _ensureBookLoaded):
-/// - Книга не та же → loadBook с новыми параметрами.
-/// - Та же книга + явный startPart другой → переключаем часть.
-/// - Та же книга + startPart не задан или совпадает → ничего не делаем
-///   (юзер пришёл из mini-player с той же книгой и частью).
+/// Логика загрузки книги (`_ensureBookLoaded`):
+/// 1. Книга НЕ та же что играет → loadBook (новая книга).
+/// 2. Та же книга, но юзер явно попросил другую часть через extra → loadBook
+///    с новой частью (юзер тапнул часть 2 при играющей части 1).
+/// 3. Та же книга и часть → ничего не делаем (юзер пришёл из mini-player).
 ///
-/// Цвета: вертикальный градиент darkCoffee → #0D0705 (как в прототипе v4.2).
-/// Status bar поверх плеера — светлые иконки (SystemUiOverlayStyle.light).
+/// Цвета — точный матч прототипа v4.2:
+/// - фон: градиент #1A0E08 → #0D0705 (180deg)
+/// - status bar: светлые иконки (AnnotatedRegion)
+/// - обложка: 220×220 (точный матч прототипа)
 ///
-/// Закрытие: стрелка вниз в TopBar или swipe-down жест (стандарт iOS).
+/// Apple HIG → Now Playing screen: deep immersive color, минимум элементов,
+/// фокус на воспроизведении. Контраст белого на #1A0E08 = 18.7:1.
+
+/// Нижний цвет градиента плеера. Используется только здесь.
+/// Точный матч прототипа docs/prototype-v4_2.jsx (строка 1080).
+const Color _gradientBottom = Color(0xFF0D0705);
+
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({
     super.key,
@@ -45,27 +53,23 @@ class PlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> {
-  /// Нижняя точка градиента плеера. Локальная константа — используется
-  /// только тут, в AppColors не добавляем чтобы не плодить лишние имена.
-  /// Точный матч прототипа docs/prototype-v4_2.jsx.
-  static const Color _gradientBottom = Color(0xFF0D0705);
-
-  /// true если уже хотя бы раз вызывали _ensureBookLoaded для текущего билда.
-  /// Защита от повторного срабатывания postFrameCallback в одной сессии экрана.
+  /// true после первого PostFrameCallback. Предотвращает повторный запуск
+  /// _ensureBookLoaded на каждом ребилде. Сама логика "что делать" — в
+  /// _ensureBookLoaded.
   bool _firstFrameProcessed = false;
 
-  /// Загружает книгу в плеер с учётом widget.startPart / startPosition.
+  /// Загружает книгу в плеер с учётом параметров extra.
   ///
-  /// Логика:
-  /// 1. Книга НЕ та же что играет → handler.loadBook(...) с новыми параметрами.
-  /// 2. Книга та же, но юзер явно попросил другую часть через extra → переключаем.
-  /// 3. Книга та же, startPart не задан или совпадает с текущей → ничего
-  ///    (юзер пришёл из mini-player продолжать слушать).
+  /// Три кейса:
+  /// 1. current == null или current.id != book.id → новая книга, грузим.
+  /// 2. current.id == book.id, startPart задан и не совпадает с текущим →
+  ///    юзер тапнул на другую часть в списке. Переключаем.
+  /// 3. Иначе → ничего (юзер пришёл из mini-player).
   Future<void> _ensureBookLoaded(BookModel book) async {
     final handler = ref.read(audioHandlerProvider);
     final current = handler.currentBook;
 
-    // 1. Книга не та же — грузим заново.
+    // Кейс 1: другая книга или плеер пуст.
     if (current == null || current.id != book.id) {
       await handler.loadBook(
         book,
@@ -76,7 +80,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    // 2. Та же книга, но юзер явно попросил другую часть — переключаем.
+    // Кейс 2: та же книга, но юзер явно попросил другую часть.
     if (widget.startPart != null &&
         widget.startPart != handler.currentPartNumber) {
       await handler.loadBook(
@@ -88,22 +92,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    // 3. Та же книга, та же часть (или часть не указана) — оставляем как есть.
+    // Кейс 3: ничего не делаем (mini-player → плеер на той же части).
   }
 
   @override
   Widget build(BuildContext context) {
     final bookAsync = ref.watch(bookProvider(widget.bookId));
 
-    // Status bar поверх плеера — светлые иконки. Возвращается к темным
-    // автоматически когда AnnotatedRegion уходит со сцены (closing).
     return AnnotatedRegion<SystemUiOverlayStyle>(
+      // Тёмный фон плеера → светлые иконки status bar (Apple HIG)
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
         backgroundColor: AppColors.darkCoffee,
         body: Container(
-          // Вертикальный градиент сверху-вниз: darkCoffee → почти чёрный.
-          // Создаёт ощущение глубины, точный матч прототипа v4.2.
+          // Градиент фона — точный матч прототипа v4.2.
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
@@ -113,9 +115,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           ),
           child: bookAsync.when(
             data: (book) {
-              // Загружаем книгу один раз после первого билда с данными.
-              // _firstFrameProcessed защищает от повторных вызовов в рамках
-              // одного state, но при новом state (новый push) сработает заново.
+              // Первый билд с данными — запускаем _ensureBookLoaded.
+              // Защита от повторного запуска при каждом ребилде через
+              // _firstFrameProcessed.
               if (!_firstFrameProcessed) {
                 _firstFrameProcessed = true;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -165,7 +167,7 @@ class _PlayerBody extends ConsumerWidget {
                 ),
                 child: Column(
                   children: [
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 24),
                     _CoverSection(book: book),
                     const SizedBox(height: 32),
                     _TitleSection(book: book),
@@ -216,17 +218,14 @@ class _TopBar extends StatelessWidget {
               ),
             ),
           ),
-          Column(
-            children: [
-              Text(
-                'Сейчас играет',
-                style: AppTypography.microBold.copyWith(
-                  color: Colors.white.withOpacity(0.5),
-                  letterSpacing: 1.2,
-                ),
-              ),
-            ],
+          Text(
+            'Сейчас играет',
+            style: AppTypography.microBold.copyWith(
+              color: Colors.white.withOpacity(0.5),
+              letterSpacing: 1.2,
+            ),
           ),
+          // Балансир для центрирования заголовка
           const SizedBox(width: AppSpacing.minTapTarget),
         ],
       ),
@@ -241,8 +240,7 @@ class _CoverSection extends StatelessWidget {
 
   final BookModel book;
 
-  /// Размер обложки 220×220 — точный матч прототипа v4.2.
-  /// Компактнее чем у Apple Music (300×300) и помещается на iPhone SE.
+  // 220×220 — точный матч прототипа v4.2.
   static const double _coverSize = 220;
 
   @override
@@ -333,7 +331,7 @@ class _TitleSection extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────── PROGRESS (slider + таймеры) ───────────────────────────
+// ─────────────────────────── PROGRESS (slider) ───────────────────────────
 
 class _ProgressSection extends ConsumerStatefulWidget {
   const _ProgressSection();
@@ -629,7 +627,8 @@ class _BottomButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isActive ? AppColors.terracotta : Colors.white.withOpacity(0.7);
+    final color =
+        isActive ? AppColors.terracotta : Colors.white.withOpacity(0.7);
 
     return Semantics(
       label: semanticLabel,
@@ -700,7 +699,8 @@ class _ErrorView extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'Не удалось загрузить разбор',
-              style: AppTypography.serifSectionTitle.copyWith(color: Colors.white),
+              style: AppTypography.serifSectionTitle
+                  .copyWith(color: Colors.white),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
@@ -726,7 +726,8 @@ class _ErrorView extends StatelessWidget {
                   child: Center(
                     child: Text(
                       'Попробовать снова',
-                      style: AppTypography.button.copyWith(color: Colors.white),
+                      style:
+                          AppTypography.button.copyWith(color: Colors.white),
                     ),
                   ),
                 ),

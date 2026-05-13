@@ -7,24 +7,20 @@ import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../providers/player_provider.dart';
 
-/// Мини-плеер — полоска между контентом и таб-баром (MASTER 4.16).
+/// Мини-плеер — тёмная полоска между контентом и таб-баром (MASTER 4.16).
 ///
-/// Показывается ТОЛЬКО когда в плеере что-то загружено (`hasContent == true`).
-/// Если ничего не играет — возвращает SizedBox.shrink (нулевая высота).
-///
-/// Цвета (прототип v4.2):
-/// - Фон: AppColors.darkCoffee (#1A0E08) — solid тёмно-коричневый.
-/// - Текст: белый, метаданные — белый 50% opacity.
-/// - Кнопка play: обводка полупрозрачным белым, иконка белая.
-///
-/// Содержит:
-/// - Миниатюра обложки (48×48)
-/// - Название книги + текущая часть + время (2 строки)
-/// - Кнопка play/pause
-/// - Нажатие на любое место кроме кнопки → разворачивает плеер
+/// Цвета — точный матч прототипа v4.2 (строка 1099):
+/// - background: AppColors.darkCoffee (#1A0E08)
+/// - текст: белый
+/// - кнопка play: обводка rgba(255,255,255,0.8)
+/// - обложка: 40×40
 ///
 /// Apple HIG → Persistent Playback Controls: «Provide a Now Playing indicator
 /// so people always know media is playing and can quickly access controls».
+/// Контраст белого на #1A0E08 = 18.7:1 (WCAG AA минимум 4.5:1).
+///
+/// Показывается ТОЛЬКО когда в плеере что-то загружено (`hasContent == true`).
+/// Если ничего не играет — возвращает SizedBox.shrink (нулевая высота).
 class MiniPlayer extends ConsumerWidget {
   const MiniPlayer({super.key});
 
@@ -60,29 +56,26 @@ class _MiniPlayerBar extends ConsumerWidget {
         color: AppColors.darkCoffee,
         child: InkWell(
           onTap: () => context.push(Routes.player(book.id)),
-          // splash на тёмном фоне — полупрозрачный белый.
-          splashColor: Colors.white.withOpacity(0.08),
-          highlightColor: Colors.white.withOpacity(0.04),
           child: Container(
             height: MiniPlayer.height,
             color: AppColors.darkCoffee,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             child: Row(
               children: [
                 // Миниатюра обложки
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(8),
                   child: BookCoverImage(
                     imageUrl: book.coverImageUrl,
                     gradientColors: book.coverGradientColors,
                     label: book.coverLabel,
-                    width: 48,
-                    height: 48,
-                    borderRadius: 6,
+                    width: 40,
+                    height: 40,
+                    borderRadius: 8,
                   ),
                 ),
-                const SizedBox(width: 12),
-                // Название + часть + время — белый на тёмном фоне.
+                const SizedBox(width: 10),
+                // Название + часть + время
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -90,9 +83,10 @@ class _MiniPlayerBar extends ConsumerWidget {
                     children: [
                       Text(
                         book.title,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: Colors.white,
+                        style: const TextStyle(
+                          fontSize: 13,
                           fontWeight: FontWeight.w600,
+                          color: Colors.white,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -100,8 +94,9 @@ class _MiniPlayerBar extends ConsumerWidget {
                       const SizedBox(height: 2),
                       Text(
                         '${state.partTitle} · ${_formatTime(state.position)}',
-                        style: AppTypography.caption.copyWith(
-                          color: Colors.white.withOpacity(0.5),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white.withOpacity(0.4),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -110,7 +105,7 @@ class _MiniPlayerBar extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Кнопка play/pause — обводка полупрозрачным белым.
+                // Кнопка play/pause с обводкой (как в прототипе)
                 _PlayPauseButton(playing: state.playing),
               ],
             ),
@@ -121,8 +116,8 @@ class _MiniPlayerBar extends ConsumerWidget {
   }
 }
 
-/// Кнопка play/pause в стиле прототипа: круглая 32×32 с обводкой
-/// rgba(255,255,255,0.8) и белой иконкой внутри.
+/// Круглая кнопка play/pause с белой обводкой.
+/// Точный матч прототипа v4.2 (строка 1102).
 class _PlayPauseButton extends ConsumerWidget {
   const _PlayPauseButton({required this.playing});
   final bool playing;
@@ -135,32 +130,35 @@ class _PlayPauseButton extends ConsumerWidget {
       child: SizedBox(
         width: 44,
         height: 44,
-        child: InkWell(
-          onTap: () {
-            final handler = ref.read(audioHandlerProvider);
-            if (playing) {
-              handler.pause();
-            } else {
-              handler.play();
-            }
-          },
-          customBorder: const CircleBorder(),
-          child: Center(
-            child: Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.8),
-                  width: 1.5,
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () {
+              final handler = ref.read(audioHandlerProvider);
+              if (playing) {
+                handler.pause();
+              } else {
+                handler.play();
+              }
+            },
+            child: Center(
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.8),
+                    width: 1.5,
+                  ),
                 ),
-              ),
-              alignment: Alignment.center,
-              child: Icon(
-                playing ? Icons.pause : Icons.play_arrow,
-                size: 18,
-                color: Colors.white.withOpacity(0.9),
+                child: Icon(
+                  playing ? Icons.pause : Icons.play_arrow,
+                  size: 18,
+                  color: Colors.white.withOpacity(0.9),
+                ),
               ),
             ),
           ),
