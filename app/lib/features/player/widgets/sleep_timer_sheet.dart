@@ -10,15 +10,13 @@ import '../providers/player_provider.dart';
 /// 5 опций: 15 / 30 / 45 / 60 мин / Конец части.
 /// Если таймер уже активен — показывается счётчик и кнопка «Отменить».
 ///
-/// Открывать через:
-/// ```
-/// showModalBottomSheet(
-///   context: context,
-///   backgroundColor: Colors.transparent,
-///   useRootNavigator: true,
-///   builder: (_) => const SleepTimerSheet(),
-/// );
-/// ```
+/// Цвета (прототип v4.2):
+/// - Фон шторки: AppColors.darkCoffee (#1A0E08) — единая зона с плеером.
+/// - Drag handle: rgba(255,255,255,0.2).
+/// - Заголовок: белый.
+/// - Кнопки опций: rgba(255,255,255,0.08), белый текст.
+/// - Карточка активного таймера: чуть светлее фона + белый текст.
+/// - Кнопка «Отменить»: terracotta фон + белый текст.
 class SleepTimerSheet extends ConsumerWidget {
   const SleepTimerSheet({super.key});
 
@@ -33,7 +31,7 @@ class SleepTimerSheet extends ConsumerWidget {
     return SafeArea(
       child: Container(
         decoration: const BoxDecoration(
-          color: AppColors.background,
+          color: AppColors.darkCoffee,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -44,7 +42,9 @@ class SleepTimerSheet extends ConsumerWidget {
             const SizedBox(height: 16),
             Text(
               'Таймер сна',
-              style: AppTypography.serifSectionTitle,
+              style: AppTypography.serifSectionTitle.copyWith(
+                color: Colors.white,
+              ),
             ),
             const SizedBox(height: 20),
 
@@ -109,7 +109,7 @@ class _DragHandle extends StatelessWidget {
         width: 36,
         height: 4,
         decoration: BoxDecoration(
-          color: AppColors.border,
+          color: Colors.white.withOpacity(0.2),
           borderRadius: BorderRadius.circular(2),
         ),
       ),
@@ -140,7 +140,7 @@ class _ActiveTimerCard extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: AppColors.surfaceLight,
+            color: Colors.white.withOpacity(0.08),
             borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
           ),
           child: Column(
@@ -148,7 +148,10 @@ class _ActiveTimerCard extends StatelessWidget {
               const Icon(Icons.bedtime_outlined,
                   size: 28, color: AppColors.terracotta),
               const SizedBox(height: 8),
-              Text(label, style: AppTypography.bodyMedium),
+              Text(
+                label,
+                style: AppTypography.bodyMedium.copyWith(color: Colors.white),
+              ),
             ],
           ),
         ),
@@ -270,11 +273,12 @@ class _TimerButton extends StatelessWidget {
       label: 'Таймер сна: $label',
       button: true,
       child: Material(
-        color: AppColors.surfaceLight,
+        color: Colors.white.withOpacity(0.08),
         borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+          splashColor: Colors.white.withOpacity(0.08),
           child: Container(
             width: isFullWidth ? double.infinity : null,
             height: 56,
@@ -282,7 +286,7 @@ class _TimerButton extends StatelessWidget {
             child: Text(
               label,
               style: AppTypography.button.copyWith(
-                color: AppColors.textPrimary,
+                color: Colors.white,
                 fontWeight: FontWeight.w600,
               ),
             ),

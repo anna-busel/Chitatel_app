@@ -12,10 +12,14 @@ import '../providers/player_provider.dart';
 /// Показывается ТОЛЬКО когда в плеере что-то загружено (`hasContent == true`).
 /// Если ничего не играет — возвращает SizedBox.shrink (нулевая высота).
 ///
+/// Цвета (прототип v4.2):
+/// - Фон: AppColors.darkCoffee (#1A0E08) — solid тёмно-коричневый.
+/// - Текст: белый, метаданные — белый 50% opacity.
+/// - Кнопка play: обводка полупрозрачным белым, иконка белая.
+///
 /// Содержит:
-/// - Миниатюра обложки (40×40)
-/// - Название книги + текущая часть (2 строки)
-/// - Текущая позиция / длительность
+/// - Миниатюра обложки (48×48)
+/// - Название книги + текущая часть + время (2 строки)
 /// - Кнопка play/pause
 /// - Нажатие на любое место кроме кнопки → разворачивает плеер
 ///
@@ -53,18 +57,15 @@ class _MiniPlayerBar extends ConsumerWidget {
       label: 'Сейчас играет: ${book.title}, ${state.partTitle}',
       container: true,
       child: Material(
-        color: AppColors.cardBackground,
+        color: AppColors.darkCoffee,
         child: InkWell(
           onTap: () => context.push(Routes.player(book.id)),
+          // splash на тёмном фоне — полупрозрачный белый.
+          splashColor: Colors.white.withOpacity(0.08),
+          highlightColor: Colors.white.withOpacity(0.04),
           child: Container(
             height: MiniPlayer.height,
-            decoration: const BoxDecoration(
-              color: AppColors.cardBackground,
-              border: Border(
-                top: BorderSide(color: AppColors.border, width: 1),
-                bottom: BorderSide(color: AppColors.border, width: 0.5),
-              ),
-            ),
+            color: AppColors.darkCoffee,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: [
@@ -81,7 +82,7 @@ class _MiniPlayerBar extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Название + часть + время
+                // Название + часть + время — белый на тёмном фоне.
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -90,6 +91,7 @@ class _MiniPlayerBar extends ConsumerWidget {
                       Text(
                         book.title,
                         style: AppTypography.bodyMedium.copyWith(
+                          color: Colors.white,
                           fontWeight: FontWeight.w600,
                         ),
                         maxLines: 1,
@@ -98,7 +100,9 @@ class _MiniPlayerBar extends ConsumerWidget {
                       const SizedBox(height: 2),
                       Text(
                         '${state.partTitle} · ${_formatTime(state.position)}',
-                        style: AppTypography.caption,
+                        style: AppTypography.caption.copyWith(
+                          color: Colors.white.withOpacity(0.5),
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -106,7 +110,7 @@ class _MiniPlayerBar extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Кнопка play/pause
+                // Кнопка play/pause — обводка полупрозрачным белым.
                 _PlayPauseButton(playing: state.playing),
               ],
             ),
@@ -117,6 +121,8 @@ class _MiniPlayerBar extends ConsumerWidget {
   }
 }
 
+/// Кнопка play/pause в стиле прототипа: круглая 32×32 с обводкой
+/// rgba(255,255,255,0.8) и белой иконкой внутри.
 class _PlayPauseButton extends ConsumerWidget {
   const _PlayPauseButton({required this.playing});
   final bool playing;
@@ -129,8 +135,8 @@ class _PlayPauseButton extends ConsumerWidget {
       child: SizedBox(
         width: 44,
         height: 44,
-        child: IconButton(
-          onPressed: () {
+        child: InkWell(
+          onTap: () {
             final handler = ref.read(audioHandlerProvider);
             if (playing) {
               handler.pause();
@@ -138,12 +144,26 @@ class _PlayPauseButton extends ConsumerWidget {
               handler.play();
             }
           },
-          icon: Icon(
-            playing ? Icons.pause : Icons.play_arrow,
-            size: 28,
-            color: AppColors.terracotta,
+          customBorder: const CircleBorder(),
+          child: Center(
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.8),
+                  width: 1.5,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                playing ? Icons.pause : Icons.play_arrow,
+                size: 18,
+                color: Colors.white.withOpacity(0.9),
+              ),
+            ),
           ),
-          padding: EdgeInsets.zero,
         ),
       ),
     );

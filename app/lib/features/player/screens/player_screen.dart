@@ -18,16 +18,16 @@ import '../widgets/sleep_timer_sheet.dart';
 /// Открывается через `/player/:bookId`, может прийти с дополнительными
 /// параметрами в `extra`: `{'startPart': int?, 'startPosition': int?}`.
 ///
-/// Логика загрузки книги:
-/// 1. При первом построении проверяем: уже ли эта книга в плеере?
-/// 2. Если да — ничего не делаем, подхватываем состояние.
-/// 3. Если нет — вызываем `handler.loadBook(book, startPart, startPosition)`.
-///    Если параметры не заданы — плеер сам подтянет прогресс с сервера.
+/// Логика загрузки книги (см. _ensureBookLoaded):
+/// - Книга не та же → loadBook с новыми параметрами.
+/// - Та же книга + явный startPart другой → переключаем часть.
+/// - Та же книга + startPart не задан или совпадает → ничего не делаем
+///   (юзер пришёл из mini-player с той же книгой и частью).
+///
+/// Цвета: вертикальный градиент darkCoffee → #0D0705 (как в прототипе v4.2).
+/// Status bar поверх плеера — светлые иконки (SystemUiOverlayStyle.light).
 ///
 /// Закрытие: стрелка вниз в TopBar или swipe-down жест (стандарт iOS).
-///
-/// Apple HIG → Now Playing screen: тёмный фон, обложка по центру, минимум
-/// элементов, фокус на воспроизведении.
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({
     super.key,
@@ -45,54 +45,90 @@ class PlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> {
-  bool _initialized = false;
+  /// Нижняя точка градиента плеера. Локальная константа — используется
+  /// только тут, в AppColors не добавляем чтобы не плодить лишние имена.
+  /// Точный матч прототипа docs/prototype-v4_2.jsx.
+  static const Color _gradientBottom = Color(0xFF0D0705);
 
-  @override
-  void initState() {
-    super.initState();
-    // Откладываем загрузку до того момента, когда придёт book из bookProvider.
-    // Делается в build через ref.listen.
-  }
+  /// true если уже хотя бы раз вызывали _ensureBookLoaded для текущего билда.
+  /// Защита от повторного срабатывания postFrameCallback в одной сессии экрана.
+  bool _firstFrameProcessed = false;
 
-  /// Загружает книгу в плеер если она ещё не загружена.
-  /// Вызывается из build когда BookModel готов.
+  /// Загружает книгу в плеер с учётом widget.startPart / startPosition.
+  ///
+  /// Логика:
+  /// 1. Книга НЕ та же что играет → handler.loadBook(...) с новыми параметрами.
+  /// 2. Книга та же, но юзер явно попросил другую часть через extra → переключаем.
+  /// 3. Книга та же, startPart не задан или совпадает с текущей → ничего
+  ///    (юзер пришёл из mini-player продолжать слушать).
   Future<void> _ensureBookLoaded(BookModel book) async {
-    if (_initialized) return;
-    _initialized = true;
-
     final handler = ref.read(audioHandlerProvider);
     final current = handler.currentBook;
 
-    // Если эта же книга уже играет — ничего не делаем (юзер пришёл из mini-player).
-    if (current != null && current.id == book.id) return;
+    // 1. Книга не та же — грузим заново.
+    if (current == null || current.id != book.id) {
+      await handler.loadBook(
+        book,
+        startPartNumber: widget.startPart,
+        startPositionSeconds: widget.startPosition,
+        autoPlay: true,
+      );
+      return;
+    }
 
-    // Загружаем новую книгу.
-    await handler.loadBook(
-      book,
-      startPartNumber: widget.startPart,
-      startPositionSeconds: widget.startPosition,
-      autoPlay: true,
-    );
+    // 2. Та же книга, но юзер явно попросил другую часть — переключаем.
+    if (widget.startPart != null &&
+        widget.startPart != handler.currentPartNumber) {
+      await handler.loadBook(
+        book,
+        startPartNumber: widget.startPart,
+        startPositionSeconds: widget.startPosition ?? 0,
+        autoPlay: true,
+      );
+      return;
+    }
+
+    // 3. Та же книга, та же часть (или часть не указана) — оставляем как есть.
   }
 
   @override
   Widget build(BuildContext context) {
     final bookAsync = ref.watch(bookProvider(widget.bookId));
 
-    return Scaffold(
-      // Тёмный фон плеера — стандарт media-приложений (Apple Music, Audible)
-      backgroundColor: AppColors.darkCoffee,
-      body: bookAsync.when(
-        data: (book) {
-          // Запускаем загрузку как side-effect после первого билда с данными.
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _ensureBookLoaded(book);
-          });
-          return _PlayerBody(book: book);
-        },
-        loading: () => const _LoadingView(),
-        error: (_, __) => _ErrorView(
-          onRetry: () => ref.invalidate(bookProvider(widget.bookId)),
+    // Status bar поверх плеера — светлые иконки. Возвращается к темным
+    // автоматически когда AnnotatedRegion уходит со сцены (closing).
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: AppColors.darkCoffee,
+        body: Container(
+          // Вертикальный градиент сверху-вниз: darkCoffee → почти чёрный.
+          // Создаёт ощущение глубины, точный матч прототипа v4.2.
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [AppColors.darkCoffee, _gradientBottom],
+            ),
+          ),
+          child: bookAsync.when(
+            data: (book) {
+              // Загружаем книгу один раз после первого билда с данными.
+              // _firstFrameProcessed защищает от повторных вызовов в рамках
+              // одного state, но при новом state (новый push) сработает заново.
+              if (!_firstFrameProcessed) {
+                _firstFrameProcessed = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _ensureBookLoaded(book);
+                });
+              }
+              return _PlayerBody(book: book);
+            },
+            loading: () => const _LoadingView(),
+            error: (_, __) => _ErrorView(
+              onRetry: () => ref.invalidate(bookProvider(widget.bookId)),
+            ),
+          ),
         ),
       ),
     );
@@ -114,7 +150,6 @@ class _PlayerBody extends ConsumerWidget {
         onVerticalDragEnd: (details) {
           final velocity = details.primaryVelocity ?? 0;
           if (velocity > 300) {
-            // Достаточная скорость вниз → закрыть.
             if (context.canPop()) context.pop();
           }
         },
@@ -192,7 +227,6 @@ class _TopBar extends StatelessWidget {
               ),
             ],
           ),
-          // Балансир для центрирования заголовка
           const SizedBox(width: AppSpacing.minTapTarget),
         ],
       ),
@@ -207,7 +241,9 @@ class _CoverSection extends StatelessWidget {
 
   final BookModel book;
 
-  static const double _coverSize = 240;
+  /// Размер обложки 220×220 — точный матч прототипа v4.2.
+  /// Компактнее чем у Apple Music (300×300) и помещается на iPhone SE.
+  static const double _coverSize = 220;
 
   @override
   Widget build(BuildContext context) {
@@ -299,12 +335,6 @@ class _TitleSection extends ConsumerWidget {
 
 // ─────────────────────────── PROGRESS (slider + таймеры) ───────────────────────────
 
-/// Прогресс-бар с поддержкой drag.
-///
-/// Реактивно следит за позицией плеера ЧЕРЕЗ playerUiStateProvider.
-/// При начале drag — отключаем синхронизацию (через локальный _dragValue),
-/// при отпускании — `handler.seek(...)`. Без этого ползунок дёргается
-/// между позицией пальца и реальной позицией плеера.
 class _ProgressSection extends ConsumerStatefulWidget {
   const _ProgressSection();
 
@@ -406,7 +436,7 @@ class _MainControls extends ConsumerWidget {
               state.processingState == ProcessingState.buffering,
         ),
         _SkipButton(
-          icon: Icons.forward_10, // нет +15 в Material, используем forward icon
+          icon: Icons.forward_10,
           label: '+15 сек',
           onTap: () => ref.read(audioHandlerProvider).fastForward(),
           semanticLabel: 'Перемотать на 15 секунд вперёд',

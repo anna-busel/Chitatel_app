@@ -8,20 +8,17 @@ import '../providers/player_provider.dart';
 /// Шторка выбора скорости воспроизведения (MASTER 4.18).
 ///
 /// 5 вариантов: 0.75× / 1.0× / 1.25× / 1.5× / 2.0×.
-/// Выбранная — заливка терракотой, остальные — surface light.
+/// Выбранная — заливка терракотой, остальные — полупрозрачный белый на тёмном.
+///
+/// Цвета (прототип v4.2):
+/// - Фон шторки: AppColors.darkCoffee (#1A0E08) — единая зона с плеером.
+/// - Drag handle: rgba(255,255,255,0.2).
+/// - Заголовок: белый.
+/// - Невыбранные кнопки: rgba(255,255,255,0.08), белый текст.
+/// - Выбранная кнопка: terracotta, белый текст.
 ///
 /// Скорость сохраняется между сессиями (через playerSpeedProvider →
 /// SharedPreferences). Стандарт как у Apple Books, Audible.
-///
-/// Открывать через:
-/// ```
-/// showModalBottomSheet(
-///   context: context,
-///   backgroundColor: Colors.transparent,
-///   useRootNavigator: true,
-///   builder: (_) => const SpeedSheet(),
-/// );
-/// ```
 class SpeedSheet extends ConsumerWidget {
   const SpeedSheet({super.key});
 
@@ -32,7 +29,7 @@ class SpeedSheet extends ConsumerWidget {
     return SafeArea(
       child: Container(
         decoration: const BoxDecoration(
-          color: AppColors.background,
+          color: AppColors.darkCoffee,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -43,10 +40,12 @@ class SpeedSheet extends ConsumerWidget {
             const SizedBox(height: 16),
             Text(
               'Скорость',
-              style: AppTypography.serifSectionTitle,
+              style: AppTypography.serifSectionTitle.copyWith(
+                color: Colors.white,
+              ),
             ),
             const SizedBox(height: 20),
-            // 5 кнопок скорости в строку
+            // 5 кнопок скорости в строку.
             Row(
               children: [
                 for (final speed in kPlayerSpeeds) ...[
@@ -81,7 +80,7 @@ class _DragHandle extends StatelessWidget {
         width: 36,
         height: 4,
         decoration: BoxDecoration(
-          color: AppColors.border,
+          color: Colors.white.withOpacity(0.2),
           borderRadius: BorderRadius.circular(2),
         ),
       ),
@@ -109,18 +108,21 @@ class _SpeedButton extends StatelessWidget {
       button: true,
       selected: isSelected,
       child: Material(
-        color: isSelected ? AppColors.terracotta : AppColors.surfaceLight,
+        color: isSelected
+            ? AppColors.terracotta
+            : Colors.white.withOpacity(0.08),
         borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+          splashColor: Colors.white.withOpacity(0.08),
           child: Container(
             height: 56,
             alignment: Alignment.center,
             child: Text(
               label,
               style: AppTypography.button.copyWith(
-                color: isSelected ? Colors.white : AppColors.textPrimary,
+                color: Colors.white,
                 fontWeight: FontWeight.w700,
               ),
             ),
