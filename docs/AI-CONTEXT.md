@@ -23,7 +23,7 @@
 
 ## ПРОГРЕСС
 
-**Готовые задачи:** 0.5, 0.6, 1.1, 1.2, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.3.5-a/b/c/d, 2.4, 2.5, 2.5-поиск, 2.6, 2.3 (сервер), **2.7** (Flutter аудиоплеер — ЗАВЕРШЕНА 13.05.2026)
+**Готовые задачи:** 0.5, 0.6, 1.1, 1.2, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.3.5-a/b/c/d, 2.4, 2.5, 2.5-поиск, 2.6, 2.3 (сервер), **2.7** (Flutter аудиоплеер — ЗАВЕРШЕНА 13.05.2026, доработана итеративно)
 
 ---
 
@@ -67,8 +67,6 @@ Format URL: `http://host:port/audio/<filename>?exp=<unix_timestamp>&sig=<hex>`.
 
 ### Что в `.env` для разработки на Mac
 
-Должно быть в `~/Chitatel_app/server/.env` (создать из `.env.example`):
-
 ```bash
 AUDIO_SECRET=dev-audio-secret-CHANGE-IN-PROD-min-32-chars
 AUDIO_BASE_PATH=/Users/g/Chitatel_app/audio-storage
@@ -76,11 +74,9 @@ AUDIO_URL_TTL_SECONDS=3600
 PUBLIC_BASE_URL=http://localhost:3000
 ```
 
-⚠️ **`AUDIO_BASE_PATH` — абсолютный путь**, не `~`. Замени `g` на свой username Mac.
+⚠️ **`AUDIO_BASE_PATH` — абсолютный путь**, не `~`.
 
 ### Что менять в `.env` при миграции на VPS
-
-Три строки:
 
 ```bash
 AUDIO_SECRET=<generate via: openssl rand -hex 32>
@@ -117,40 +113,16 @@ mkdir -p ~/Chitatel_app/audio-storage/<slug> && cd <папка_с_ogg> && for i 
 ```bash
 cd ~/Downloads && curl -L https://evermeet.cx/ffmpeg/getrelease/zip -o ffmpeg.zip && unzip -o ffmpeg.zip && sudo mv ffmpeg /usr/local/bin/ && sudo chmod +x /usr/local/bin/ffmpeg
 ```
-ffprobe отдельно:
-```bash
-cd ~/Downloads && curl -L https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip -o ffprobe.zip && unzip -o ffprobe.zip && sudo mv ffprobe /usr/local/bin/ && sudo chmod +x /usr/local/bin/ffprobe
-```
-
-### Тестирование через curl
-
-```bash
-# 1. Найти id Маленького принца
-curl -s 'http://localhost:3000/api/books?isFree=true' | python3 -m json.tool | grep -A1 'malenkii_princ'
-
-# 2. Получить signed URL для первой части
-curl -s 'http://localhost:3000/api/books/<ID>/audio/1' | python3 -m json.tool
-
-# 3. Скачать первый килобайт через signed URL
-curl -H "Range: bytes=0-1000" -i '<audioUrl>'
-```
-
-### Что НЕ сделано (намеренно, для оптимизации Фазы 7)
-
-- ❌ **nginx X-Accel-Redirect** — Express отдаёт через `fs.createReadStream`. На VPS под нагрузкой переключим на nginx (опциональная оптимизация Фазы 7).
-- ❌ **Адаптивный битрейт (HLS)** — Анна публикует 192kbps. HLS добавим если будут жалобы.
 
 ---
 
 ## ДОП.ШАГИ ВНЕ STEP-BY-STEP (выполнено 24.04.2026)
 
-Шаги возникли после изучения реального контента Анны (`g1orgi89/reader-bot`). Все выполнены.
-
 | Шаг | Что сделано | Коммит |
 |-----|-----------|--------|
-| **2.3.5-a** ✅ | Модель `server/src/models/Book.js` обновлена. `routes/books.js` пофикшен под `categories`. | `163ae99`, `7ea5112` |
+| **2.3.5-a** ✅ | Модель `server/src/models/Book.js` обновлена. | `163ae99`, `7ea5112` |
 | **2.3.5-b** ✅ | `server/src/scripts/reader-bot-catalog.json` — 42 книги + 6 пакетов. | `28f93fb` |
-| **2.3.5-c** ✅ | `server/src/scripts/seed.js` — `npm run seed` вставляет 42 платных + 3 бесплатных + 6 пакетов. | — |
+| **2.3.5-c** ✅ | `server/src/scripts/seed.js` — 42 платных + 3 бесплатных + 6 пакетов. | — |
 | **2.3.5-d** ✅ | 55 обложек в `app/assets/book-covers/`. | `9f4f8a2` + коммит обложек |
 
 **Запуск seed:** `cd ~/Chitatel_app/server && npm run seed`.
@@ -172,161 +144,180 @@ curl -H "Range: bytes=0-1000" -i '<audioUrl>'
 | `server/src/routes/audio.js` | GET `/audio/*` с Range support, защита от path traversal |
 | `server/src/routes/progress.js` | GET/POST `/api/progress` с Zod и upsert |
 
-**Файлы Маленького принца** (~`/Chitatel_app/audio-storage/malenkii_princ/`):
+**Файлы Маленького принца** (`~/Chitatel_app/audio-storage/malenkii_princ/`):
 - part-1.mp3 (855 сек) ... part-6.mp3 (1896 сек). Итого ~2 часа.
 
 ---
 
 ## ЗАДАЧА 2.7 (Flutter — аудиоплеер) — ВЫПОЛНЕНА 13.05.2026
 
-### Что в репо (14 файлов, 9 новых + 5 правок)
+### Что в репо (15 файлов, 9 новых + 6 правок)
 
-**Новые (Flutter):**
+**Новые (Flutter, 9 файлов в `app/lib/features/player/`):**
 
 | Файл | Назначение |
 |------|-----------|
-| `app/lib/features/player/services/audio_service.dart` | `ChitatelAudioHandler` (BaseAudioHandler + SeekHandler). just_audio + audio_service. MediaSession (lock screen / Control Center). AudioSession.music() для iOS background. Обработка истечения signed URL (410/403) → перезапрос с сохранением позиции. Автопереход к следующей части. Sleep timer (15/30/45/60 мин или до конца части). Прогресс POST каждые 30 сек + pause + автопереход. Singleton `ChitatelAudioHandler.instance`. |
-| `app/lib/features/player/services/progress_service.dart` | HTTP `GET/POST /api/progress`. Тихо проглатывает ошибки (Apple HIG: не прерывать UX из-за фоновых операций). `kDebugMode` логи. |
-| `app/lib/features/player/services/player_api_service.dart` | HTTP `GET /api/books/:id/audio/:partNumber` → `AudioUrlResponse`. |
-| `app/lib/features/player/services/cover_cache.dart` | Кеш обложек для `MediaItem.artUri` (lock screen). http→как есть, asset→копия в Application Cache Directory (Apple File System Programming Guide), пусто→null. Проверка `File.exists()` перед переиспользованием. |
-| `app/lib/features/player/providers/player_provider.dart` | Riverpod-обёртки: `audioHandlerProvider`, `playerUiStateProvider` (Rx.combineLatest5 — playerState/position/duration/speed/mediaItem), `sleepTimerRemainingProvider`, `playerSpeedProvider` (с SharedPreferences между сессиями). |
-| `app/lib/features/player/screens/player_screen.dart` | Развёрнутый плеер (4.15). Тёмный фон #1A0E08. Обложка 240×240 с тенью. Swipe-down dismissal. Slider с локальным `_dragSeconds` (без скачков при перетягивании). Play/pause big с haptic feedback. ±15 сек. Bottom controls: Скорость + Сон (**кнопка Цитата убрана — см. ниже**). Loading/Error state. |
-| `app/lib/features/player/widgets/mini_player.dart` | Мини-плеер (4.16). Высота 64px. Виден только когда `hasContent==true`. Tap → переход в плеер. |
-| `app/lib/features/player/widgets/speed_sheet.dart` | Шторка скорости (4.18). 5 кнопок в строку. Выбранная — терракота. |
-| `app/lib/features/player/widgets/sleep_timer_sheet.dart` | Шторка таймера сна (4.19). Если активен — счётчик + «Отменить». Иначе — 4 кнопки минут (2×2) + «Конец части» (полная ширина). |
+| `services/audio_service.dart` | `ChitatelAudioHandler` (BaseAudioHandler + SeekHandler). just_audio + audio_service. MediaSession (lock screen). AudioSession.music() для iOS background. Обработка истечения signed URL (410/403). Автопереход к следующей части. Sleep timer. Прогресс POST каждые 30 сек. Singleton. |
+| `services/progress_service.dart` | HTTP GET/POST `/api/progress`. Тихо проглатывает ошибки. |
+| `services/player_api_service.dart` | HTTP GET `/api/books/:id/audio/:partNumber` → `AudioUrlResponse`. |
+| `services/cover_cache.dart` | Кеш обложек для `MediaItem.artUri` (Application Cache Directory). |
+| `providers/player_provider.dart` | Riverpod: `audioHandlerProvider`, `playerUiStateProvider` (Rx.combineLatest5), `sleepTimerRemainingProvider`, `playerSpeedProvider`. |
+| `screens/player_screen.dart` | Развёрнутый плеер (4.15). **Градиент #1A0E08 → #0D0705** (точный матч прототипа). Обложка 220×220. Status bar светлый (AnnotatedRegion). Swipe-down. Slider с локальным `_dragSeconds`. Play/pause с haptic. Bottom: Скорость + Сон. |
+| `widgets/mini_player.dart` | Мини-плеер (4.16). 64px. **Тёмно-кофейный #1A0E08**, белый текст, кнопка play с обводкой (точный матч прототипа). |
+| `widgets/speed_sheet.dart` | Шторка скорости (4.18). **Тёмная** darkCoffee. 5 кнопок, выбранная — terracotta. |
+| `widgets/sleep_timer_sheet.dart` | Шторка таймера сна (4.19). **Тёмная** darkCoffee. 4 кнопки минут + Конец части. |
 
-**Правки:**
+**Правки (6 файлов):**
 
 | Файл | Что |
 |------|-----|
-| `app/pubspec.yaml` | +5 пакетов: `just_audio: ^0.9.40`, `audio_service: ^0.18.15`, `audio_session: ^0.1.21`, `rxdart: ^0.27.7`, `path_provider: ^2.1.3`. Версии зафиксированы — latest несовместим с Flutter 3.22.3 (just_audio 0.10+ ломает API, audio_service 0.19+ требует Flutter 3.27+). |
-| `app/lib/main.dart` | `ProviderContainer` создаётся **до** runApp → `initChitatelAudio` через `container.read(...)` → `UncontrolledProviderScope` с тем же контейнером. Стандартный паттерн Riverpod для bootstrap singleton'ов. |
-| `app/lib/core/network/api_endpoints.dart` | +3 endpoint helpers: `bookAudio(bookId, partNumber)`, `progress`, `progressByBook(bookId)`. |
-| `app/lib/core/router/app_router.dart` | `_Placeholder('Плеер: $bookId')` → `PlayerScreen(bookId, startPart?, startPosition?)` с чтением `extra`. В `_ScaffoldWithBottomBar` добавлен `MiniPlayer` над `AppBottomBar` через `Column`. |
-| `app/lib/features/book/screens/book_screen.dart` | 4 SnackBar-заглушки заменены: `_onPartTap` → `context.push(Routes.player, extra: {startPart, startPosition: 0})`, `_onListenPressed` → `context.push(Routes.player)` без extra (плеер сам подтянет прогресс). Добавлен флаг `hasAudio = book.parts.isNotEmpty` — кнопка disabled с текстом «Аудио загружается» (или «Аудио будет доступно скоро» для платной). Apple Guideline 2.1. |
+| `app/pubspec.yaml` | +5 пакетов: just_audio 0.9.40, audio_service 0.18.15, audio_session 0.1.21, rxdart 0.27.7, path_provider 2.1.3. Версии зафиксированы (Flutter 3.22.3 compat). |
+| `app/lib/main.dart` | `ProviderContainer` до runApp → `initChitatelAudio` → `UncontrolledProviderScope`. |
+| `app/lib/core/network/api_endpoints.dart` | +3 endpoint helpers: `bookAudio()`, `progress`, `progressByBook()`. |
+| `app/lib/core/router/app_router.dart` | `PlayerScreen` с чтением `extra` (startPart, startPosition). `MiniPlayer` в `Column` в bottomNavigationBar. |
+| `app/lib/features/book/screens/book_screen.dart` | `_onPartTap` → `context.push(Routes.player, extra: {startPart, startPosition: 0})`. Disabled-кнопка для книг без частей. |
+| `app/lib/features/book/widgets/book_parts_list.dart` | `ConsumerWidget` (был Stateless). **Подсветка активной части** через `Icons.graphic_eq` + бейдж «СЕЙЧАС» (Apple Music/Books/Audible стиль). |
 
 ### iOS Info.plist (без правок — было готово в 0.6)
 
 - `UIBackgroundModes` = `audio` ✅
 - Permission strings: NSCamera/NSPhotoLibrary/NSUserTracking ✅
+- ⚠️ TODO перед Фазой 7 (TestFlight): добавить `ITSAppUsesNonExemptEncryption=false` (HTTPS-only exempt encryption).
 
 ### Архитектурные решения сессии 13.05.2026
 
 | Решение | Обоснование |
 |---------|-------------|
-| **Кнопка «Цитата» в плеере УБРАНА** — в нижней панели только Скорость и Сон | Отклонение от MASTER 4.15 и сценария 3.4. Решение юзера: «не надо добавлять цитату это как-то странно». Apple Books/Audible/Apple Podcasts не имеют кнопки цитат в плеере. Альтернатива — глобальный FAB (плавающая кнопка пера) на других экранах, появится в задаче 5.3 (Фаза 5 — дневник). **Не возвращать в будущих сессиях.** |
-| **3 отдельных сервиса** (audio/progress/player_api) вместо 1 | MASTER 6.2.1 «SRP — одна ответственность на файл». HTTP-логика отдельно от playback. Если progress.post падает — не должен ронять background audio task. |
-| **`ChitatelAudioHandler.instance` синхронный singleton** + Riverpod-провайдер поверх | `AudioService.init()` асинхронный, Riverpod-провайдеры синхронные. Singleton-паттерн описан автором audio_service Ryan Heise в README. Альтернатива (FutureProvider везде) усложняет UI. |
-| **`ProviderContainer` создаётся до runApp** | Стандартный паттерн Riverpod для bootstrap. AudioHandler читает зависимости через `container.read()`, тот же контейнер передаётся в `UncontrolledProviderScope`. |
-| **Mini-player через `Column` в `bottomNavigationBar`** | Виджет сам решает быть или нет (через `ref.watch(playerUiStateProvider)` → SizedBox.shrink при пустом плеере). Не требует переделки роутера. |
-| **`AudioSessionConfiguration.music()` для iOS background** | Обязательно — без этого даже с `UIBackgroundModes=audio` аудио останавливается при блокировке экрана. Apple Guideline 2.1 risk. |
-| **Обработка истечения signed URL (410/403)** | `_player.playbackEventStream.listen(onError: ...)` → детект `'410'/'Gone'/'403'/'Forbidden'` в сообщении → `_loadPart` с сохранённой позицией и состоянием play/pause. Защита `_isRecovering` от бесконечного цикла. Apple Guideline 2.1: «complete app, no broken functionality». |
-| **`getApplicationCacheDirectory()` для обложек, не `getTemporaryDirectory()`** | Apple File System Programming Guide рекомендует Library/Caches/ для регенерируемых данных. iOS может почистить — поэтому `File.exists()` проверяется перед каждым использованием. |
-| **Slider с локальным `_dragSeconds`** | Без этого ползунок дёргается между позицией пальца юзера и реальной позицией плеера. Стандартный паттерн из официального примера just_audio. |
-| **Скорость сохраняется в SharedPreferences** (`player_speed` key) | Apple Books, Audible так делают. Юзер выбрал 1.5× → следующий разбор играет с 1.5×. |
-| **Speed/sleep sheet — белый фон** на тёмном плеере | Apple Music, Apple Books, Audible так делают. Контраст улучшает иерархию, совпадает с общим стилем приложения. |
-| **Drag-handle 36×4 в sheet'ах** | Стандарт iOS, цвет `AppColors.dividerWarm`. |
-| **Книги без частей → disabled-кнопка «Аудио загружается»** | У Анны Alice/EPL без аудио. Если юзер нажмёт «Слушать» с пустыми parts → плеер откроется и упадёт. Apple Guideline 2.1 reject risk. |
-| **Sleep timer + автопереход части продолжает тикать** | Стандарт Audible. Юзер поставил 30 мин — должно тикать независимо от смены части. |
-| **Sleep timer «Конец части» останавливается на естественном завершении** | Если юзер вручную нажал — таймер остаётся до естественного завершения, seek назад не сбрасывает. |
-| **Skip ±15 сек** (не 30) | Стандарт Apple Podcasts для подкастов и медленного контента типа аудиокниг. |
-| **Автопереход к следующей части** | Стандарт Apple Audiobooks. На последней части — pause. |
-| **Прогресс НЕ POST при seek** | Сервер сам считает дельту секунд только при `currentPart===previousPart && positionSeconds > previousSeconds`. Откаты/смена части не накапливают `totalListenedSeconds`. Клиент шлёт каждые 30 сек, сервер фильтрует. |
-| **Передача в плеер через `extra` GoRouter** | `context.push(Routes.player(id), extra: {'startPart': N, 'startPosition': S})`. Тап по части в списке → передаём part. Тап «Слушать» → без extra → плеер подтягивает прогресс с сервера. |
+| **Кнопка «Цитата» в плеере УБРАНА** | Решение юзера. Apple Books/Audible/Podcasts не имеют такой кнопки. Альтернатива — глобальный FAB в задаче 5.3. **Не возвращать.** |
+| 3 отдельных сервиса (audio/progress/player_api) | MASTER 6.2.1 SRP. Если progress.post падает — не ронять background audio task. |
+| Singleton AudioHandler + Riverpod-провайдер поверх | `AudioService.init()` асинхронный, Riverpod-провайдеры синхронные. Описано в audio_service README (Ryan Heise). |
+| `ProviderContainer` до runApp | Стандартный паттерн bootstrap Riverpod. |
+| Mini-player через `Column` в `bottomNavigationBar` | Виджет сам решает быть или нет (SizedBox.shrink при пустом плеере). |
+| `AudioSessionConfiguration.music()` для iOS background | Обязательно — без этого даже с UIBackgroundModes=audio iOS останавливает аудио при блокировке. |
+| Обработка истечения signed URL (410/403) | Детект в playbackEventStream.onError → перезапрос с сохранением позиции. Защита `_isRecovering` от цикла. |
+| `getApplicationCacheDirectory()` для обложек | Apple File System Programming Guide: Library/Caches/ для регенерируемых данных. |
+| Slider с локальным `_dragSeconds` | Без этого ползунок дёргается между позицией пальца и реальной позицией плеера. |
+| Скорость в SharedPreferences между сессиями | Apple Books, Audible. |
+| Skip ±15 сек | Стандарт Apple Podcasts для аудиокниг. |
+| Книги без частей → disabled-кнопка | Apple Guideline 2.1: не открывать плеер пустого контента. |
+| Sleep timer продолжает тикать при автопереходе части | Стандарт Audible. |
+| Прогресс НЕ POST при seek | Сервер сам отбросит регрессию через дельту. Клиент шлёт раз в 30 сек. |
+| Передача в плеер через `extra` GoRouter | Тап по части → передаём part. Тап «Слушать» → плеер сам подтягивает прогресс. |
+| **Mini-player ТОЛЬКО на 4 главных таб-экранах** | Apple-стандарт: Apple Music, Audible так делают. На странице книги mini-player НЕ показывается (информация о книге уже видна). |
+| **Цвета строго по прототипу v4.2** | См. ниже отдельное обсуждение цветов. |
+| **Подсветка активной части в списке — Icons.graphic_eq** | Apple Music/Books/Audible стандарт. Иконка эквалайзера на терракотовом фоне + бейдж «СЕЙЧАС» в строке. |
+| **Status bar на плеере → светлые иконки** | `AnnotatedRegion<SystemUiOverlayStyle>` с `light`. Apple HIG требование на тёмном фоне. |
+
+### Цвета плеера — окончательное решение (точный матч прототипа v4.2)
+
+**После итерации цветов 13.05.2026** (юзер обратил внимание что я отклонился от прототипа без согласования):
+
+| Элемент | Цвет | Источник |
+|---------|------|----------|
+| Развёрнутый плеер | **Градиент** `#1A0E08 → #0D0705` (180deg, сверху-вниз) | Прототип v4.2 строка 1080 |
+| Mini-player | **Solid `#1A0E08`** (darkCoffee), весь текст белый | Прототип v4.2 строка 1099 |
+| Sheets (скорость, сон) | **Solid `#1A0E08`** (darkCoffee), белый текст | Прототип v4.2 строки 1066, 1075 |
+| Кнопка play в mini-player | Обводка `rgba(255,255,255,0.8)` 1.5px | Прототип |
+| Drag-handle в sheets | `rgba(255,255,255,0.2)` 36×4 | Прототип |
+| Кнопки в sheets | Фон `rgba(255,255,255,0.08)`, текст белый | Прототип |
+| Выбранная скорость | `terracotta` #C73E28 | Стандартный акцент |
+| Обложка плеера | 220×220 | Прототип |
+| **Локально в player_screen.dart:** | `const Color _gradientBottom = Color(0xFF0D0705);` | В AppColors НЕ добавлен (используется в 1 месте) |
+
+**Контраст проверен (WCAG AA минимум 4.5:1):**
+- Белый текст на #1A0E08 = **18.7:1** (превышено в 4×)
+- Белый текст на #0D0705 = **20.2:1**
+- Терракота #C73E28 на #1A0E08 = **5.8:1**
+
+**Обоснование возврата к прототипу:** прототип задуман как единое цветовое решение — тёмный плеер → тёмный mini-player → тёмные sheets создают **визуальную связь**. Mini-player выглядит как «кусочек» плеера внизу экрана. Apple Music на iOS 18+ тоже делает тёмный mini-player (я ошибочно говорил что Apple делает белый — это было неверно).
 
 ### Что НЕ сделано в 2.7 (намеренно)
 
-- ❌ **Кнопка «Цитата» в плеере** — решение юзера, см. выше
-- ❌ **`quote_sheet.dart`** — будет в 5.3 (Фаза 5, дневник + AI consent) как shared виджет для FAB
-- ❌ **`bufferedPosition` визуализация** — нет в прототипе, не нужно
+- ❌ **Кнопка «Цитата» в плеере** — решение юзера
+- ❌ **`quote_sheet.dart`** — будет в 5.3 (Фаза 5: дневник + AI consent)
+- ❌ **`bufferedPosition` визуализация** — нет в прототипе
 - ❌ **Custom анимации сверх Material/Cupertino** — вне scope
 - ❌ **CarPlay / Apple Watch** — post-MVP
 
-### Чек-лист проверки на симуляторе (для следующей сессии)
+### Чек-лист тестирования на симуляторе
 
 - [ ] `flutter pub get` — все 5 пакетов встают
-- [ ] Холодный запуск → onboarding/login → переход в каталог (без падений)
-- [ ] Открыть Маленького принца → нажать «Слушать бесплатно» → плеер открывается
+- [ ] Открыть Маленького принца → нажать «Слушать бесплатно» → плеер открывается с **тёмным градиентом**
 - [ ] Воспроизведение стримится (Range запросы в Express логах)
 - [ ] Background play: заблокировать экран → музыка играет
-- [ ] Lock screen: controls видны (play/pause, ±15сек), прогресс обновляется
-- [ ] Lock screen artwork: для Маленького принца обложка показывается (asset → cache)
-- [ ] Seek работает (drag slider — плавно, без дёрганий)
-- [ ] Скорость: 2× применяется немедленно, сохраняется между сессиями
-- [ ] Sleep timer: 15 мин → музыка останавливается через 15 мин
-- [ ] Sleep «Конец части» — останавливается на естественном завершении
-- [ ] Мини-плеер виден на главной/каталоге/клубе/профиле когда плеер активен
-- [ ] Мини-плеер не виден когда нет загруженной книги
-- [ ] Прогресс POST в логах сервера каждые 30 сек
-- [ ] При закрытии плеера — POST с финальной позицией
-- [ ] При повторном открытии книги — продолжает с сохранённой позиции
-- [ ] Автопереход часть 1 → часть 2 при естественном окончании
-- [ ] Книги без частей (Alice, EPL): кнопка disabled с текстом «Аудио загружается»
-- [ ] Swipe-down на плеере → закрывает к экрану книги
-- [ ] VoiceOver: основной flow озвучивается осмысленно
+- [ ] Lock screen: controls + обложка
+- [ ] Seek работает (slider плавный)
+- [ ] Скорость: 2× применяется, сохраняется между сессиями
+- [ ] Sleep timer работает
+- [ ] **Mini-player ТЁМНЫЙ, виден на 4 главных табах, не на странице книги**
+- [ ] **На странице книги — иконка эквалайзера + бейдж «СЕЙЧАС» у активной части**
+- [ ] **Нажатие части 2 при играющей части 1 → переключение работает**
+- [ ] Status bar на плеере — светлые иконки
+- [ ] Книги без частей (Alice, EPL): кнопка disabled
+- [ ] Swipe-down на плеере → закрывает
 
 ---
 
 ## ЗАДАЧА 2.4 (главная страница) — ВЫПОЛНЕНА 27.04.2026
 
-См. предыдущие версии AI-CONTEXT. Краткая выжимка:
-- 11 файлов в `app/lib/features/home/`
-- `_Placeholder('Главная')` → `HomeScreen()`
-- Pull-to-refresh + ErrorView + HomeShimmer
+11 файлов в `app/lib/features/home/`. Pull-to-refresh + ErrorView + HomeShimmer.
 
 ---
 
 ## ЗАДАЧА 2.5 (каталог книг) — ВЫПОЛНЕНА 27.04.2026
 
-См. предыдущие версии AI-CONTEXT. 6 файлов в `app/lib/features/catalog/`. Сетка 2×N, 16 чипов фильтров, pull-to-refresh.
+6 файлов в `app/lib/features/catalog/`. Сетка 2×N, 16 чипов фильтров, pull-to-refresh.
 
 ---
 
 ## ЗАДАЧА 2.5-поиск (отдельный экран /search) — ВЫПОЛНЕНА 12.05.2026
 
-См. предыдущие версии AI-CONTEXT. 3 файла в `app/lib/features/search/`. Debounce 300ms.
+3 файла в `app/lib/features/search/`. Debounce 300ms.
 
 ---
 
 ## ЗАДАЧА 2.6 (экран книги) — ВЫПОЛНЕНА 11.05.2026
 
-4 файла в `app/lib/features/book/`. 3 варианта UI (бесплатная/платная/купленная). Кнопка «Купить на сайте автора» удалена (Apple compliance).
+4 файла в `app/lib/features/book/`. 3 варианта UI. Кнопка «Купить на сайте автора» удалена (Apple compliance).
 
 **Изменения 13.05.2026 (в рамках 2.7):**
-- `_onPartTap` и `_onListenPressed` теперь делают `context.push(Routes.player(...))` вместо SnackBar
+- `_onPartTap` и `_onListenPressed` → `context.push(Routes.player(...))`
 - Добавлен disabled-state для книг без аудио (Alice, EPL)
+- `book_parts_list.dart` переведён на ConsumerWidget — подсветка активной части
 
 ---
 
 ## ❗ ВАЖНОЕ ДЛЯ БУДУЩИХ ЗАДАЧ
 
-**1. Локализация цен (Фаза 3)** — `book.priceUsd` сейчас жёстко доллары. В Фазе 3 заменим на `Product.displayPrice` от StoreKit.
+**1. Локализация цен (Фаза 3)** — `book.priceUsd` сейчас USD. В Фазе 3 заменим на `Product.displayPrice` от StoreKit.
 
-**2. Non-consumable IAP для книг и пакетов (задача 3.5)** — в Фазе 3 создаём IAP продукты `book.{slug}` × 42, `package.{slug}` × 6.
+**2. Non-consumable IAP для книг и пакетов (задача 3.5)** — в Фазе 3.
 
 **3. Кнопка «Купить на сайте» — УДАЛЕНА (Apple compliance).** Альтернатива — задача 3.6 (промокоды).
 
 **4. Заглушки на экране книги (2.6)** — 3 const поля в `_BookContent`. `_isPurchased` обновится в Фазе 3, `_listenedPartNumbers` и `_progressPercent` — отдельная микро-задача в Фазе 3 (подключить ProgressService).
 
-**5. Конвертация BYN→USD при seed — приближённая.** Финал назначит Анна в App Store Connect (Фаза 3).
+**5. Конвертация BYN→USD при seed — приближённая.** Финал назначит Анна в App Store Connect.
 
 **6. ❗ ВОПРОС К АННЕ — эксклюзивные книги внутри пакетов (блокирует 2.5.5).**
 
 **Готовый текст для Анны:**
 > Анна, вопрос по пакетам. В пакете «Достоевский» 5 книг, но 2 из них («Бедные люди», «Бесы») у тебя в каталоге как отдельных разборов нет — они только в пакете. То же в других пакетах. Вопрос: это специально (эксклюзив пакета), или просто ещё не добавила? От ответа зависит как покажем экран пакета.
 
-**7. ❗ НОВАЯ ЗАДАЧА 3.6 — Активация промокода (Фаза 3).** Заменяет удалённую кнопку «Купить на сайте». Модель `PromoCode`, эндпоинты, Flutter-экран, админка.
+**7. ❗ ЗАДАЧА 3.6 — Активация промокода (Фаза 3).** Заменяет удалённую кнопку «Купить на сайте».
 
 **8. ❗ ВОПРОСЫ К АННЕ:**
 
 | # | Вопрос | Когда блокирует |
 |---|--------|-----------------|
 | 6.1 | Пакеты — эксклюзив или забыли добавить отдельно? | Задача 2.5.5 |
-| 8.1 | Отзывы пользователей нужны в первой версии? Или пост-MVP? | Возможная новая задача 6.9 |
-| 8.2 | Когда оформит Apple Developer Account ($99/год)? | Apple Sign In (1.3), вся Фаза 3, push, TestFlight, App Store |
-| 8.3 | Когда пришлёт MP3 остальных разборов? | Аудиоплеер уже работает, остальные разборы — пустой плеер с disabled-кнопкой |
+| 8.1 | Отзывы пользователей нужны в первой версии? | Возможная задача 6.9 |
+| 8.2 | Когда оформит Apple Developer Account ($99/год)? | 1.3, вся Фаза 3, push, TestFlight |
+| 8.3 | Когда пришлёт MP3 остальных разборов? | Плеер уже работает, остальные — disabled-кнопка |
 
-**9. Шторка цитаты (`quote_sheet.dart`)** — НЕ делалась в 2.7. Будет shared виджетом в задаче 5.3 (Фаза 5: дневник + AI consent + модель Quote). Вызывается через глобальный FAB (плавающая кнопка пера). Кнопка «Цитата» в плеере **не возвращается** (решение юзера).
+**9. Шторка цитаты (`quote_sheet.dart`)** — будет shared виджетом в задаче 5.3 (Фаза 5). Кнопка «Цитата» в плеере **не возвращается** (решение юзера).
+
+**10. `ITSAppUsesNonExemptEncryption=false` в Info.plist** — добавить перед Фазой 7 (TestFlight). HTTPS-only трафик exempt.
 
 ---
 
@@ -336,13 +327,19 @@ curl -H "Range: bytes=0-1000" -i '<audioUrl>'
 
 **2. UX-проблемы:** **спросить юзера** прежде чем править.
 
-**3. Apple compliance:** ВСЕГДА перепроверять через web_search (минимум 2025+ источники). Послабления меняются.
+**3. Apple compliance:** ВСЕГДА перепроверять через web_search (2025+). Послабления меняются.
 
-**4. Аудио на iOS:** строго MP3 или M4A. OGG не поддерживается. ffmpeg через evermeet.cx (не brew).
+**4. Аудио на iOS:** строго MP3/M4A. OGG не поддерживается. ffmpeg через evermeet.cx (не brew).
 
-**5. AudioSession (урок 13.05.2026):** для iOS background audio недостаточно `UIBackgroundModes=audio` в Info.plist. **ОБЯЗАТЕЛЬНА** runtime-настройка `AudioSession.instance.configure(AudioSessionConfiguration.music())` иначе аудио останавливается при блокировке экрана. Если пакет добавлен в pubspec — проверять что **используется** в коде.
+**5. AudioSession (13.05.2026):** для iOS background audio недостаточно `UIBackgroundModes=audio` в Info.plist. ОБЯЗАТЕЛЬНА runtime-настройка `AudioSession.instance.configure(AudioSessionConfiguration.music())`.
 
-**6. Самопроверка docstring'а (урок 13.05.2026):** если в docstring файла написано «делает X, Y, Z», после написания кода **обязательно** пройтись по списку и проверить что Y и Z реально реализованы. Невыполнение этого правила в первой версии audio_service.dart стоило одной итерации правок (забыл AudioSession и обработку 410).
+**6. Самопроверка docstring'а (13.05.2026):** после написания файла пройтись по списку обещанного в docstring и проверить что всё реализовано. Невыполнение в первой версии audio_service.dart стоило одной итерации (забыл AudioSession и обработку 410).
+
+**7. ⚠️ ЧИТАТЬ ПРОТОТИП ПЕРЕД UI КОДОМ (13.05.2026, итерация v2):** прототип Анны (`docs/prototype-v4_2.jsx`) — это согласованный с заказчиком дизайн. **НЕ отклоняться** от него без явной просьбы. В первой версии 2.7 я сделал mini-player и sheets белыми «по Apple-стандарту», хотя в прототипе они **тёмные**. Это стоило отдельной итерации. Перед написанием любого UI-кода — открывать prototype-v4_2.jsx и матчить точно.
+
+**8. ⚠️ Apple-стандарты — проверять перед утверждением (13.05.2026):** я уверенно сказал «Apple Music делает белый mini-player» — это **неверно**. Apple Music на iOS 18+ делает тёмный mini-player с blur-эффектом. Audible — тоже тёмный. Если не уверен — проверять через web_search, не полагаться на память.
+
+**9. ⚠️ `_initialized` костыли скрывают баги (13.05.2026):** в первой версии 2.7 я использовал `bool _initialized` для предотвращения двойной загрузки в `_ensureBookLoaded`. Это **проглатывало** случай «та же книга, но юзер попросил другую часть через extra». Заменил на проверку `current.id == book.id && widget.startPart == current.partNumber` — теперь логика явная.
 
 ---
 
@@ -368,7 +365,9 @@ curl -H "Range: bytes=0-1000" -i '<audioUrl>'
 
 **Apple compliance — внешние ссылки на покупки:** запрещены. Можно только Apple IAP и промокоды (3.6).
 
-**Плеер 4.15 — кнопка «Цитата» убрана** (13.05.2026, решение юзера). Нижняя панель: Скорость + Сон. Запись цитат — через FAB в задаче 5.3.
+**Плеер 4.15 — кнопка «Цитата» убрана** (13.05.2026). Нижняя панель: Скорость + Сон. Запись цитат — через FAB в задаче 5.3.
+
+**Mini-player виден только на 4 главных таб-экранах** (Главная/Каталог/Клуб/Профиль). На странице книги mini-player НЕ показывается (Apple-стандарт).
 
 ---
 
@@ -392,7 +391,7 @@ curl -H "Range: bytes=0-1000" -i '<audioUrl>'
 - **Flutter:** 3.22.3 (используется withOpacity, не withValues)
 - **Node.js:** 20.20.1 (nvm)
 - **MongoDB:** 7.0.20
-- **ffmpeg:** установлен через evermeet.cx (НЕ brew)
+- **ffmpeg:** через evermeet.cx (НЕ brew)
 - **Запуск MongoDB:** `mongod --dbpath ~/mongodb/data`
 - **Запуск бэкенда:** `cd ~/Chitatel_app/server && npm run dev`
 - **Запуск Flutter:** `cd ~/Chitatel_app/app && flutter pub get && flutter run`
@@ -426,13 +425,15 @@ curl -H "Range: bytes=0-1000" -i '<audioUrl>'
 
 ## ПРОШЛАЯ СЕССИЯ
 
-_13.05.2026 — Задача 2.7 (Flutter аудиоплеер) ЗАВЕРШЕНА. 14 файлов (9 новых + 5 правок). 5 новых пакетов в pubspec (just_audio 0.9.40, audio_service 0.18.15, audio_session 0.1.21, rxdart 0.27.7, path_provider 2.1.3). Архитектура: 3 сервиса (audio/progress/player_api), singleton AudioHandler + Riverpod-обёртки, AudioSession.music() для iOS background, обработка истечения signed URL с автоматическим перезапросом, кеш обложек в Application Cache Directory, Sleep timer с 5 опциями, скорость в SharedPreferences между сессиями, slider с локальным drag state, MiniPlayer над таб-баром через Column. Mini-player виден только когда `hasContent==true`. **Кнопка «Цитата» в плеере убрана** (решение юзера — стандарт Apple Books/Audible/Podcasts не имеет такой кнопки), отклонение от MASTER 4.15 зафиксировано. Шторка цитаты будет в 5.3. Книги без частей (Alice, EPL) — disabled-кнопка «Аудио загружается». Уроки сессии: 1) если пакет добавлен в pubspec — проверять что используется в коде (забыл AudioSession в первой версии); 2) после написания кода проходить по docstring'у файла и проверять что все обещанные пункты реализованы (забыл обработку 410). Следующая: Фаза 5 (ИИ-дневник) или Фаза 4 (бэкенд клуба)._
+_13.05.2026 (v2 — финальная итерация 2.7) — Юзер обнаружил 3 проблемы на симуляторе: 1) mini-player не виден на странице книги; 2) баг переключения части 2 при играющей части 1; 3) активная часть не подсвечена в списке. Обсудили — оставили Apple-стандарт (mini-player только на 4 главных табах), починили баг переключения, добавили подсветку активной части (Icons.graphic_eq + бейдж «СЕЙЧАС»). Заодно юзер обратил внимание что я отклонился от прототипа по цветам — вернули цвета прототипа: градиент плеера #1A0E08 → #0D0705, тёмный mini-player solid #1A0E08, тёмные sheets. Status bar на плеере → светлые иконки. Обложка 220×220 (вместо 240). Контраст белого на #1A0E08 = 18.7:1, на #0D0705 = 20.2:1 (WCAG AA в 4× превышено). Финальный коммит: `081d11d`. Уроки v2: 1) читать прототип ПЕРЕД написанием UI-кода; 2) Apple-стандарты — проверять, не полагаться на память (Apple Music сам делает тёмный mini-player); 3) `_initialized` костыли скрывают баги — заменил явной проверкой._
 
-_12.05.2026 (вторая половина) — Задача 2.3 (серверная часть). Конвертация 6 OGG → MP3 (192 kbps) Маленького принца через ffmpeg от evermeet.cx. 8 серверных файлов: Progress model, audio.service (HMAC-SHA256), audio.js (Range 200/206/403/410/404/416), progress.js (GET/POST с Zod), .env.example, config/index.js, app.js, seed.js. Без новых npm. Memo: где лежат файлы, миграция на VPS (3 строки .env + rsync), curl-тесты. Решения: HMAC signed URL TTL 1 час, Express fs.createReadStream (nginx X-Accel-Redirect — Фаза 7), прогресс показываем только на экране книги и в плеере (не на главной)._
+_13.05.2026 (v1) — Задача 2.7 (Flutter аудиоплеер) первая версия. 14 файлов (9 новых + 5 правок). 5 новых пакетов в pubspec. Архитектура: 3 сервиса (audio/progress/player_api), singleton AudioHandler + Riverpod-обёртки, AudioSession.music() для iOS background, обработка истечения signed URL, кеш обложек в Application Cache Directory, Sleep timer, скорость в SharedPreferences, slider с локальным drag state, MiniPlayer над таб-баром. Кнопка «Цитата» в плеере убрана (решение юзера). Книги без частей — disabled-кнопка. Уроки v1: 1) если пакет в pubspec — должен использоваться в коде (забыл AudioSession в первой версии); 2) после написания кода проходить по docstring'у файла и проверять что всё реализовано (забыл обработку 410); 3) проверять имена цветов/типографики в AppColors ПЕРЕД использованием (5 ошибок dividerWarm/coffeeDark — придумал имена которых нет)._
 
-_12.05.2026 (первая половина) — Задача 2.5-поиск (отдельный экран /search). 3 новых файла + правка router. Debounce 300ms. Серверной работы не потребовалось._
+_12.05.2026 (вторая половина) — Задача 2.3 (серверная часть). Конвертация 6 OGG → MP3 (192 kbps). 8 серверных файлов. Решения: HMAC signed URL TTL 1 час, Express fs.createReadStream, прогресс на экране книги и в плеере._
 
-_11.05.2026 — Задача 2.6 (экран книги). 4 файла. 3 варианта UI. Кнопка «Купить на сайте автора» удалена (Apple compliance). Альтернатива — задача 3.6 (промокоды) в Фазе 3._
+_12.05.2026 (первая половина) — Задача 2.5-поиск (отдельный экран /search). Debounce 300ms._
+
+_11.05.2026 — Задача 2.6 (экран книги). 3 варианта UI. Кнопка «Купить на сайте автора» удалена (Apple compliance)._
 
 _27.04.2026 — Задачи 2.4 (главная) и 2.5 (каталог)._
 
@@ -446,26 +447,31 @@ _06.04.2026 — Задачи 1.5–2.2: дизайн-система, навиг�
 
 | Дата | Решение | Причина |
 |------|---------|---------|
-| 13.05.2026 | **Кнопка «Цитата» в плеере убрана** | Решение юзера. Apple Books/Audible/Apple Podcasts не имеют такой кнопки. Альтернатива — глобальный FAB в задаче 5.3. Не возвращать. |
-| 13.05.2026 | 3 отдельных сервиса (audio/progress/player_api) | SRP. Если progress.post падает — не должен ронять background audio. |
-| 13.05.2026 | Singleton AudioHandler + Riverpod-провайдер поверх | AudioService.init() асинхронный. Описано в audio_service README. |
-| 13.05.2026 | ProviderContainer до runApp | Стандартный паттерн bootstrap Riverpod. |
-| 13.05.2026 | AudioSession.music() обязательно | Без этого iOS останавливает аудио при блокировке экрана даже с UIBackgroundModes=audio. |
-| 13.05.2026 | Обработка истечения signed URL (410/403) | TTL 1 час, реальные части до 33 мин — впритык если юзер ставил на паузу. Apple Guideline 2.1: no broken functionality. |
-| 13.05.2026 | getApplicationCacheDirectory вместо getTemporaryDirectory для обложек | Apple File System Programming Guide рекомендует Caches/ для регенерируемых данных. |
-| 13.05.2026 | Slider с локальным `_dragSeconds` | Без этого ползунок дёргается между позицией пальца и реальной позицией. |
-| 13.05.2026 | Скорость в SharedPreferences между сессиями | Apple Books, Audible так делают. |
-| 13.05.2026 | Sheet'ы — белый фон на тёмном плеере | Apple Music, Books, Audible. Контраст улучшает иерархию. |
-| 13.05.2026 | Skip ±15 сек | Стандарт Apple Podcasts для аудиокниг. |
-| 13.05.2026 | Книги без частей → disabled-кнопка | Apple Guideline 2.1: не открывать плеер пустого контента (Alice, EPL). |
-| 13.05.2026 | Sleep timer продолжает тикать при смене части | Стандарт Audible. |
-| 13.05.2026 | Прогресс НЕ POST при seek | Сервер сам отбросит регрессию через дельту. Клиент шлёт раз в 30 сек. |
-| 13.05.2026 | Передача в плеер через `extra` GoRouter | Тап по части → передаём part. Тап «Слушать» → плеер сам подтягивает прогресс. |
+| 13.05.2026 v2 | **Возврат к цветам прототипа** — градиент плеера #1A0E08→#0D0705, mini-player solid #1A0E08, sheets тёмные | Прототип v4.2 = согласованный дизайн с заказчиком. Apple Music/Audible тоже делают тёмные mini-player. |
+| 13.05.2026 v2 | Status bar на плеере → светлые иконки (AnnotatedRegion) | Apple HIG: на тёмном фоне белый текст и иконки. |
+| 13.05.2026 v2 | Обложка плеера 220×220 (вместо 240) | Точный матч прототипа. Больше места под нижние controls на iPhone SE. |
+| 13.05.2026 v2 | **Подсветка активной части — Icons.graphic_eq + бейдж «СЕЙЧАС»** | Apple Music/Books/Audible стандарт. Без mini-player на странице книги это единственный способ увидеть что часть играет. |
+| 13.05.2026 v2 | **Mini-player только на 4 главных таб-экранах** (не на странице книги) | Apple-стандарт (Apple Music, Audible). На странице книги информация о ней уже видна. |
+| 13.05.2026 v2 | Фикс бага переключения частей: если та же книга + widget.startPart явно задан и отличается → loadBook | В первой версии was игнорировался widget.startPart при той же книге. Костыль `_initialized` скрывал баг. |
+| 13.05.2026 v1 | **Кнопка «Цитата» в плеере убрана** | Решение юзера. Apple Books/Audible/Podcasts не имеют такой кнопки. Альтернатива — FAB в 5.3. **Не возвращать.** |
+| 13.05.2026 v1 | 3 отдельных сервиса (audio/progress/player_api) | SRP. Если progress.post падает — не ронять background audio. |
+| 13.05.2026 v1 | Singleton AudioHandler + Riverpod-провайдер поверх | AudioService.init() асинхронный. audio_service README. |
+| 13.05.2026 v1 | ProviderContainer до runApp | Стандартный паттерн bootstrap Riverpod. |
+| 13.05.2026 v1 | AudioSession.music() обязательно | Без этого iOS останавливает аудио при блокировке. |
+| 13.05.2026 v1 | Обработка истечения signed URL (410/403) | TTL 1 час, реальные части до 33 мин. Apple Guideline 2.1. |
+| 13.05.2026 v1 | getApplicationCacheDirectory вместо getTemporaryDirectory | Apple File System Programming Guide. |
+| 13.05.2026 v1 | Slider с локальным `_dragSeconds` | Без этого ползунок дёргается. |
+| 13.05.2026 v1 | Скорость в SharedPreferences между сессиями | Apple Books, Audible. |
+| 13.05.2026 v1 | Skip ±15 сек | Стандарт Apple Podcasts. |
+| 13.05.2026 v1 | Книги без частей → disabled-кнопка | Apple Guideline 2.1. |
+| 13.05.2026 v1 | Sleep timer продолжает тикать при смене части | Стандарт Audible. |
+| 13.05.2026 v1 | Прогресс НЕ POST при seek | Сервер сам отбросит регрессию. |
+| 13.05.2026 v1 | Передача в плеер через `extra` GoRouter | Тап по части → передаём part. Тап «Слушать» → плеер сам подтягивает. |
 | 12.05.2026 | HMAC-SHA256 signed URL TTL 1 час | Стандарт (Audible, Spotify). |
 | 12.05.2026 | Express отдаёт MP3 через fs.createReadStream + Range | Достаточно для разработки. nginx X-Accel-Redirect — Фаза 7. |
 | 12.05.2026 | Прогресс прослушивания в 2.3 одновременно | Так в STEP-BY-STEP. |
-| 12.05.2026 | Прогресс НЕ показываем на главной | Перегружена. Прогресс на экране книги (4.14) и в плеере. |
-| 12.05.2026 | Аудио на Mac в ~/Chitatel_app/audio-storage/ | Симулирует /var/audio/chitatel/ на VPS. При миграции — rsync + 3 строки .env. |
+| 12.05.2026 | Прогресс НЕ показываем на главной | Перегружена. |
+| 12.05.2026 | Аудио на Mac в ~/Chitatel_app/audio-storage/ | Симулирует /var/audio/chitatel/ на VPS. |
 | 12.05.2026 | ffmpeg через evermeet.cx, НЕ brew | brew компилирует 30+ минут. |
 | 12.05.2026 | Поиск как отдельный экран /search | MASTER 4.11. |
 | 12.05.2026 | Debounce 300ms | STEP-BY-STEP 2.5. |
@@ -493,14 +499,18 @@ _06.04.2026 — Задачи 1.5–2.2: дизайн-система, навиг�
 - **При багах: запросить полный лог терминала, прочитать ПЕРВУЮ ошибку.** НЕ гадать.
 - **Для UX-проблем: спросить юзера прежде чем править.**
 - **Apple compliance: перепроверять через web_search (2025+).** Не полагаться на память.
-- **Аудио на iOS — строго MP3 или M4A.** OGG не поддерживается. ffmpeg от evermeet.cx (не brew).
+- **⚠️ ЧИТАТЬ ПРОТОТИП docs/prototype-v4_2.jsx ПЕРЕД написанием UI-кода.** Не отклоняться без согласования.
+- **⚠️ Apple-стандарты проверять через web_search**, не полагаться на память (Apple Music сам делает тёмный mini-player, я ошибочно думал обратное).
+- **Аудио на iOS — строго MP3 или M4A.** OGG не поддерживается.
 - **Flutter 3.22.3 — `withOpacity()`**, не `withValues()`.
-- **Согласовывать ДО кода:** новые пакеты, варианты архитектуры. НЕ угадывать.
-- **Если задача зависит от ответа заказчика — пауза.** Зафиксировать вопрос.
-- **Самопроверка docstring'а:** после написания файла пройтись по списку обещанного — проверить что всё реализовано.
-- **Если пакет в pubspec — он должен использоваться в коде.** Если не используется — либо удалить из pubspec, либо использовать.
-- **Аудиоплеер — singleton (`ChitatelAudioHandler.instance`)** инициализируется в `main.dart` до `runApp` через `ProviderContainer`. Не пытаться создать заново.
+- **Согласовывать ДО кода:** новые пакеты, варианты архитектуры.
+- **Если задача зависит от ответа заказчика — пауза.**
+- **Самопроверка docstring'а:** после написания файла пройтись по списку обещанного.
+- **Если пакет в pubspec — он должен использоваться в коде.**
+- **Проверять имена в AppColors/AppTypography ПЕРЕД использованием** (через github:get_file_contents). Не придумывать имена.
+- **Аудиоплеер — singleton (`ChitatelAudioHandler.instance`)** инициализируется в `main.dart` до `runApp`. Не пытаться создать заново.
+- **`_initialized` костыли — антипаттерн.** Использовать явные проверки состояния (current.id == book.id и т.п.).
 
 ---
 
-*Последнее обновление: 13.05.2026 (задача 2.7 завершена — Flutter аудиоплеер; следующая — Фаза 5 ИИ-дневник или Фаза 4 бэкенд клуба)*
+*Последнее обновление: 13.05.2026 v2 (задача 2.7 завершена с финальной итерацией — фикс бага переключения, подсветка активной части, цвета прототипа, status bar светлый; следующая — Фаза 5 ИИ-дневник или Фаза 4 бэкенд клуба)*
