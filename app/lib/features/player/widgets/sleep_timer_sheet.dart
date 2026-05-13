@@ -22,7 +22,8 @@ import '../providers/player_provider.dart';
 class SleepTimerSheet extends ConsumerWidget {
   const SleepTimerSheet({super.key});
 
-  static const List<int> _minutesOptions = [15, 30, 45, 60];
+  /// Список опций таймера в минутах. Используется в _TimerOptions.
+  static const List<int> minutesOptions = [15, 30, 45, 60];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -108,7 +109,7 @@ class _DragHandle extends StatelessWidget {
         width: 36,
         height: 4,
         decoration: BoxDecoration(
-          color: AppColors.dividerWarm,
+          color: AppColors.border,
           borderRadius: BorderRadius.circular(2),
         ),
       ),
@@ -201,22 +202,44 @@ class _TimerOptions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Берём опции из публичной константы SleepTimerSheet.minutesOptions.
+    // По 2 кнопки в ряд: первый ряд [0,1], второй ряд [2,3].
+    final opts = SleepTimerSheet.minutesOptions;
     return Column(
       children: [
-        // 4 кнопки минут в 2 ряда (15/30 — первый ряд, 45/60 — второй)
         Row(
           children: [
-            Expanded(child: _TimerButton(label: '15 мин', onTap: () => onMinutesSelected(15))),
+            Expanded(
+              child: _TimerButton(
+                label: '${opts[0]} мин',
+                onTap: () => onMinutesSelected(opts[0]),
+              ),
+            ),
             const SizedBox(width: 8),
-            Expanded(child: _TimerButton(label: '30 мин', onTap: () => onMinutesSelected(30))),
+            Expanded(
+              child: _TimerButton(
+                label: '${opts[1]} мин',
+                onTap: () => onMinutesSelected(opts[1]),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
         Row(
           children: [
-            Expanded(child: _TimerButton(label: '45 мин', onTap: () => onMinutesSelected(45))),
+            Expanded(
+              child: _TimerButton(
+                label: '${opts[2]} мин',
+                onTap: () => onMinutesSelected(opts[2]),
+              ),
+            ),
             const SizedBox(width: 8),
-            Expanded(child: _TimerButton(label: '60 мин', onTap: () => onMinutesSelected(60))),
+            Expanded(
+              child: _TimerButton(
+                label: '${opts[3]} мин',
+                onTap: () => onMinutesSelected(opts[3]),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
