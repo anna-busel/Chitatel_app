@@ -7,6 +7,7 @@ const { resolveClubAccess } = require('../middleware/subscription');
 const { success } = require('../utils/response');
 const { AppError } = require('../middleware/error');
 const { emitToClub } = require('../socket');
+const User = require('../models/User');
 const ClubMonth = require('../models/ClubMonth');
 const ChatMessage = require('../models/ChatMessage');
 const QAQuestion = require('../models/QAQuestion');
@@ -21,6 +22,109 @@ router.use(requireAuth);
 /* ------------------------------------------------------------------ *
  *                          ИНФА О КЛУБЕ                              *
  * ------------------------------------------------------------------ */
+
+/**
+ * GET /api/club/list
+ * Список клубов которые юзер может открыть.
+ *
+ * Возвращает три категории:
+ * - archive[] — прошлые клубы где archiveUntilDate >= now (юзеру с подпиской
+ *               отдаём все архивы; юзеру с expired — только в архивном окне)
+ * - current[] — текущий активный клуб (0 или 1 элемент)
+ * - future[] — ближайшие будущие клубы (отдаём только подписчикам и админу)
+ *
+ * Используется фронтом для построения dropdown'а переключения клубов.
+ * Для каждого клуба возвращаем минимум полей + relation ('archive'/'current'/'future').
+ */
+router.get('/list', async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.userId)
+      .select(
+        'subscriptionStatus subscriptionExpiresAt gracePeriodExpiresAt role isBanned'
+      )
+      .lean();
+
+    if (!user) {
+      throw new AppError('UNAUTHORIZED', 'Пользователь не найден', 401);
+    }
+
+    if (user.isBanned) {
+      throw new AppError(
+        'CLUB_BLOCKED',
+        'Ваш аккаунт заблокирован за нарушение правил',
+        403
+      );
+    }
+
+    const now = new Date();
+    const isAdmin = user.role === 'admin';
+    const isInGrace =
+      user.gracePeriodExpiresAt && user.gracePeriodExpiresAt > now;
+    const hasActiveSub =
+      isAdmin ||
+      ((user.subscriptionStatus === 'basic' ||
+        user.subscriptionStatus === 'premium') &&
+        (user.subscriptionExpiresAt > now || isInGrace));
+
+    // Поля которые отдаём фронту в каждом клубе списка (минимум для dropdown'а).
+    const projection = {
+      month: 1,
+      year: 1,
+      bookId: 1,
+      title: 1,
+      author: 1,
+      startsAt: 1,
+      endsAt: 1,
+      archiveUntilDate: 1,
+      isActive: 1,
+      participantCount: 1,
+      messageCount: 1,
+    };
+
+    // — Текущий (активный сейчас) —
+    const currentDocs = await ClubMonth.find({
+      startsAt: { $lte: now },
+      endsAt: { $gte: now },
+    })
+      .select(projection)
+      .sort({ startsAt: -1 })
+      .lean();
+
+    // — Архивные —
+    // Подписчик/админ: все где endsAt < now (включая «навсегда»-архив).
+    // Expired: только в окне archiveUntilDate >= now.
+    const archiveFilter = hasActiveSub
+      ? { endsAt: { $lt: now } }
+      : { endsAt: { $lt: now }, archiveUntilDate: { $gte: now } };
+
+    const archiveDocs = await ClubMonth.find(archiveFilter)
+      .select(projection)
+      .sort({ startsAt: -1 })
+      .limit(12) // не больше года назад в dropdown'е
+      .lean();
+
+    // — Будущие —
+    // Только подписчики и админ видят будущие клубы (анонс).
+    const futureDocs = hasActiveSub
+      ? await ClubMonth.find({ startsAt: { $gt: now } })
+          .select(projection)
+          .sort({ startsAt: 1 })
+          .limit(3) // ближайшие 3 месяца вперёд
+          .lean()
+      : [];
+
+    const withRelation = (docs, relation) =>
+      docs.map((d) => ({ ...d, relation }));
+
+    return success(res, {
+      archive: withRelation(archiveDocs, 'archive'),
+      current: withRelation(currentDocs, 'current'),
+      future: withRelation(futureDocs, 'future'),
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
 
 /**
  * GET /api/club/current
@@ -107,9 +211,6 @@ router.get(
 /**
  * POST /api/club/:clubMonthId/chat
  * Создать text/image/voice сообщение в чате.
- *
- * После создания эмитим событие `chat:new_message` в комнату клуба
- * через Socket.io — все подключённые участники получают сообщение в реалтайме.
  */
 const chatCreateSchema = z
   .object({
@@ -164,7 +265,6 @@ router.post(
         );
       }
 
-      // Если reply — проверяем что родитель из этого же клуба.
       if (req.body.replyToId) {
         const parent = await ChatMessage.findById(req.body.replyToId)
           .select('clubMonthId')
@@ -191,20 +291,15 @@ router.post(
         mentions: req.body.mentions || [],
       });
 
-      // Инкрементируем счётчик сообщений в клубе.
       await ClubMonth.updateOne(
         { _id: req.club._id },
         { $inc: { messageCount: 1 } }
       );
 
-      // Подгружаем юзера в ответ (для UI без второго запроса).
       const populated = await ChatMessage.findById(message._id)
         .populate('userId', 'name avatarUrl')
         .lean();
 
-      // Реалтайм: эмитим всем в комнате клуба (включая отправителя — клиент
-      // может использовать это для подтверждения; либо клиент идентифицирует
-      // своё сообщение по userId и игнорирует дубликат).
       const io = req.app.get('io');
       emitToClub(io, req.club._id, 'chat:new_message', { message: populated });
 
