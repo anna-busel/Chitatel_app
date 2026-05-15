@@ -33,7 +33,9 @@ class _EmailLoginScreenState extends ConsumerState<EmailLoginScreen> {
   }
 
   void _login() {
-    final email = _emailController.text.trim();
+    // Email — всегда lowercase + trim. iOS-клавиатура может подсунуть
+    // заглавную первую букву, пробел в конце автозамены, и т.д.
+    final email = _emailController.text.trim().toLowerCase();
     final password = _passwordController.text;
 
     if (email.isEmpty || password.isEmpty) {
