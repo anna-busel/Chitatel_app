@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "lint": "eslint src/",
     "test": "jest",
-    "seed": "node src/scripts/seed.js"
+    "seed": "node src/scripts/seed.js",
+    "seed:club": "node src/scripts/seed-club.js"
   },
   "engines": {
     "node": ">=20.0.0"
