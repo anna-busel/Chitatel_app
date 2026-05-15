@@ -25,10 +25,6 @@ import 'pinned_message_banner.dart';
 /// 4. При отправке — POST через REST. Сервер сам эмитит chat:new_message
 ///    через WS, наш сокет получит и добавит в список (включая своё сообщение).
 /// 5. При уходе с экрана — disconnect socket + dispose контроллеров.
-///
-/// Состояние храним локально (StatefulWidget) — для real-time чата это
-/// уместнее чем Riverpod, поскольку поток событий специфичен для текущего экрана
-/// и не должен переживать его (в отличие от глобальных данных типа профиля).
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -43,6 +39,10 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   /// ListView рендерим с reverse=true — визуально новые внизу, как в Telegram.
   final List<ChatMessage> _messages = [];
 
+  /// GlobalKey для каждого сообщения по ID. Используется для скролла к закрепу
+  /// через Scrollable.ensureVisible. Заполняется при рендере bubble в itemBuilder.
+  final Map<String, GlobalKey> _messageKeys = {};
+
   /// ID текущего юзера (для отличения «свой/чужой» в bubble).
   String? _currentUserId;
 
@@ -55,8 +55,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   bool _hasMore = false;
 
   /// Сохранённые ссылки на сервисы — чтобы dispose() мог их использовать
-  /// БЕЗ обращения к ref (ref после dispose невалиден, бросает
-  /// "Cannot use 'ref' after the widget was disposed").
+  /// БЕЗ обращения к ref (ref после dispose невалиден).
   ClubSocketService? _socketService;
 
   StreamSubscription<ClubSocketEvent>? _socketSub;
@@ -74,8 +73,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   void dispose() {
     _socketSub?.cancel();
     _scrollController.dispose();
-    // Disconnect socket — клиент уходит с экрана клуба.
-    // Используем сохранённую ссылку, не ref — ref после dispose невалиден.
     _socketService?.disconnect();
     super.dispose();
   }
@@ -83,11 +80,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   /// Начальная загрузка: userId из storage + история чата + WS-подключение.
   Future<void> _bootstrap() async {
     try {
-      // 1. Текущий юзер (для определения "своих" сообщений).
       final storage = ref.read(secureStorageProvider);
       _currentUserId = await storage.getUserId();
 
-      // 2. История REST.
       final api = ref.read(clubApiServiceProvider);
       final history = await api.fetchChatHistory(
         clubMonthId: widget.club.id,
@@ -103,7 +98,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         _isLoading = false;
       });
 
-      // 3. Socket — подключаемся к комнате. Сохраняем ссылку для dispose().
       _socketService = ref.read(clubSocketServiceProvider);
       _socketSub = _socketService!.events.listen(_onSocketEvent);
       await _socketService!.connect(widget.club.id);
@@ -116,13 +110,10 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Обработчик событий Socket.io.
   void _onSocketEvent(ClubSocketEvent event) {
     if (!mounted) return;
 
     if (event is ChatNewMessageEvent) {
-      // Анти-дубль: если сообщение уже в списке (от REST после нашего POST),
-      // не добавляем повторно.
       if (_messages.any((m) => m.id == event.message.id)) return;
       setState(() {
         _messages.insert(0, event.message);
@@ -134,12 +125,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     } else if (event is ChatPinChangedEvent) {
       setState(() => _pinnedMessageId = event.pinnedMessageId);
     }
-    // ChatUserTypingEvent, ConnectedEvent, ClubSocketErrorEvent, DisconnectedEvent —
-    // в 4.5 игнорируем. typing-индикатор и оффлайн-баннер — задачи 4.10/4.11.
   }
 
-  /// При скролле к верху списка (а с reverse=true это `maxScrollExtent`) —
-  /// подгружаем старые сообщения.
   void _onScroll() {
     if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) return;
     final pos = _scrollController.position;
@@ -171,9 +158,26 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Отправка текстового сообщения.
-  /// Server вернёт сообщение + эмитит chat:new_message по WS. Когда событие
-  /// придёт — оно добавится в список через _onSocketEvent.
+  /// Скролл к закреплённому сообщению при тапе на баннер.
+  ///
+  /// Использует GlobalKey + Scrollable.ensureVisible. Работает только если
+  /// сообщение сейчас в загруженной истории (первые 20 сообщений, либо
+  /// больше после loadMore). Если закреп старый и не загружен — ничего
+  /// не происходит (силен будем подгружать позже в 4.7).
+  void _scrollToPinned() {
+    final id = _pinnedMessageId;
+    if (id == null) return;
+    final key = _messageKeys[id];
+    final ctx = key?.currentContext;
+    if (ctx == null) return; // сообщение не в дереве, не можем доскроллить
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+      alignment: 0.3, // позиционируем закреп чуть выше центра экрана
+    );
+  }
+
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty) return;
 
@@ -183,7 +187,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         clubMonthId: widget.club.id,
         text: text.trim(),
       );
-      // Сообщение придёт по WS — UI обновится сам.
     } on DioException catch (e) {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
@@ -202,7 +205,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Жалоба на чужое сообщение (через ChatMessageBubble.onReport).
   Future<void> _reportMessage(String messageId) async {
     final reason = await _showReportSheet();
     if (reason == null || !mounted) return;
@@ -228,7 +230,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Bottom sheet выбора причины жалобы.
   Future<String?> _showReportSheet() {
     const reasons = <Map<String, String>>[
       {'code': 'spam', 'label': 'Спам'},
@@ -270,6 +271,12 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     );
   }
 
+  /// Получить или создать GlobalKey для конкретного сообщения.
+  /// Используется для скролла к закрепу через Scrollable.ensureVisible.
+  GlobalKey _keyForMessage(String id) {
+    return _messageKeys.putIfAbsent(id, () => GlobalKey());
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -297,7 +304,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       );
     }
 
-    // Ищем закреплённое сообщение в текущем списке (если оно подгружено).
     ChatMessage? pinned;
     if (_pinnedMessageId != null) {
       for (final m in _messages) {
@@ -312,7 +318,11 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       color: AppColors.background,
       child: Column(
         children: [
-          if (pinned != null) PinnedMessageBanner(message: pinned),
+          if (pinned != null)
+            PinnedMessageBanner(
+              message: pinned,
+              onTap: _scrollToPinned,
+            ),
           Expanded(
             child: _messages.isEmpty
                 ? _EmptyChat()
@@ -341,7 +351,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                         );
                       }
                       final m = _messages[index];
-                      // Поиск сообщения для reply preview.
                       ChatMessage? replyTo;
                       if (m.hasReply) {
                         for (final candidate in _messages) {
@@ -351,16 +360,21 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                           }
                         }
                       }
-                      return ChatMessageBubble(
-                        message: m,
-                        replyTo: replyTo,
-                        currentUserId: _currentUserId,
-                        onLongPress: m.isMine(_currentUserId)
-                            ? null
-                            : () {
-                                HapticFeedback.lightImpact();
-                                _reportMessage(m.id);
-                              },
+                      // Оборачиваем bubble в KeyedSubtree чтобы можно было
+                      // получить его BuildContext для Scrollable.ensureVisible.
+                      return KeyedSubtree(
+                        key: _keyForMessage(m.id),
+                        child: ChatMessageBubble(
+                          message: m,
+                          replyTo: replyTo,
+                          currentUserId: _currentUserId,
+                          onLongPress: m.isMine(_currentUserId)
+                              ? null
+                              : () {
+                                  HapticFeedback.lightImpact();
+                                  _reportMessage(m.id);
+                                },
+                        ),
                       );
                     },
                   ),
