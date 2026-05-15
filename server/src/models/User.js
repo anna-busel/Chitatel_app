@@ -47,6 +47,12 @@ const userSchema = new mongoose.Schema(
 
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
 
+    // Модерация (задача 4.4). Apple Guideline 1.2 — UGC moderation tools.
+    // isBanned — полный бан, юзер не может ни писать, ни заходить в клуб.
+    // mutedUntil — временный мьют (Date в будущем); после этой даты автоматически снимается.
+    isBanned: { type: Boolean, default: false },
+    mutedUntil: { type: Date, default: null },
+
     isDeleted: { type: Boolean, default: false },
     deletionRequestedAt: Date,
   },

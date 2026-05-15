@@ -8,15 +8,11 @@ const ClubMonth = require('../models/ClubMonth');
  *
  * Стек проверок:
  * 1. requireAuth должен быть до этого middleware (req.user.userId есть)
- * 2. Загружаем User из БД (для актуального subscriptionStatus и expiresAt)
- * 3. Проверяем статус:
- *    - 'basic' / 'premium' с актуальным subscriptionExpiresAt → пропускаем
- *    - 'expired' → 403 SUBSCRIPTION_REQUIRED (показать paywall)
- *    - 'free' → 403 SUBSCRIPTION_REQUIRED
+ * 2. Загружаем User из БД
+ * 3. Проверяем бан/мьют (модерация 4.4)
+ * 4. Проверяем статус подписки + grace period
  *
  * Архивный доступ обрабатывается отдельно — см. resolveClubAccess.
- *
- * После успешной проверки кладём req.subscriber = { userId, status, tier, expiresAt }
  */
 const requireSubscription = async (req, _res, next) => {
   try {
@@ -25,14 +21,26 @@ const requireSubscription = async (req, _res, next) => {
     }
 
     const user = await User.findById(req.user.userId)
-      .select('subscriptionStatus subscriptionExpiresAt gracePeriodExpiresAt role')
+      .select(
+        'subscriptionStatus subscriptionExpiresAt gracePeriodExpiresAt role isBanned mutedUntil'
+      )
       .lean();
 
     if (!user) {
       return next(new AppError('UNAUTHORIZED', 'Пользователь не найден', 401));
     }
 
-    // Админ имеет полный доступ ко всему (для тестирования + Анна как куратор клуба).
+    if (user.isBanned) {
+      return next(
+        new AppError(
+          'CLUB_BLOCKED',
+          'Ваш аккаунт заблокирован за нарушение правил',
+          403
+        )
+      );
+    }
+
+    // Админ имеет полный доступ ко всему.
     if (user.role === 'admin') {
       req.subscriber = {
         userId: req.user.userId,
@@ -40,6 +48,7 @@ const requireSubscription = async (req, _res, next) => {
         tier: 'admin',
         expiresAt: null,
         isActive: true,
+        isMuted: false,
       };
       return next();
     }
@@ -48,7 +57,6 @@ const requireSubscription = async (req, _res, next) => {
     const isExpired =
       !user.subscriptionExpiresAt || user.subscriptionExpiresAt < now;
 
-    // Grace period — Apple даёт 6 дней для retry billing, не отрубаем доступ.
     const isInGrace =
       user.gracePeriodExpiresAt && user.gracePeriodExpiresAt > now;
 
@@ -67,12 +75,15 @@ const requireSubscription = async (req, _res, next) => {
       );
     }
 
+    const isMuted = user.mutedUntil && user.mutedUntil > now;
+
     req.subscriber = {
       userId: req.user.userId,
       status: user.subscriptionStatus,
-      tier: user.subscriptionStatus, // 'basic' | 'premium'
+      tier: user.subscriptionStatus,
       expiresAt: user.subscriptionExpiresAt,
       isActive: true,
+      isMuted,
     };
     return next();
   } catch (err) {
@@ -82,9 +93,6 @@ const requireSubscription = async (req, _res, next) => {
 
 /**
  * Middleware проверки админских прав (роль 'admin' в User).
- * Используется для эндпоинтов админки (закрепы, ответы в Q&A, модерация).
- *
- * Требует requireAuth до себя.
  */
 const requireAdmin = async (req, _res, next) => {
   try {
@@ -107,23 +115,14 @@ const requireAdmin = async (req, _res, next) => {
 /**
  * Middleware определения уровня доступа к конкретному клубу.
  *
- * Решает три вопроса:
- * 1. Существует ли клуб с :clubMonthId?
- * 2. Активная подписка → доступ к ЛЮБОМУ клубу (включая архивные).
- * 3. Истёкшая подписка → доступ ТОЛЬКО к клубам с archiveUntilDate >= now
- *    И только если на момент окончания подписки клуб был активен/архивен
- *    (упрощение для MVP: даём доступ если archiveUntilDate >= now).
+ * 1. Бан → 403 CLUB_BLOCKED
+ * 2. Активная подписка → доступ ко всему, canPost=true (если не муьт)
+ * 3. Истёкшая + клуб в архиве (archiveUntilDate >= now) → read-only
+ * 4. Иначе → 403 SUBSCRIPTION_REQUIRED
  *
- * Параметр клуба берётся из:
- * - req.params.clubMonthId (для конкретного клуба)
- * - req.query.clubMonthId
- * - req.body.clubMonthId
- * - Или активный клуб (если параметр не указан) — для удобства /api/club/current.
+ * Mute не блокирует чтение, только запись (canPost=false).
  *
- * Кладёт в req.club объект ClubMonth (full document, lean).
- *
- * Должен идти ПОСЛЕ requireAuth, но МОЖЕТ идти без requireSubscription —
- * сам разруливает архивный доступ.
+ * Кладёт в req.club и req.clubAccess.
  */
 const resolveClubAccess = async (req, _res, next) => {
   try {
@@ -131,7 +130,6 @@ const resolveClubAccess = async (req, _res, next) => {
       return next(new AppError('UNAUTHORIZED', 'Требуется авторизация', 401));
     }
 
-    // Определяем какой клуб запрашивают.
     const requestedId =
       req.params.clubMonthId ||
       req.query.clubMonthId ||
@@ -144,7 +142,6 @@ const resolveClubAccess = async (req, _res, next) => {
       }
       club = await ClubMonth.findById(requestedId).lean();
     } else {
-      // По умолчанию — активный клуб (для /api/club/current).
       const now = new Date();
       club = await ClubMonth.findOne({
         startsAt: { $lte: now },
@@ -158,25 +155,36 @@ const resolveClubAccess = async (req, _res, next) => {
       return next(new AppError('NOT_FOUND', 'Клуб не найден', 404));
     }
 
-    // Загружаем юзера для проверки подписки.
     const user = await User.findById(req.user.userId)
-      .select('subscriptionStatus subscriptionExpiresAt gracePeriodExpiresAt role')
+      .select(
+        'subscriptionStatus subscriptionExpiresAt gracePeriodExpiresAt role isBanned mutedUntil'
+      )
       .lean();
 
     if (!user) {
       return next(new AppError('UNAUTHORIZED', 'Пользователь не найден', 401));
     }
 
+    if (user.isBanned) {
+      return next(
+        new AppError(
+          'CLUB_BLOCKED',
+          'Ваш аккаунт заблокирован за нарушение правил',
+          403
+        )
+      );
+    }
+
     const now = new Date();
+    const isMuted = user.mutedUntil && user.mutedUntil > now;
 
     // Админ — везде.
     if (user.role === 'admin') {
       req.club = club;
-      req.clubAccess = { kind: 'admin', canPost: true };
+      req.clubAccess = { kind: 'admin', canPost: true, isMuted: false };
       return next();
     }
 
-    // Активная подписка — доступ ко всему.
     const isInGrace =
       user.gracePeriodExpiresAt && user.gracePeriodExpiresAt > now;
     const hasActiveSub =
@@ -189,12 +197,13 @@ const resolveClubAccess = async (req, _res, next) => {
       req.clubAccess = {
         kind: 'active',
         tier: user.subscriptionStatus,
-        canPost: true,
+        canPost: !isMuted,
+        isMuted,
+        mutedUntil: isMuted ? user.mutedUntil : null,
       };
       return next();
     }
 
-    // Истёкшая подписка — проверяем архивный доступ (21 день после endsAt клуба).
     const hasArchiveAccess =
       club.archiveUntilDate && club.archiveUntilDate >= now;
 
@@ -203,7 +212,8 @@ const resolveClubAccess = async (req, _res, next) => {
       req.clubAccess = {
         kind: 'archive',
         tier: 'expired',
-        canPost: false, // read-only в архиве
+        canPost: false,
+        isMuted: false,
       };
       return next();
     }
