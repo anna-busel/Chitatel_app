@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_endpoints.dart';
@@ -61,26 +60,11 @@ class PlayerApiService {
     required String bookId,
     required int partNumber,
   }) async {
-    if (kDebugMode) {
-      debugPrint('[PlayerApi] fetchAudioUrl: book=$bookId, part=$partNumber');
-    }
-    try {
-      final response = await _api.dio.get(
-        ApiEndpoints.bookAudio(bookId, partNumber),
-      );
-      final body = response.data as Map<String, dynamic>;
-      final data = body['data'] as Map<String, dynamic>? ?? const {};
-      final result = AudioUrlResponse.fromJson(data);
-      if (kDebugMode) {
-        debugPrint('[PlayerApi] got audioUrl: ${result.audioUrl}');
-        debugPrint('[PlayerApi] duration=${result.duration}, isPreview=${result.isPreview}');
-      }
-      return result;
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[PlayerApi] fetchAudioUrl FAILED: $e');
-      }
-      rethrow;
-    }
+    final response = await _api.dio.get(
+      ApiEndpoints.bookAudio(bookId, partNumber),
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>? ?? const {};
+    return AudioUrlResponse.fromJson(data);
   }
 }
