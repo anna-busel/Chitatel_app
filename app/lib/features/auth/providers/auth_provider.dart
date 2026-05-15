@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/storage/secure_storage.dart';
 import '../services/auth_service.dart';
 
@@ -170,7 +171,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = const AuthState(status: AuthStatus.guest);
   }
 
-  /// Сохранить токены
+  /// Сохранить токены + флаг прохождения онбординга.
+  ///
+  /// onboarding_seen=true ставим при любой успешной авторизации (email/google/
+  /// register/гость), иначе router.redirect будет кидать обратно на /login,
+  /// даже если пользователь авторизован. См. app_router.dart → redirect.
   Future<void> _saveAuthData(Map<String, dynamic> data) async {
     await _storage.saveTokens(
       accessToken: data['accessToken'],
@@ -179,6 +184,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (data['user'] != null && data['user']['_id'] != null) {
       await _storage.saveUserId(data['user']['_id']);
     }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('onboarding_seen', true);
   }
 
   /// Парсинг ошибок из Dio
