@@ -60,6 +60,11 @@ class ApiEndpoints {
 
   // — Клуб (задача 4.5, бэкенд 4.1-4.4) —
 
+  /// GET /api/club/list — список клубов которые юзер может открыть.
+  /// Возвращает { archive[], current[], future[] } для построения dropdown'а.
+  /// Каждый клуб содержит поле `relation` ('archive'/'current'/'future').
+  static const String clubList = '/club/list';
+
   /// GET /api/club/current — текущий активный клуб месяца + книга + access.
   static const String clubCurrent = '/club/current';
 
