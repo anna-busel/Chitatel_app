@@ -13,6 +13,7 @@ import '../../features/auth/screens/email_register_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/catalog/screens/catalog_screen.dart';
+import '../../features/club/screens/club_screen.dart';
 import '../../features/book/screens/book_screen.dart';
 import '../../features/search/screens/search_screen.dart';
 import '../../features/player/screens/player_screen.dart';
@@ -104,7 +105,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: Routes.club,
             pageBuilder: (context, state) => const NoTransitionPage(
-              child: _Placeholder('Клуб'),
+              child: ClubScreen(),
             ),
           ),
           GoRoute(
