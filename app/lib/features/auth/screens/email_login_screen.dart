@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +11,9 @@ import '../../../shared/widgets/app_top_bar.dart';
 import '../providers/auth_provider.dart';
 
 /// Экран Email-входа (MASTER 4.3).
+///
+/// Заголовок «Вход», email, пароль, кнопка «Войти».
+/// Ссылки: «Забыли пароль?», «Нет аккаунта? Зарегистрироваться».
 class EmailLoginScreen extends ConsumerStatefulWidget {
   const EmailLoginScreen({super.key});
 
@@ -31,18 +33,10 @@ class _EmailLoginScreenState extends ConsumerState<EmailLoginScreen> {
   }
 
   void _login() {
+    // Email — всегда lowercase + trim. iOS-клавиатура может подсунуть
+    // заглавную первую букву, пробел в конце автозамены, и т.д.
     final email = _emailController.text.trim().toLowerCase();
     final password = _passwordController.text;
-
-    // DEBUG: точные данные что уходят на сервер
-    if (kDebugMode) {
-      debugPrint('=== LOGIN ATTEMPT ===');
-      debugPrint('Email raw: "${_emailController.text}"');
-      debugPrint('Email sent: "$email"');
-      debugPrint('Password length: ${password.length}');
-      debugPrint('Password (UNSAFE DEV): "$password"');
-      debugPrint('=====================');
-    }
 
     if (email.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -60,13 +54,6 @@ class _EmailLoginScreenState extends ConsumerState<EmailLoginScreen> {
     final isLoading = authState.status == AuthStatus.loading;
 
     ref.listen<AuthState>(authProvider, (prev, next) {
-      if (kDebugMode) {
-        debugPrint('=== AUTH STATE CHANGED ===');
-        debugPrint('Prev: ${prev?.status}');
-        debugPrint('Next: ${next.status}');
-        debugPrint('Error: ${next.errorMessage}');
-        debugPrint('==========================');
-      }
       if (next.status == AuthStatus.authenticated) {
         context.go(Routes.home);
       }
@@ -75,7 +62,7 @@ class _EmailLoginScreenState extends ConsumerState<EmailLoginScreen> {
           SnackBar(
             content: Text(next.errorMessage!),
             backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 8),
+            duration: const Duration(seconds: 6),
           ),
         );
       }
