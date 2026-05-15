@@ -18,8 +18,9 @@ import '../models/club_month.dart';
 /// - Список частей с расписанием (если есть partSchedule)
 ///
 /// `bookJson` — сырой JSON книги от сервера. Парсим только нужные поля
-/// (coverUrl, description) без полноценного Book.fromJson — чтобы не тянуть
-/// зависимость от features/book/. ID книги нужен для перехода в плеер.
+/// (coverImageUrl, coverGradient, description) без полноценного Book.fromJson —
+/// чтобы не тянуть зависимость от features/book/. ID книги нужен для перехода
+/// в плеер.
 class ClubAboutTab extends StatelessWidget {
   const ClubAboutTab({
     super.key,
@@ -32,9 +33,16 @@ class ClubAboutTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final coverUrl = bookJson?['coverUrl']?.toString();
+    final coverImageUrl = bookJson?['coverImageUrl']?.toString() ?? '';
     final description = bookJson?['description']?.toString() ?? '';
     final bookId = bookJson?['_id']?.toString() ?? club.bookId;
+
+    // coverGradient в Book — массив строк hex. Если null/пусто — пустой массив,
+    // BookCoverImage сам подставит дефолтный градиент.
+    final gradientRaw = bookJson?['coverGradient'];
+    final gradientColors = gradientRaw is List
+        ? gradientRaw.map((e) => e.toString()).toList(growable: false)
+        : const <String>[];
 
     return Container(
       color: AppColors.background,
@@ -53,7 +61,9 @@ class ClubAboutTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 BookCoverImage(
-                  coverUrl: coverUrl,
+                  imageUrl: coverImageUrl,
+                  gradientColors: gradientColors,
+                  label: club.title,
                   width: 100,
                   height: 150,
                 ),
