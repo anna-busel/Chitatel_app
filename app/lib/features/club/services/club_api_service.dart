@@ -6,6 +6,7 @@ import '../../../core/network/api_endpoints.dart';
 import '../models/chat_message.dart';
 import '../models/club_access.dart';
 import '../models/club_month.dart';
+import '../models/club_summary.dart';
 import '../models/qa_question.dart';
 
 /// Провайдер сервиса клуба.
@@ -29,6 +30,30 @@ class CurrentClubResult {
   final Map<String, dynamic>? bookJson;
 }
 
+/// Результат запроса GET /api/club/list — три категории клубов для переключателя.
+class ClubListResult {
+  const ClubListResult({
+    required this.archive,
+    required this.current,
+    required this.future,
+  });
+
+  /// Прошлые клубы (в окне archiveUntilDate либо все для подписчика).
+  /// Сортировка DESC по startsAt (свежие архивы выше).
+  final List<ClubSummary> archive;
+
+  /// Текущий активный (0 или 1 элемент).
+  final List<ClubSummary> current;
+
+  /// Ближайшие будущие (только подписчики и админ; expired видит пустой массив).
+  /// Сортировка ASC по startsAt (ближайший месяц выше).
+  final List<ClubSummary> future;
+
+  /// Все клубы единым плоским списком в порядке: current → future → archive.
+  /// Удобно для построения dropdown'а сверху вниз.
+  List<ClubSummary> get flat => [...current, ...future, ...archive];
+}
+
 /// Результат пагинированной загрузки чата.
 class ChatHistoryResult {
   const ChatHistoryResult({required this.messages, required this.hasMore});
@@ -39,18 +64,35 @@ class ChatHistoryResult {
 }
 
 /// Сервис для работы с REST API клуба.
-///
-/// Эндпоинты:
-/// - GET /api/club/current — текущий клуб
-/// - GET /api/club/:id — конкретный клуб
-/// - GET /api/club/:id/chat — история чата (limit, before)
-/// - POST /api/club/:id/chat — отправить сообщение
-/// - POST /api/club/chat/:msgId/report — жалоба
-/// - GET /api/club/:id/qa — список вопросов
-/// - POST /api/club/:id/qa — задать вопрос
 class ClubApiService {
   ClubApiService(this._api);
   final ApiClient _api;
+
+  /// Получить список клубов для переключателя.
+  ///
+  /// Возвращает три категории: archive / current / future. Каждый клуб
+  /// содержит относительную метку (relation) для UI.
+  ///
+  /// Для expired-юзеров future будет пустым — этот случай UI обрабатывает.
+  Future<ClubListResult> fetchClubList() async {
+    final response = await _api.dio.get(ApiEndpoints.clubList);
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>;
+
+    List<ClubSummary> parse(dynamic raw) {
+      if (raw is! List) return const [];
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(ClubSummary.fromJson)
+          .toList(growable: false);
+    }
+
+    return ClubListResult(
+      archive: parse(data['archive']),
+      current: parse(data['current']),
+      future: parse(data['future']),
+    );
+  }
 
   /// Получить текущий активный клуб + книгу + access.
   Future<CurrentClubResult> fetchCurrentClub() async {
@@ -111,11 +153,7 @@ class ClubApiService {
     );
   }
 
-  /// Отправить текстовое сообщение. Сервер дополнительно эмитит chat:new_message
-  /// в комнату клуба через Socket.io — клиент его получит через WS-стрим.
-  ///
-  /// Возвращает сообщение с populated автором (если успешно).
-  /// Бросает DioException при сетевых ошибках / 4xx.
+  /// Отправить текстовое сообщение.
   Future<ChatMessage> sendTextMessage({
     required String clubMonthId,
     required String text,
@@ -138,11 +176,7 @@ class ClubApiService {
     return ChatMessage.fromJson(data['message'] as Map<String, dynamic>);
   }
 
-  /// Жалоба на сообщение (Apple Guideline 1.2).
-  /// Reason — один из spam/inappropriate/offensive/copyright/other.
-  ///
-  /// Возвращает true при успехе. Если юзер уже жаловался — Dio бросит ошибку
-  /// со status 409 (DUPLICATE_KEY) — обрабатывается в UI.
+  /// Жалоба на сообщение.
   Future<bool> reportMessage({
     required String messageId,
     required String reason,
@@ -180,9 +214,6 @@ class ClubApiService {
   }
 
   /// Задать вопрос Анне.
-  ///
-  /// Бэк проверяет дубликаты (нормализация текста) — при совпадении бросает
-  /// 409 QA_DUPLICATE. UI ловит DioException и показывает соответствующее сообщение.
   Future<QAQuestion> askQuestion({
     required String clubMonthId,
     required String questionText,
@@ -196,8 +227,7 @@ class ClubApiService {
     return QAQuestion.fromJson(data['question'] as Map<String, dynamic>);
   }
 
-  /// Распарсить код ошибки из DioException (для UI-обработки).
-  /// Возвращает code из { success: false, error: { code, message } } если есть.
+  /// Распарсить код ошибки из DioException.
   static String? errorCodeFromException(Object error) {
     if (error is DioException) {
       final data = error.response?.data;
