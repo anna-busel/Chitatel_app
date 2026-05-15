@@ -4,6 +4,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../models/club_access.dart';
+import '../models/club_month.dart';
 import '../providers/club_provider.dart';
 import '../services/club_api_service.dart';
 import '../widgets/club_about_tab.dart';
@@ -13,16 +14,12 @@ import '../widgets/qa_tab.dart';
 /// Главный экран клуба месяца. Источник: MASTER.md секция 4.21.
 ///
 /// Структура (сверху вниз):
-/// 1. Заголовок с названием клуба (книга месяца)
+/// 1. Заголовок «Клуб <месяц>» (например «Клуб мая») + название книги
 /// 2. TabBar — 3 таба: Разборы / Чат / Q&A
 /// 3. TabBarView — содержимое выбранного таба
 ///
 /// Подгружает currentClubProvider один раз для всех табов и пробрасывает
 /// данные вниз через конструкторы. Каждый таб не дёргает API повторно.
-///
-/// Если access.kind == archive — показываем баннер «Архив», чтение разрешено.
-/// Если access.kind == unknown — это ошибка middleware на сервере, всё равно
-/// показываем UI (если access загрузился, значит доступ есть).
 class ClubScreen extends ConsumerStatefulWidget {
   const ClubScreen({super.key});
 
@@ -66,7 +63,7 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
 
     return Column(
       children: [
-        // — Шапка с названием клуба —
+        // — Шапка: «Клуб мая» + название книги —
         Container(
           color: AppColors.background,
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
@@ -74,10 +71,10 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Клуб месяца',
+                _formatClubMonthLabel(club).toUpperCase(),
                 style: AppTypography.microBold.copyWith(
                   letterSpacing: 1.2,
-                  color: AppColors.textTertiary,
+                  color: AppColors.terracotta,
                 ),
               ),
               const SizedBox(height: 4),
@@ -127,6 +124,27 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
         ),
       ],
     );
+  }
+
+  /// «Клуб мая», «Клуб июня» и т.д.
+  /// Месяц склоняем в родительном падеже (как в русском названии месяцев).
+  String _formatClubMonthLabel(ClubMonth club) {
+    const months = <int, String>{
+      1: 'января',
+      2: 'февраля',
+      3: 'марта',
+      4: 'апреля',
+      5: 'мая',
+      6: 'июня',
+      7: 'июля',
+      8: 'августа',
+      9: 'сентября',
+      10: 'октября',
+      11: 'ноября',
+      12: 'декабря',
+    };
+    final monthName = months[club.month] ?? 'месяца';
+    return 'Клуб $monthName';
   }
 }
 
