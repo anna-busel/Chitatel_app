@@ -9,6 +9,9 @@ class ApiEndpoints {
   // Базовый URL — пока localhost, позже https://api.chitatel.app
   static const String baseUrl = 'http://localhost:3000/api';
 
+  // Базовый URL без /api — для Socket.io (он подключается к корню).
+  static const String socketBaseUrl = 'http://localhost:3000';
+
   // — Auth —
   static const String register = '/auth/register';
   static const String login = '/auth/login';
@@ -54,6 +57,32 @@ class ApiEndpoints {
   /// GET /api/progress/:bookId — получить прогресс по конкретной книге.
   /// Если прогресса нет — возвращает defaults (часть 1, позиция 0).
   static String progressByBook(String bookId) => '/progress/$bookId';
+
+  // — Клуб (задача 4.5, бэкенд 4.1-4.4) —
+
+  /// GET /api/club/current — текущий активный клуб месяца + книга + access.
+  static const String clubCurrent = '/club/current';
+
+  /// GET /api/club/:clubMonthId — конкретный клуб (для архивных или будущих).
+  static String clubById(String clubMonthId) => '/club/$clubMonthId';
+
+  /// GET /api/club/:clubMonthId/chat — история чата с пагинацией.
+  /// Query: limit (1-50, default 20), before (ISO date, опц.).
+  /// Возвращает messages[] DESC + hasMore.
+  ///
+  /// POST /api/club/:clubMonthId/chat — отправить text/image/voice сообщение.
+  /// Body: { type, text?, imageUrl?, voiceUrl?, voiceDurationSec?, voiceWaveform?, replyToId?, mentions? }
+  static String clubChat(String clubMonthId) => '/club/$clubMonthId/chat';
+
+  /// POST /api/club/chat/:messageId/report — жалоба на сообщение.
+  /// Body: { reason, comment? }
+  /// Reason: spam/inappropriate/offensive/copyright/other.
+  static String clubChatReport(String messageId) => '/club/chat/$messageId/report';
+
+  /// GET /api/club/:clubMonthId/qa — список вопросов клуба.
+  /// POST /api/club/:clubMonthId/qa — задать вопрос Анне.
+  /// Body: { questionText } (5-500 символов)
+  static String clubQa(String clubMonthId) => '/club/$clubMonthId/qa';
 
   // — Health —
   static const String health = '/health';
