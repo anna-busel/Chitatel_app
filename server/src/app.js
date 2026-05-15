@@ -10,6 +10,7 @@ const packageRoutes = require('./routes/packages');
 const homeRoutes = require('./routes/home');
 const audioRoutes = require('./routes/audio');
 const progressRoutes = require('./routes/progress');
+const clubRoutes = require('./routes/club');
 
 const app = express();
 
@@ -39,6 +40,7 @@ app.use('/api/books', bookRoutes);
 app.use('/api/packages', packageRoutes);
 app.use('/api/home', homeRoutes);
 app.use('/api/progress', progressRoutes);
+app.use('/api/club', clubRoutes);
 
 // Audio streaming (на корне, не под /api — это стриминг файлов, не JSON API)
 // Защита через signed URL — проверяется внутри роута.
