@@ -54,6 +54,11 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   bool _isLoadingMore = false;
   bool _hasMore = false;
 
+  /// Сохранённые ссылки на сервисы — чтобы dispose() мог их использовать
+  /// БЕЗ обращения к ref (ref после dispose невалиден, бросает
+  /// "Cannot use 'ref' after the widget was disposed").
+  ClubSocketService? _socketService;
+
   StreamSubscription<ClubSocketEvent>? _socketSub;
   final ScrollController _scrollController = ScrollController();
 
@@ -70,9 +75,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     _socketSub?.cancel();
     _scrollController.dispose();
     // Disconnect socket — клиент уходит с экрана клуба.
-    // Не делаем await, т.к. dispose синхронный; service сам отключится в фоне.
-    final socket = ref.read(clubSocketServiceProvider);
-    socket.disconnect();
+    // Используем сохранённую ссылку, не ref — ref после dispose невалиден.
+    _socketService?.disconnect();
     super.dispose();
   }
 
@@ -99,10 +103,10 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         _isLoading = false;
       });
 
-      // 3. Socket — подключаемся к комнате.
-      final socket = ref.read(clubSocketServiceProvider);
-      _socketSub = socket.events.listen(_onSocketEvent);
-      await socket.connect(widget.club.id);
+      // 3. Socket — подключаемся к комнате. Сохраняем ссылку для dispose().
+      _socketService = ref.read(clubSocketServiceProvider);
+      _socketSub = _socketService!.events.listen(_onSocketEvent);
+      await _socketService!.connect(widget.club.id);
     } catch (_) {
       if (!mounted) return;
       setState(() {
