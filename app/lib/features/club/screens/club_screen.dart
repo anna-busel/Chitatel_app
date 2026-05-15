@@ -5,6 +5,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../models/club_access.dart';
 import '../providers/club_provider.dart';
+import '../services/club_api_service.dart';
 import '../widgets/club_about_tab.dart';
 import '../widgets/chat_tab.dart';
 import '../widgets/qa_tab.dart';
