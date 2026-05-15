@@ -6,6 +6,7 @@ const { requireAuth } = require('../middleware/auth');
 const { resolveClubAccess } = require('../middleware/subscription');
 const { success } = require('../utils/response');
 const { AppError } = require('../middleware/error');
+const { emitToClub } = require('../socket');
 const ClubMonth = require('../models/ClubMonth');
 const ChatMessage = require('../models/ChatMessage');
 const QAQuestion = require('../models/QAQuestion');
@@ -23,12 +24,7 @@ router.use(requireAuth);
 
 /**
  * GET /api/club/current
- * Текущий активный клуб месяца. Используется фронтом для главного экрана клуба.
- *
- * Активный = startsAt <= now < endsAt. Если несколько подходят (ошибочно
- * заведённые клубы) — берётся последний по startsAt.
- *
- * Возвращает клуб + книгу (с частями + расписание открытия).
+ * Текущий активный клуб месяца.
  */
 router.get('/current', resolveClubAccess, async (req, res, next) => {
   try {
@@ -67,15 +63,6 @@ router.get('/:clubMonthId', resolveClubAccess, async (req, res, next) => {
 /**
  * GET /api/club/:clubMonthId/chat
  * История сообщений чата клуба. Пагинация курсором (before).
- *
- * Query:
- * - limit (1..50, default 20)
- * - before (ISO date, опц.) — вернуть сообщения СТАРШЕ этой даты
- *
- * Возвращает в порядке новые → старые (DESC по createdAt).
- * Скрытые модератором (isHidden=true) и удалённые (deletedAt) не фильтруем —
- * клиент сам решает как показать (deleted → «сообщение удалено» для контекста reply).
- * Скрытые НЕ возвращаем — это решение модератора, юзеру не показываем.
  */
 const chatListSchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -119,15 +106,10 @@ router.get(
 
 /**
  * POST /api/club/:clubMonthId/chat
- * Создать текстовое/image/voice сообщение в чате.
+ * Создать text/image/voice сообщение в чате.
  *
- * Картинки и голосовые URL передаются клиентом ПОСЛЕ предварительной загрузки
- * (см. задачи 4.6 для image, 4.12 для voice). Здесь — просто валидация формы.
- *
- * Mentions, reactions, edit, delete — отдельные роуты (4.7-4.9).
- * Этот роут — только создание текста с reply.
- *
- * Real-time доставка остальным участникам — через Socket.io (задача 4.3).
+ * После создания эмитим событие `chat:new_message` в комнату клуба
+ * через Socket.io — все подключённые участники получают сообщение в реалтайме.
  */
 const chatCreateSchema = z
   .object({
@@ -198,7 +180,7 @@ router.post(
 
       const message = await ChatMessage.create({
         clubMonthId: req.club._id,
-        userId: req.subscriber ? req.subscriber.userId : req.user.userId,
+        userId: req.user.userId,
         type: req.body.type,
         text: req.body.text,
         imageUrl: req.body.imageUrl || null,
@@ -220,6 +202,12 @@ router.post(
         .populate('userId', 'name avatarUrl')
         .lean();
 
+      // Реалтайм: эмитим всем в комнате клуба (включая отправителя — клиент
+      // может использовать это для подтверждения; либо клиент идентифицирует
+      // своё сообщение по userId и игнорирует дубликат).
+      const io = req.app.get('io');
+      emitToClub(io, req.club._id, 'chat:new_message', { message: populated });
+
       return success(res, { message: populated }, 201);
     } catch (err) {
       return next(err);
@@ -229,9 +217,7 @@ router.post(
 
 /**
  * POST /api/club/chat/:messageId/report
- * Жалоба на сообщение. Apple Guideline 1.2 — обязательно для UGC.
- *
- * Один юзер не может пожаловаться на одно сообщение дважды (unique index в модели).
+ * Жалоба на сообщение. Apple Guideline 1.2.
  */
 const reportSchema = z.object({
   reason: z.enum(['spam', 'inappropriate', 'offensive', 'copyright', 'other']),
@@ -255,7 +241,6 @@ router.post(
         throw new AppError('NOT_FOUND', 'Сообщение не найдено', 404);
       }
 
-      // Нельзя жаловаться на свои сообщения.
       if (message.userId.equals(req.user.userId)) {
         throw new AppError(
           'FORBIDDEN',
@@ -284,7 +269,6 @@ router.post(
         throw err;
       }
 
-      // Инкрементируем счётчик жалоб на сообщении (для приоритизации в админке).
       await ChatMessage.updateOne(
         { _id: messageId },
         { $inc: { reportCount: 1 } }
@@ -303,8 +287,7 @@ router.post(
 
 /**
  * GET /api/club/:clubMonthId/qa
- * Список вопросов клуба. Сначала отвеченные (свежие сверху), потом ожидающие.
- * Простая выдача без пагинации — вопросов обычно < 100 на клуб.
+ * Список вопросов клуба.
  */
 router.get('/:clubMonthId/qa', resolveClubAccess, async (req, res, next) => {
   try {
@@ -322,10 +305,7 @@ router.get('/:clubMonthId/qa', resolveClubAccess, async (req, res, next) => {
 
 /**
  * POST /api/club/:clubMonthId/qa
- * Задать вопрос Анне. Анна отвечает по пятницам (см. AI-CONTEXT).
- *
- * Простая проверка дубликата: точное совпадение текста в рамках клуба
- * (нормализация: trim + lowercase + сжатие пробелов).
+ * Задать вопрос Анне.
  */
 const qaCreateSchema = z.object({
   questionText: z.string().min(5).max(500).trim(),
@@ -350,8 +330,6 @@ router.post(
         .replace(/\s+/g, ' ')
         .trim();
 
-      // Проверка дубля: ищем все вопросы клуба, нормализуем, сравниваем.
-      // Для MVP это OK (вопросов < 100). Для скейла — добавим хеш-поле.
       const existing = await QAQuestion.find({
         clubMonthId: req.club._id,
       })

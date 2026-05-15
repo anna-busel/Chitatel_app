@@ -4,10 +4,11 @@ const { Server } = require('socket.io');
 const app = require('./app');
 const config = require('./config');
 const logger = require('./config/logger');
+const { setupSocket } = require('./socket');
 
 const server = http.createServer(app);
 
-// Socket.io — инициализация (обработчики добавим в задаче 4.3)
+// Socket.io — инициализация
 const io = new Server(server, {
   cors: {
     origin: config.nodeEnv === 'production'
@@ -16,6 +17,9 @@ const io = new Server(server, {
     credentials: true,
   },
 });
+
+// Подключаем хендлеры чата клуба (задача 4.3)
+setupSocket(io);
 
 // Сделать io доступным в routes через app
 app.set('io', io);
