@@ -176,6 +176,39 @@ class ClubApiService {
     return ChatMessage.fromJson(data['message'] as Map<String, dynamic>);
   }
 
+  /// Отправить картинку в чат (multipart/form-data).
+  ///
+  /// [filePath] — локальный путь к файлу (из image_picker).
+  /// [caption] — опциональная подпись под картинкой.
+  /// [replyToId] — опциональный reply.
+  ///
+  /// Сервер сам создаёт ChatMessage type=image + эмитит chat:new_message
+  /// по WS — сообщение придёт в ленту через socket-стрим (как текст).
+  ///
+  /// Бросает DioException при сетевых ошибках / 4xx (обрабатывается в UI:
+  /// VALIDATION — файл больше 8 МБ / неверный тип; FORBIDDEN — архив/бан).
+  Future<ChatMessage> sendImageMessage({
+    required String clubMonthId,
+    required String filePath,
+    String caption = '',
+    String? replyToId,
+  }) async {
+    final fileName = filePath.split('/').last;
+    final formData = FormData.fromMap({
+      'image': await MultipartFile.fromFile(filePath, filename: fileName),
+      if (caption.isNotEmpty) 'text': caption,
+      if (replyToId != null) 'replyToId': replyToId,
+    });
+
+    final response = await _api.dio.post(
+      ApiEndpoints.clubChatImage(clubMonthId),
+      data: formData,
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>;
+    return ChatMessage.fromJson(data['message'] as Map<String, dynamic>);
+  }
+
   /// Жалоба на сообщение.
   Future<bool> reportMessage({
     required String messageId,
