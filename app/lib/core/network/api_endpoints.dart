@@ -71,6 +71,12 @@ class ApiEndpoints {
   /// GET /api/club/:clubMonthId — конкретный клуб (для архивных или будущих).
   static String clubById(String clubMonthId) => '/club/$clubMonthId';
 
+  /// GET /api/club/:clubMonthId/mentionable — список кого можно упомянуть
+  /// через @ (задача 4.9). Сейчас = админы (Анна). Возвращает
+  /// { mentionable: [{ id, name, avatarUrl, isAdmin }] }.
+  static String clubMentionable(String clubMonthId) =>
+      '/club/$clubMonthId/mentionable';
+
   /// GET /api/club/:clubMonthId/chat — история чата с пагинацией.
   /// Query: limit (1-50, default 20), before (ISO date, опц.).
   /// Возвращает messages[] DESC + hasMore.
@@ -91,6 +97,17 @@ class ApiEndpoints {
   /// Возвращает созданное сообщение type=image с signed imageUrl (TTL 1 час).
   static String clubChatImage(String clubMonthId) =>
       '/club/$clubMonthId/chat/image';
+
+  /// POST /api/club/:clubMonthId/chat/read — отметить сообщения прочитанными
+  /// (задача 4.11). Body: { messageIds: [string] } (1-100).
+  static String clubChatRead(String clubMonthId) =>
+      '/club/$clubMonthId/chat/read';
+
+  /// POST /api/club/:clubMonthId/chat/:messageId/pin — закрепить/открепить
+  /// сообщение (задача 4.10, только Анна-admin). Body: { pinned: bool }.
+  /// Эмитит chat:pin_changed по WS.
+  static String clubChatPin(String clubMonthId, String messageId) =>
+      '/club/$clubMonthId/chat/$messageId/pin';
 
   /// PATCH /api/club/chat/:messageId — редактировать своё сообщение.
   /// Body: { text }. Окно 15 мин, только автор, не voice.
