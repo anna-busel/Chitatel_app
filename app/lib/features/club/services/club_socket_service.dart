@@ -40,6 +40,17 @@ class ChatPinChangedEvent extends ClubSocketEvent {
   final String? pinnedMessageId;
 }
 
+/// Реакции на сообщение изменились (4.7). Приходит полный массив reactions —
+/// клиент заменяет локальные реакции этого сообщения целиком.
+class ChatReactionUpdatedEvent extends ClubSocketEvent {
+  const ChatReactionUpdatedEvent({
+    required this.messageId,
+    required this.reactions,
+  });
+  final String messageId;
+  final List<MessageReaction> reactions;
+}
+
 /// Кто-то печатает (broadcast, без сохранения).
 class ChatUserTypingEvent extends ClubSocketEvent {
   const ChatUserTypingEvent(this.userId);
@@ -205,6 +216,30 @@ class ClubSocketService {
         _eventsController.add(
           ChatPinChangedEvent(id is String && id.isNotEmpty ? id : null),
         );
+      }
+    });
+
+    _socket!.on('chat:reaction_updated', (data) {
+      if (data is Map && data['messageId'] != null) {
+        try {
+          final raw = data['reactions'];
+          final reactions = raw is List
+              ? raw
+                  .whereType<Map>()
+                  .map((m) =>
+                      MessageReaction.fromJson(m.cast<String, dynamic>()))
+                  .toList(growable: false)
+              : const <MessageReaction>[];
+          _eventsController.add(ChatReactionUpdatedEvent(
+            messageId: data['messageId'].toString(),
+            reactions: reactions,
+          ));
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint(
+                '[ClubSocketService] failed to parse chat:reaction_updated: $e');
+          }
+        }
       }
     });
 
