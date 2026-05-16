@@ -24,6 +24,26 @@ const { ALLOWED_REACTIONS } = ChatMessage;
 // у нас 15 минут — книжный чат, правки только «опечатку поправить»).
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
 
+// Populate-спека для reply: подтягиваем РОДИТЕЛЬСКОЕ сообщение со снапшотом
+// автора. Это устраняет баг «ответы без пользователя»: раньше клиент сам
+// искал родителя среди загруженных сообщений (первые 20) — если родитель
+// вне окна, превью было без автора («Участница»). Теперь снапшот родителя
+// самодостаточен, как в Telegram (поле replyToId приходит populated-объектом
+// с вложенным userId).
+const REPLY_POPULATE = {
+  path: 'replyToId',
+  select: 'type text imageUrl voiceUrl deletedAt userId createdAt',
+  populate: { path: 'userId', select: 'name avatarUrl' },
+};
+
+// Хелпер: загрузить сообщение по id с полным populate (автор + reply-снапшот).
+function findMessagePopulated(id) {
+  return ChatMessage.findById(id)
+    .populate('userId', 'name avatarUrl')
+    .populate(REPLY_POPULATE)
+    .lean();
+}
+
 const router = Router();
 
 // Все endpoints клуба требуют авторизацию.
@@ -214,6 +234,7 @@ router.get(
         .sort({ createdAt: -1 })
         .limit(limit)
         .populate('userId', 'name avatarUrl')
+        .populate(REPLY_POPULATE)
         .lean();
 
       return success(res, {
@@ -319,9 +340,7 @@ router.post(
         { $inc: { messageCount: 1 } }
       );
 
-      const populated = await ChatMessage.findById(message._id)
-        .populate('userId', 'name avatarUrl')
-        .lean();
+      const populated = await findMessagePopulated(message._id);
 
       const io = req.app.get('io');
       emitToClub(io, req.club._id, 'chat:new_message', { message: populated });
@@ -434,9 +453,7 @@ router.post(
         { $inc: { messageCount: 1 } }
       );
 
-      const populated = await ChatMessage.findById(message._id)
-        .populate('userId', 'name avatarUrl')
-        .lean();
+      const populated = await findMessagePopulated(message._id);
 
       const io = req.app.get('io');
       emitToClub(io, req.club._id, 'chat:new_message', { message: populated });
@@ -521,9 +538,7 @@ router.patch(
       message.editedAt = new Date();
       await message.save();
 
-      const populated = await ChatMessage.findById(message._id)
-        .populate('userId', 'name avatarUrl')
-        .lean();
+      const populated = await findMessagePopulated(message._id);
 
       const io = req.app.get('io');
       emitToClub(io, message.clubMonthId, 'chat:message_edited', {
