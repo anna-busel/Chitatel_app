@@ -79,6 +79,12 @@ class ApiEndpoints {
   /// Body: { type, text?, imageUrl?, voiceUrl?, voiceDurationSec?, voiceWaveform?, replyToId?, mentions? }
   static String clubChat(String clubMonthId) => '/club/$clubMonthId/chat';
 
+  /// POST /api/club/:clubMonthId/chat/image — загрузить картинку в чат.
+  /// multipart/form-data: поле "image" (файл), опц. "text" (caption), "replyToId".
+  /// Возвращает созданное сообщение type=image с signed imageUrl (TTL 1 час).
+  static String clubChatImage(String clubMonthId) =>
+      '/club/$clubMonthId/chat/image';
+
   /// POST /api/club/chat/:messageId/report — жалоба на сообщение.
   /// Body: { reason, comment? }
   /// Reason: spam/inappropriate/offensive/copyright/other.
