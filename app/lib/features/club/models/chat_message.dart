@@ -187,6 +187,38 @@ class ChatMessage {
     );
   }
 
+  /// Копия с заменой части полей. Нужен для обновления сообщения в списке
+  /// без полной перезагрузки (например, при chat:reaction_updated по WS —
+  /// меняем только reactions, остальное оставляем как есть).
+  ChatMessage copyWith({
+    List<MessageReaction>? reactions,
+    String? text,
+    DateTime? editedAt,
+    DateTime? deletedAt,
+    bool? isPinned,
+  }) {
+    return ChatMessage(
+      id: id,
+      clubMonthId: clubMonthId,
+      author: author,
+      type: type,
+      text: text ?? this.text,
+      createdAt: createdAt,
+      imageUrl: imageUrl,
+      voiceUrl: voiceUrl,
+      voiceDurationSec: voiceDurationSec,
+      voiceWaveform: voiceWaveform,
+      replyToId: replyToId,
+      reactions: reactions ?? this.reactions,
+      mentions: mentions,
+      editedAt: editedAt ?? this.editedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      readBy: readBy,
+      isPinned: isPinned ?? this.isPinned,
+      reportCount: reportCount,
+    );
+  }
+
   bool get isDeleted => deletedAt != null;
   bool get isEdited => editedAt != null;
   bool get hasReply => replyToId != null && replyToId!.isNotEmpty;
