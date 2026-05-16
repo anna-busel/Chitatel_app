@@ -237,6 +237,39 @@ class ClubApiService {
     return const [];
   }
 
+  /// Редактировать своё сообщение (4.8).
+  ///
+  /// [text] — новый текст (для text) или подпись (для image).
+  /// Окно 15 мин, только автор, не voice — валидируется на бэке.
+  /// Сервер эмитит chat:message_edited по WS.
+  ///
+  /// Бросает DioException: FORBIDDEN (не автор / voice),
+  /// EDIT_WINDOW_EXPIRED (прошло 15 мин), NOT_FOUND.
+  Future<ChatMessage> editMessage({
+    required String messageId,
+    required String text,
+  }) async {
+    final response = await _api.dio.patch(
+      ApiEndpoints.clubChatMessage(messageId),
+      data: {'text': text},
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>;
+    return ChatMessage.fromJson(data['message'] as Map<String, dynamic>);
+  }
+
+  /// Удалить своё сообщение (4.8, soft delete).
+  ///
+  /// Автор может удалить своё, админ — любое. Сервер эмитит
+  /// chat:message_deleted по WS; bubble перерисуется как «удалено».
+  Future<bool> deleteMessage(String messageId) async {
+    final response = await _api.dio.delete(
+      ApiEndpoints.clubChatMessage(messageId),
+    );
+    final body = response.data as Map<String, dynamic>;
+    return body['success'] == true;
+  }
+
   /// Жалоба на сообщение.
   Future<bool> reportMessage({
     required String messageId,
