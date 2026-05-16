@@ -39,6 +39,9 @@ import 'pinned_message_banner.dart';
 /// «Сообщение удалено», reply-контекст сохраняется). Reply — плашка над
 /// инпутом + тап по reply-превью скроллит к оригиналу (как в Telegram).
 /// Обновления edit/delete прилетают по WS.
+///
+/// Запрет ссылок: участницы (не admin) не могут слать ссылки — бэк
+/// возвращает LINK_NOT_ALLOWED, показываем понятное сообщение.
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -259,7 +262,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
       String msg;
-      if (code == 'CLUB_BLOCKED') {
+      if (code == 'LINK_NOT_ALLOWED') {
+        msg = 'Ссылки в чате запрещены. Уберите ссылку из сообщения';
+      } else if (code == 'CLUB_BLOCKED') {
         msg = 'Ваш аккаунт заблокирован';
       } else if (code == 'FORBIDDEN') {
         msg = 'В архиве нельзя отправлять сообщения';
@@ -328,7 +333,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
       String msg;
-      if (code == 'EDIT_WINDOW_EXPIRED') {
+      if (code == 'LINK_NOT_ALLOWED') {
+        msg = 'Ссылки в чате запрещены. Уберите ссылку из сообщения';
+      } else if (code == 'EDIT_WINDOW_EXPIRED') {
         msg = 'Прошло больше 15 минут — сообщение нельзя изменить';
       } else if (code == 'FORBIDDEN') {
         msg = 'Это сообщение нельзя редактировать';
@@ -618,7 +625,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
       String msg;
-      if (code == 'VALIDATION') {
+      if (code == 'LINK_NOT_ALLOWED') {
+        msg = 'Ссылки в чате запрещены. Уберите ссылку из подписи';
+      } else if (code == 'VALIDATION') {
         msg = 'Файл слишком большой или неподдерживаемый формат';
       } else if (code == 'CLUB_BLOCKED') {
         msg = 'Ваш аккаунт заблокирован';
