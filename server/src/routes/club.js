@@ -106,7 +106,7 @@ const upload = multer({
  * - future[] — ближайшие будущие клубы (отдаём только подписчикам и админу)
  *
  * Используется фронтом для построения dropdown'а переключения клубов.
- * Для каждого клуба возвращаем минимум полей + relation ('archive'/'current'/'future').
+ * Для каждогоклуба возвращаем минимум полей + relation ('archive'/'current'/'future').
  */
 router.get('/list', async (req, res, next) => {
   try {
@@ -235,6 +235,44 @@ router.get('/:clubMonthId', resolveClubAccess, async (req, res, next) => {
 /* ------------------------------------------------------------------ *
  *                              ЧАТ                                   *
  * ------------------------------------------------------------------ */
+
+/**
+ * GET /api/club/:clubMonthId/mentionable
+ * Список тех, кого можно упомянуть через @ в чате клуба (задача 4.9).
+ *
+ * Продуктовое решение (16.05.2026, вариант А): в книжном клубе осмысленно
+ * упоминать ВЕДУЩУЮ (Анну, role=admin) — чтобы она не пропустила обращение.
+ * Тегать любую участницу в MVP не нужно (это не групповой флуд-чат, а
+ * сообщество вокруг разбора книги). Эндпоинт расширяем: если позже
+ * понадобится тегать участниц — добавим их сюда же.
+ *
+ * Возвращает { mentionable: [{ id, name, avatarUrl, isAdmin }] }.
+ * Клиент строит автокомплит по '@': показывает этот список (обычно 1 —
+ * Анна), фильтрует по вводу после '@'.
+ */
+router.get(
+  '/:clubMonthId/mentionable',
+  resolveClubAccess,
+  async (req, res, next) => {
+    try {
+      const admins = await User.find({ role: 'admin' })
+        .select('name avatarUrl')
+        .sort({ name: 1 })
+        .lean();
+
+      const mentionable = admins.map((u) => ({
+        id: String(u._id),
+        name: u.name,
+        avatarUrl: u.avatarUrl || null,
+        isAdmin: true,
+      }));
+
+      return success(res, { mentionable });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
 
 /**
  * GET /api/club/:clubMonthId/chat
@@ -396,6 +434,12 @@ router.get(
  *
  * Запрет ссылок: участницы (не admin) не могут слать ссылки в text —
  * см. assertNoLinkForNonAdmin.
+ *
+ * Mentions (4.9): клиент присылает mentions[] — массив userId упомянутых
+ * через @. Сервер фильтрует его — оставляет только реальных админов
+ * (вариант А: упоминать можно только Анну). Это защита от подделки
+ * (клиент не может «упомянуть» произвольного юзера). Push по mentions —
+ * в Фазе 6.
  */
 const chatCreateSchema = z
   .object({
@@ -436,6 +480,21 @@ const chatCreateSchema = z
     }
   );
 
+// Отфильтровать mentions[] от клиента — оставить только реальных админов
+// (вариант А: упоминать можно только Анну). Защита от подделки: клиент не
+// может «упомянуть» произвольного юзера, проставив чужой userId.
+async function sanitizeMentions(rawMentions) {
+  if (!Array.isArray(rawMentions) || rawMentions.length === 0) return [];
+  const unique = [...new Set(rawMentions.map(String))];
+  const admins = await User.find({
+    _id: { $in: unique },
+    role: 'admin',
+  })
+    .select('_id')
+    .lean();
+  return admins.map((u) => u._id);
+}
+
 router.post(
   '/:clubMonthId/chat',
   validate(chatCreateSchema),
@@ -470,6 +529,8 @@ router.post(
         }
       }
 
+      const mentions = await sanitizeMentions(req.body.mentions);
+
       const message = await ChatMessage.create({
         clubMonthId: req.club._id,
         userId: req.user.userId,
@@ -480,7 +541,7 @@ router.post(
         voiceDurationSec: req.body.voiceDurationSec || null,
         voiceWaveform: req.body.voiceWaveform || [],
         replyToId: req.body.replyToId || null,
-        mentions: req.body.mentions || [],
+        mentions,
       });
 
       await ClubMonth.updateOne(
@@ -579,6 +640,15 @@ router.post(
         replyToId = req.body.replyToId;
       }
 
+      // Mentions в подписи картинки (вариант А: только админ).
+      const mentions = await sanitizeMentions(
+        Array.isArray(req.body.mentions)
+          ? req.body.mentions
+          : typeof req.body.mentions === 'string' && req.body.mentions
+          ? [req.body.mentions]
+          : []
+      );
+
       // Пишем файл на диск.
       const dir = imageService.clubImagesDir(req.club._id);
       await fs.promises.mkdir(dir, { recursive: true });
@@ -602,7 +672,7 @@ router.post(
         // signed URL при истечении (клиент перезапросит сообщение/историю).
         imageStoragePath: relPath,
         replyToId,
-        mentions: [],
+        mentions,
       });
 
       await ClubMonth.updateOne(
@@ -920,6 +990,163 @@ router.post(
       );
 
       return success(res, { reported: true }, 201);
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/* ------------------------------------------------------------------ *
+ *                          ЗАКРЕП (4.10)                             *
+ * ------------------------------------------------------------------ */
+
+/**
+ * POST /api/club/:clubMonthId/chat/:messageId/pin
+ * Закрепить / открепить сообщение (задача 4.10).
+ *
+ * Body: { pinned: boolean } — true закрепить, false открепить.
+ *
+ * Правила:
+ * - ТОЛЬКО Анна (role=admin) может закреплять/откреплять (как в Telegram —
+ *   в канале закрепляет админ).
+ * - 1 закреп на клуб (ClubMonth.pinnedMessageId). Новый закреп заменяет
+ *   старый. isPinned на сообщениях синхронизируется (старое=false, новое=true).
+ * - Нельзя закрепить удалённое/скрытое сообщение.
+ *
+ * Эмитит chat:pin_changed { pinnedMessageId } всем в клубе — баннер закрепа
+ * у всех обновится в реальном времени.
+ */
+const pinSchema = z.object({
+  pinned: z.boolean(),
+});
+
+router.post(
+  '/:clubMonthId/chat/:messageId/pin',
+  validate(pinSchema),
+  resolveClubAccess,
+  async (req, res, next) => {
+    try {
+      const { messageId } = req.params;
+      if (!mongoose.Types.ObjectId.isValid(messageId)) {
+        throw new AppError('NOT_FOUND', 'Неверный messageId', 400);
+      }
+
+      const user = await User.findById(req.user.userId)
+        .select('role')
+        .lean();
+      if (!user || user.role !== 'admin') {
+        throw new AppError(
+          'FORBIDDEN',
+          'Закреплять сообщения может только ведущая клуба',
+          403
+        );
+      }
+
+      const message = await ChatMessage.findById(messageId);
+      if (
+        !message ||
+        message.deletedAt ||
+        message.isHidden ||
+        !message.clubMonthId.equals(req.club._id)
+      ) {
+        throw new AppError(
+          'NOT_FOUND',
+          'Сообщение не найдено в этом клубе',
+          404
+        );
+      }
+
+      if (req.body.pinned) {
+        // Снимаем флаг с прежнего закрепа (если был другой).
+        if (
+          req.club.pinnedMessageId &&
+          String(req.club.pinnedMessageId) !== String(message._id)
+        ) {
+          await ChatMessage.updateOne(
+            { _id: req.club.pinnedMessageId },
+            { $set: { isPinned: false } }
+          );
+        }
+        message.isPinned = true;
+        await message.save();
+        await ClubMonth.updateOne(
+          { _id: req.club._id },
+          { $set: { pinnedMessageId: message._id } }
+        );
+      } else {
+        // Открепляем только если откреплеваемое — текущий закреп.
+        message.isPinned = false;
+        await message.save();
+        if (
+          req.club.pinnedMessageId &&
+          String(req.club.pinnedMessageId) === String(message._id)
+        ) {
+          await ClubMonth.updateOne(
+            { _id: req.club._id },
+            { $set: { pinnedMessageId: null } }
+          );
+        }
+      }
+
+      const newPinnedId = req.body.pinned ? String(message._id) : null;
+
+      const io = req.app.get('io');
+      emitToClub(io, req.club._id, 'chat:pin_changed', {
+        pinnedMessageId: newPinnedId,
+      });
+
+      return success(res, { pinnedMessageId: newPinnedId });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/* ------------------------------------------------------------------ *
+ *                          READ RECEIPTS (4.11)                      *
+ * ------------------------------------------------------------------ */
+
+/**
+ * POST /api/club/:clubMonthId/chat/read
+ * Отметить сообщения прочитанными (задача 4.11).
+ *
+ * Body: { messageIds: [string] } — id сообщений которые юзер увидел.
+ *
+ * Логика: добавляем userId в readBy каждого сообщения ($addToSet — без
+ * дублей). Используется в основном Анной — она видит сколько участниц
+ * прочитали её сообщение/анонс. Лёгкая операция, без эмита по WS (read
+ * receipts не требуют мгновенной доставки всем — это фоновая метрика;
+ * клиент Анны подтянет при обновлении/перезаходе).
+ *
+ * Доступ — любой кто видит клуб (resolveClubAccess), включая архив (read-only
+ * чтение всё равно «прочтение»). Бан/без доступа не пройдёт middleware.
+ */
+const readSchema = z.object({
+  messageIds: z
+    .array(
+      z.string().refine((s) => mongoose.Types.ObjectId.isValid(s), {
+        message: 'messageId должен быть валидным ObjectId',
+      })
+    )
+    .min(1)
+    .max(100),
+});
+
+router.post(
+  '/:clubMonthId/chat/read',
+  validate(readSchema),
+  resolveClubAccess,
+  async (req, res, next) => {
+    try {
+      const { messageIds } = req.body;
+      await ChatMessage.updateMany(
+        {
+          _id: { $in: messageIds },
+          clubMonthId: req.club._id,
+        },
+        { $addToSet: { readBy: req.user.userId } }
+      );
+      return success(res, { ok: true });
     } catch (err) {
       return next(err);
     }
