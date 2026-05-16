@@ -31,9 +31,14 @@ import 'pinned_message_banner.dart';
 /// Картинки (4.6): кнопка-скрепка → выбор источника → превью с подписью →
 /// multipart upload. Сообщение приходит обратно по WS как обычное.
 ///
-/// Реакции (4.7): long-press на bubble → меню с 6 эмодзи. Toggle через REST,
-/// обновление прилетает по WS (chat:reaction_updated). Также делаем optimistic
-/// апдейт чтобы реакция появилась мгновенно (WS подтвердит/скорректирует).
+/// Реакции (4.7): long-press → меню 6 эмодзи. Toggle через REST, обновление
+/// по WS (chat:reaction_updated) + optimistic с откатом.
+///
+/// Edit/Delete/Reply (4.8): long-press меню. Edit — диалог с предзаполненным
+/// текстом (окно 15 мин на бэке). Delete — confirm, soft-delete (остаётся
+/// «Сообщение удалено», reply-контекст сохраняется). Reply — плашка над
+/// инпутом + тап по reply-превью скроллит к оригиналу (как в Telegram).
+/// Обновления edit/delete прилетают по WS.
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -49,7 +54,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   final List<ChatMessage> _messages = [];
 
   /// GlobalKey для каждого сообщения по ID. Используется для скролла к закрепу
-  /// через Scrollable.ensureVisible. Заполняется при рендере bubble в itemBuilder.
+  /// и к оригиналу reply через Scrollable.ensureVisible. Заполняется при
+  /// рендере bubble в itemBuilder.
   final Map<String, GlobalKey> _messageKeys = {};
 
   /// ID текущего юзера (для отличения «свой/чужой» в bubble).
@@ -57,6 +63,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
   /// ID закреплённого сообщения. Обновляется через chat:pin_changed.
   String? _pinnedMessageId;
+
+  /// Сообщение на которое отвечаем (null = не в режиме ответа).
+  ChatMessage? _replyingTo;
 
   bool _isLoading = true;
   bool _hasError = false;
@@ -148,6 +157,25 @@ class _ChatTabState extends ConsumerState<ChatTab> {
               _messages[idx].copyWith(reactions: event.reactions);
         });
       }
+    } else if (event is ChatMessageEditedEvent) {
+      // Сервер прислал полностью populated сообщение (автор + reply-снапшот)
+      // — заменяем объект целиком.
+      final idx =
+          _messages.indexWhere((m) => m.id == event.message.id);
+      if (idx != -1) {
+        setState(() => _messages[idx] = event.message);
+      }
+    } else if (event is ChatMessageDeletedEvent) {
+      // Soft delete — НЕ убираем из ленты (reply-контекст сохраняется,
+      // bubble сам рисует «Сообщение удалено»). Только проставляем deletedAt.
+      final idx =
+          _messages.indexWhere((m) => m.id == event.messageId);
+      if (idx != -1) {
+        setState(() {
+          _messages[idx] =
+              _messages[idx].copyWith(deletedAt: DateTime.now());
+        });
+      }
     }
   }
 
@@ -183,11 +211,13 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   }
 
   /// Скролл к закреплённому сообщению при тапе на баннер.
-  void _scrollToPinned() {
-    final id = _pinnedMessageId;
+  void _scrollToPinned() => _scrollToMessage(_pinnedMessageId);
+
+  /// Скролл к сообщению по id (закреп или оригинал reply). Если сообщения
+  /// нет в дереве (вне загруженного окна) — тихо ничего не делаем.
+  void _scrollToMessage(String? id) {
     if (id == null) return;
-    final key = _messageKeys[id];
-    final ctx = key?.currentContext;
+    final ctx = _messageKeys[id]?.currentContext;
     if (ctx == null) return;
     Scrollable.ensureVisible(
       ctx,
@@ -197,15 +227,34 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     );
   }
 
+  /// Начать ответ на сообщение — показывает плашку над инпутом.
+  void _startReply(ChatMessage m) {
+    setState(() => _replyingTo = m);
+  }
+
+  void _cancelReply() {
+    setState(() => _replyingTo = null);
+  }
+
+  /// Краткое описание сообщения для плашки «Ответ на …» (по типу).
+  String _replyPreviewText(ChatMessage m) {
+    if (m.type == ChatMessageType.image) return '🖼 Картинка';
+    if (m.type == ChatMessageType.voice) return '🎤 Голосовое сообщение';
+    return m.text;
+  }
+
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty) return;
 
+    final replyId = _replyingTo?.id;
     try {
       final api = ref.read(clubApiServiceProvider);
       await api.sendTextMessage(
         clubMonthId: widget.club.id,
         text: text.trim(),
+        replyToId: replyId,
       );
+      if (mounted) _cancelReply();
     } on DioException catch (e) {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
@@ -217,6 +266,129 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       } else {
         msg = 'Не удалось отправить. Попробуйте ещё раз';
       }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.error,
+      ));
+    }
+  }
+
+  /// Редактирование своего сообщения. Диалог с предзаполненным текстом.
+  /// Обновление прилетит по WS (ChatMessageEditedEvent).
+  Future<void> _editMessage(ChatMessage m) async {
+    final controller = TextEditingController(text: m.text);
+    final newText = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.background,
+        title: Text('Изменить сообщение', style: AppTypography.sectionHeader),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 1000,
+          minLines: 1,
+          maxLines: 6,
+          style: AppTypography.body,
+          decoration: InputDecoration(
+            counterText: '',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              'Отмена',
+              style: AppTypography.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.terracotta,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+
+    if (newText == null || newText.isEmpty || !mounted) return;
+    if (newText == m.text) return; // ничего не изменилось
+
+    try {
+      final api = ref.read(clubApiServiceProvider);
+      await api.editMessage(messageId: m.id, text: newText);
+      // Обновление прилетит по WS (ChatMessageEditedEvent).
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final code = ClubApiService.errorCodeFromException(e);
+      String msg;
+      if (code == 'EDIT_WINDOW_EXPIRED') {
+        msg = 'Прошло больше 15 минут — сообщение нельзя изменить';
+      } else if (code == 'FORBIDDEN') {
+        msg = 'Это сообщение нельзя редактировать';
+      } else if (code == 'NOT_FOUND') {
+        msg = 'Сообщение не найдено';
+      } else {
+        msg = 'Не удалось изменить сообщение';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.error,
+      ));
+    }
+  }
+
+  /// Удаление своего сообщения. Confirm-диалог.
+  /// Обновление прилетит по WS (ChatMessageDeletedEvent).
+  Future<void> _deleteMessage(String messageId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.background,
+        title: Text('Удалить сообщение?', style: AppTypography.sectionHeader),
+        content: Text(
+          'Сообщение будет удалено для всех участников. Это действие нельзя отменить.',
+          style: AppTypography.body,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Отмена',
+              style: AppTypography.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final api = ref.read(clubApiServiceProvider);
+      await api.deleteMessage(messageId);
+      // Обновление прилетит по WS (ChatMessageDeletedEvent).
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final code = ClubApiService.errorCodeFromException(e);
+      final msg = code == 'FORBIDDEN'
+          ? 'Это сообщение нельзя удалить'
+          : 'Не удалось удалить сообщение';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg),
         backgroundColor: AppColors.error,
@@ -431,13 +603,16 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   /// Загрузка картинки на сервер. Сообщение придёт обратно по WS.
   Future<void> _uploadImage(String filePath, String caption) async {
     setState(() => _isUploadingImage = true);
+    final replyId = _replyingTo?.id;
     try {
       final api = ref.read(clubApiServiceProvider);
       await api.sendImageMessage(
         clubMonthId: widget.club.id,
         filePath: filePath,
         caption: caption,
+        replyToId: replyId,
       );
+      if (mounted) _cancelReply();
       // Сообщение придёт по WS — UI обновится через _onSocketEvent.
     } on DioException catch (e) {
       if (!mounted) return;
@@ -605,26 +780,23 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                         );
                       }
                       final m = _messages[index];
-                      ChatMessage? replyTo;
-                      if (m.hasReply) {
-                        for (final candidate in _messages) {
-                          if (candidate.id == m.replyToId) {
-                            replyTo = candidate;
-                            break;
-                          }
-                        }
-                      }
+                      final isMine = m.isMine(_currentUserId);
                       return KeyedSubtree(
                         key: _keyForMessage(m.id),
                         child: ChatMessageBubble(
                           message: m,
-                          replyTo: replyTo,
                           currentUserId: _currentUserId,
                           onReactionTap: (emoji) =>
                               _toggleReaction(m.id, emoji),
-                          onReport: m.isMine(_currentUserId)
-                              ? null
-                              : () => _reportMessage(m.id),
+                          onReply: () => _startReply(m),
+                          onEdit: isMine ? () => _editMessage(m) : null,
+                          onDelete:
+                              isMine ? () => _deleteMessage(m.id) : null,
+                          onReplyTap: m.hasReply
+                              ? () => _scrollToMessage(m.replyToId)
+                              : null,
+                          onReport:
+                              isMine ? null : () => _reportMessage(m.id),
                         ),
                       );
                     },
@@ -659,6 +831,11 @@ class _ChatTabState extends ConsumerState<ChatTab> {
             isArchive: widget.access.kind == ClubAccessKind.archive,
             onSend: _sendMessage,
             onAttachImage: _onAttachImage,
+            replyToName: _replyingTo?.author.name,
+            replyToText: _replyingTo == null
+                ? null
+                : _replyPreviewText(_replyingTo!),
+            onCancelReply: _replyingTo == null ? null : _cancelReply,
           ),
         ],
       ),
