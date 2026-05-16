@@ -46,6 +46,52 @@ class MessageReaction {
   bool containsUser(String userId) => userIds.contains(userId);
 }
 
+/// Снапшот родительского сообщения для reply-превью.
+///
+/// Сервер populate'ит `replyToId` (см. REPLY_POPULATE в routes/club.js) и
+/// присылает вложенный объект с автором. Это устраняет баг «ответы без
+/// пользователя»: раньше клиент сам искал родителя среди загруженных
+/// сообщений (первые 20) — если родитель вне окна, превью было без автора.
+/// Теперь снапшот самодостаточен (как в Telegram).
+class ReplySnapshot {
+  const ReplySnapshot({
+    required this.id,
+    required this.authorName,
+    required this.type,
+    required this.text,
+    required this.isDeleted,
+  });
+
+  final String id;
+  final String authorName;
+  final ChatMessageType type;
+  final String text;
+  final bool isDeleted;
+
+  factory ReplySnapshot.fromJson(Map<String, dynamic> json) {
+    final userRaw = json['userId'];
+    final authorName = userRaw is Map<String, dynamic>
+        ? (userRaw['name'] ?? 'Участница').toString()
+        : 'Участница';
+
+    final typeRaw = (json['type'] ?? 'text').toString();
+    final type = switch (typeRaw) {
+      'text' => ChatMessageType.text,
+      'image' => ChatMessageType.image,
+      'voice' => ChatMessageType.voice,
+      _ => ChatMessageType.unknown,
+    };
+
+    return ReplySnapshot(
+      id: (json['_id'] ?? '').toString(),
+      authorName: authorName,
+      type: type,
+      text: (json['text'] ?? '').toString(),
+      isDeleted: json['deletedAt'] != null,
+    );
+  }
+}
+
 /// Сообщение в чате клуба.
 ///
 /// Расширенная схема v5 (см. AI-CONTEXT): поддерживает text/image/voice +
@@ -68,6 +114,7 @@ class ChatMessage {
     this.voiceDurationSec,
     this.voiceWaveform = const [],
     this.replyToId,
+    this.replySnapshot,
     this.reactions = const [],
     this.mentions = const [],
     this.editedAt,
@@ -100,8 +147,12 @@ class ChatMessage {
   /// 40 семплов 0-100 для отрисовки waveform на клиенте.
   final List<int> voiceWaveform;
 
-  /// ID родительского сообщения если это reply. UI показывает превью.
+  /// ID родительского сообщения если это reply.
   final String? replyToId;
+
+  /// Снапшот родителя (автор + текст/тип) — приходит с сервера populated.
+  /// Используется для reply-превью без поиска в загруженном списке.
+  final ReplySnapshot? replySnapshot;
 
   /// Реакции, сгруппированные по эмодзи.
   final List<MessageReaction> reactions;
@@ -165,6 +216,20 @@ class ChatMessage {
         ? readByRaw.map((e) => e.toString()).toList(growable: false)
         : const <String>[];
 
+    // replyToId может прийти как:
+    // - строка (id) — старый формат / ws-эмит без populate
+    // - объект (populated reply-снапшот с автором) — новый формат (фикс бага)
+    // - null
+    final replyRaw = json['replyToId'];
+    String? replyToId;
+    ReplySnapshot? replySnapshot;
+    if (replyRaw is Map<String, dynamic>) {
+      replyToId = (replyRaw['_id'] ?? '').toString();
+      replySnapshot = ReplySnapshot.fromJson(replyRaw);
+    } else if (replyRaw != null) {
+      replyToId = replyRaw.toString();
+    }
+
     return ChatMessage(
       id: (json['_id'] ?? '').toString(),
       clubMonthId: (json['clubMonthId'] ?? '').toString(),
@@ -175,7 +240,8 @@ class ChatMessage {
       voiceUrl: json['voiceUrl']?.toString(),
       voiceDurationSec: (json['voiceDurationSec'] as num?)?.toInt(),
       voiceWaveform: waveform,
-      replyToId: json['replyToId']?.toString(),
+      replyToId: replyToId,
+      replySnapshot: replySnapshot,
       reactions: reactions,
       mentions: mentions,
       editedAt: _parseDate(json['editedAt']),
@@ -209,6 +275,7 @@ class ChatMessage {
       voiceDurationSec: voiceDurationSec,
       voiceWaveform: voiceWaveform,
       replyToId: replyToId,
+      replySnapshot: replySnapshot,
       reactions: reactions ?? this.reactions,
       mentions: mentions,
       editedAt: editedAt ?? this.editedAt,
