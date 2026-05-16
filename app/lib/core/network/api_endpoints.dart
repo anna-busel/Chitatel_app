@@ -85,6 +85,12 @@ class ApiEndpoints {
   static String clubChatImage(String clubMonthId) =>
       '/club/$clubMonthId/chat/image';
 
+  /// POST /api/club/chat/:messageId/reaction — поставить/снять реакцию (toggle).
+  /// Body: { emoji } — один из 6 разрешённых (❤️👍🔥👏🥲🙏).
+  /// Возвращает обновлённый массив reactions; эмитит chat:reaction_updated по WS.
+  static String clubChatReaction(String messageId) =>
+      '/club/chat/$messageId/reaction';
+
   /// POST /api/club/chat/:messageId/report — жалоба на сообщение.
   /// Body: { reason, comment? }
   /// Reason: spam/inappropriate/offensive/copyright/other.
