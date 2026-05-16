@@ -24,6 +24,40 @@ const { ALLOWED_REACTIONS } = ChatMessage;
 // у нас 15 минут — книжный чат, правки только «опечатку поправить»).
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
 
+// Запрет ссылок для участниц (продуктовое правило): обычные участницы НЕ
+// могут отправлять ссылки в чат — антиспам/антифишинг. Анна (role=admin)
+// может (анонсы, материалы). Стратегия — блокировать отправку (вариант А):
+// сообщение со ссылкой от не-админа отклоняется с понятной ошибкой, текст
+// не сохраняется (участница сам редактирует).
+//
+// Регэксп ловит явные ссылки и «голые» домены:
+// - http:// / https:// схемы
+// - www.<что-то>
+// - <слово>.<tld>[/...] — домен вида site.ru, example.com/page
+//   (tld 2-24 буквы, чтобы не цеплять «и т.д.», «т.е.» — там tld был бы
+//   из 1-2 кириллических букв; список tld не проверяем, но требуем
+//   латиницу в домене и tld, что отсекает обычные предложения)
+const LINK_REGEX =
+  /(https?:\/\/|www\.)[^\s]+|\b[a-z0-9-]+\.[a-z]{2,24}(\/[^\s]*)?/i;
+
+function containsLink(text) {
+  if (typeof text !== 'string' || text.length === 0) return false;
+  return LINK_REGEX.test(text);
+}
+
+// Бросает LINK_NOT_ALLOWED если текст содержит ссылку И юзер не админ.
+// isAdmin вычисляется один раз на запрос (см. вызовы ниже).
+function assertNoLinkForNonAdmin(text, isAdmin) {
+  if (isAdmin) return;
+  if (containsLink(text)) {
+    throw new AppError(
+      'LINK_NOT_ALLOWED',
+      'Ссылки в чате запрещены. Уберите ссылку из сообщения',
+      403
+    );
+  }
+}
+
 // Populate-спека для reply: подтягиваем РОДИТЕЛЬСКОЕ сообщение со снапшотом
 // автора. Это устраняет баг «ответы без пользователя»: раньше клиент сам
 // искал родителя среди загруженных сообщений (первые 20) — если родитель
@@ -255,6 +289,9 @@ router.get(
  * который сам создаёт сообщение. Этот эндпоинт принимает уже готовый imageUrl
  * (на случай если клиент шлёт ссылку), но штатный путь картинки — через
  * /chat/image ниже.
+ *
+ * Запрет ссылок: участницы (не admin) не могут слать ссылки в text —
+ * см. assertNoLinkForNonAdmin.
  */
 const chatCreateSchema = z
   .object({
@@ -308,6 +345,13 @@ router.post(
           403
         );
       }
+
+      // Запрет ссылок для не-админов (text-сообщения).
+      const author = await User.findById(req.user.userId)
+        .select('role')
+        .lean();
+      const isAdmin = author && author.role === 'admin';
+      assertNoLinkForNonAdmin(req.body.text, isAdmin);
 
       if (req.body.replyToId) {
         const parent = await ChatMessage.findById(req.body.replyToId)
@@ -370,6 +414,8 @@ router.post(
  *
  * isHidden по умолчанию false. Жалоба инкрементит reportCount; админ
  * скрывает через существующий /api/admin/reports/action (задача 4.4).
+ *
+ * Запрет ссылок: участницы (не admin) не могут слать ссылки в caption.
  */
 router.post(
   '/:clubMonthId/chat/image',
@@ -403,6 +449,13 @@ router.post(
         typeof req.body.text === 'string'
           ? req.body.text.slice(0, 1000)
           : '';
+
+      // Запрет ссылок для не-админов (в подписи картинки).
+      const author = await User.findById(req.user.userId)
+        .select('role')
+        .lean();
+      const isAdmin = author && author.role === 'admin';
+      assertNoLinkForNonAdmin(caption, isAdmin);
 
       let replyToId = null;
       if (req.body.replyToId) {
@@ -487,6 +540,9 @@ router.post(
  * - Картинку нельзя заменить, только подпись.
  * - Удалённые (deletedAt) — нельзя.
  * - Проставляем editedAt — клиент покажет «изменено».
+ * - Запрет ссылок: участница не может вписать ссылку при редактировании
+ *   (иначе можно обойти запрет — отправить «ок», потом отредактировать
+ *   в ссылку). Админ может.
  *
  * Эмитит chat:message_edited с обновлённым сообщением.
  */
@@ -533,6 +589,13 @@ router.patch(
           403
         );
       }
+
+      // Запрет ссылок при редактировании для не-админов (антиобход).
+      const editor = await User.findById(req.user.userId)
+        .select('role')
+        .lean();
+      const isAdmin = editor && editor.role === 'admin';
+      assertNoLinkForNonAdmin(req.body.text, isAdmin);
 
       message.text = req.body.text;
       message.editedAt = new Date();
