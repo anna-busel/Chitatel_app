@@ -3,6 +3,10 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../models/chat_message.dart';
 
+/// 6 разрешённых реакций. Должен совпадать с ALLOWED_REACTIONS
+/// в server/src/models/ChatMessage.js (белый список v5).
+const List<String> kAllowedReactions = ['❤️', '👍', '🔥', '👏', '🥲', '🙏'];
+
 /// Bubble одного сообщения в чате.
 ///
 /// Логика стиля:
@@ -11,6 +15,10 @@ import '../models/chat_message.dart';
 /// - Удалённое (deletedAt != null) — серый курсив «Сообщение удалено»
 /// - Reply preview — серая полоска сверху bubble с цитатой родителя
 /// - Edited badge — после времени «изменено»
+/// - Реакции — ряд чипов под bubble (эмодзи + счётчик, свои подсвечены)
+///
+/// Long-press на bubble → меню: 6 эмодзи-реакций + «Пожаловаться»
+/// (пункт жалобы только для чужих сообщений).
 ///
 /// image — реальная картинка (4.6), тап открывает полноэкранный просмотр.
 /// voice — заглушка с иконкой (UI в 4.12).
@@ -20,13 +28,19 @@ class ChatMessageBubble extends StatelessWidget {
     required this.message,
     required this.currentUserId,
     this.replyTo,
-    this.onLongPress,
+    this.onReactionTap,
+    this.onReport,
   });
 
   final ChatMessage message;
   final ChatMessage? replyTo;
   final String? currentUserId;
-  final VoidCallback? onLongPress;
+
+  /// Вызывается при выборе эмодзи (тап по реакции или выбор в меню).
+  final void Function(String emoji)? onReactionTap;
+
+  /// Вызывается при выборе «Пожаловаться» в меню (только для чужих).
+  final VoidCallback? onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +58,7 @@ class ChatMessageBubble extends StatelessWidget {
         maxWidth: MediaQuery.of(context).size.width * 0.72,
       ),
       child: GestureDetector(
-        onLongPress: onLongPress,
+        onLongPress: () => _showActionMenu(context, isMine),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
@@ -109,13 +123,35 @@ class ChatMessageBubble extends StatelessWidget {
       ),
     );
 
+    // Ряд реакций под bubble (если есть). Выравнивается по стороне сообщения.
+    final reactionsRow = message.hasReactions
+        ? Padding(
+            padding: EdgeInsets.only(
+              top: 4,
+              left: isMine ? 0 : 40, // отступ под аватар у чужих
+              right: isMine ? 0 : 0,
+            ),
+            child: _ReactionsRow(
+              reactions: message.reactions,
+              currentUserId: currentUserId,
+              onTap: onReactionTap,
+            ),
+          )
+        : const SizedBox.shrink();
+
     // Своё — bubble справа без аватара.
     if (isMine) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 3),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [bubble],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [bubble],
+            ),
+            reactionsRow,
+          ],
         ),
       );
     }
@@ -123,16 +159,93 @@ class ChatMessageBubble extends StatelessWidget {
     // Чужое — аватар слева, bubble после него.
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Avatar(
-            name: message.author.name,
-            avatarUrl: message.author.avatarUrl,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _Avatar(
+                name: message.author.name,
+                avatarUrl: message.author.avatarUrl,
+              ),
+              const SizedBox(width: 8),
+              Flexible(child: bubble),
+            ],
           ),
-          const SizedBox(width: 8),
-          Flexible(child: bubble),
+          reactionsRow,
         ],
+      ),
+    );
+  }
+
+  /// Long-press меню: выбор реакции (6 эмодзи в ряд сверху) + действия
+  /// (Пожаловаться — только для чужих сообщений).
+  void _showActionMenu(BuildContext context, bool isMine) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.cardBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            // Ряд из 6 эмодзи для быстрой реакции.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: kAllowedReactions.map((emoji) {
+                  final mine = message.reactions
+                      .any((r) =>
+                          r.emoji == emoji &&
+                          currentUserId != null &&
+                          r.containsUser(currentUserId!));
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      onReactionTap?.call(emoji);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: mine
+                            ? AppColors.terracotta.withOpacity(0.15)
+                            : Colors.transparent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(emoji, style: const TextStyle(fontSize: 28)),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            // Пожаловаться — только на чужие сообщения.
+            if (!isMine && onReport != null)
+              ListTile(
+                leading: const Icon(Icons.flag_outlined,
+                    color: AppColors.error),
+                title: Text(
+                  'Пожаловаться',
+                  style: AppTypography.body.copyWith(color: AppColors.error),
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  onReport?.call();
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.close, color: AppColors.textTertiary),
+              title: Text('Отмена', style: AppTypography.body),
+              onTap: () => Navigator.of(ctx).pop(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -142,6 +255,64 @@ class ChatMessageBubble extends StatelessWidget {
     final hh = local.hour.toString().padLeft(2, '0');
     final mm = local.minute.toString().padLeft(2, '0');
     return '$hh:$mm';
+  }
+}
+
+/// Ряд чипов реакций под bubble. Каждый чип: эмодзи + счётчик.
+/// Свои реакции (где есть currentUserId) подсвечены terracotta-обводкой.
+/// Тап по чипу — toggle этой реакции.
+class _ReactionsRow extends StatelessWidget {
+  const _ReactionsRow({
+    required this.reactions,
+    required this.currentUserId,
+    required this.onTap,
+  });
+
+  final List<MessageReaction> reactions;
+  final String? currentUserId;
+  final void Function(String emoji)? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: reactions.where((r) => r.count > 0).map((r) {
+        final mine = currentUserId != null && r.containsUser(currentUserId!);
+        return GestureDetector(
+          onTap: () => onTap?.call(r.emoji),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: mine
+                  ? AppColors.terracotta.withOpacity(0.12)
+                  : AppColors.surfaceLight,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: mine ? AppColors.terracotta : AppColors.border,
+                width: mine ? 1.2 : 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(r.emoji, style: const TextStyle(fontSize: 14)),
+                const SizedBox(width: 4),
+                Text(
+                  '${r.count}',
+                  style: AppTypography.micro.copyWith(
+                    color: mine
+                        ? AppColors.terracotta
+                        : AppColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
   }
 }
 
