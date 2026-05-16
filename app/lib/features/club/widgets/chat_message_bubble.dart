@@ -12,7 +12,8 @@ import '../models/chat_message.dart';
 /// - Reply preview — серая полоска сверху bubble с цитатой родителя
 /// - Edited badge — после времени «изменено»
 ///
-/// Тип image/voice — заглушка с иконкой и подписью (UI добавим в 4.6/4.12).
+/// image — реальная картинка (4.6), тап открывает полноэкранный просмотр.
+/// voice — заглушка с иконкой (UI в 4.12).
 class ChatMessageBubble extends StatelessWidget {
   const ChatMessageBubble({
     super.key,
@@ -223,7 +224,7 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-/// Содержимое: текст, заглушка image, заглушка voice.
+/// Содержимое: текст, картинка (4.6), заглушка voice.
 class _MessageContent extends StatelessWidget {
   const _MessageContent({required this.message, required this.textColor});
   final ChatMessage message;
@@ -240,24 +241,27 @@ class _MessageContent extends StatelessWidget {
         );
 
       case ChatMessageType.image:
-        // Заглушка для 4.5 — реальная картинка в задаче 4.6.
-        return Row(
+        // Картинка + опциональная подпись (caption хранится в text).
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.image_outlined, size: 20, color: textColor),
-            const SizedBox(width: 8),
-            Text(
-              'Картинка',
-              style: AppTypography.body.copyWith(
-                color: textColor,
-                fontStyle: FontStyle.italic,
-              ),
+            _ChatImage(
+              imageUrl: message.imageUrl ?? '',
+              heroTag: 'chat-img-${message.id}',
             ),
+            if (message.text.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                message.text,
+                style: AppTypography.body.copyWith(color: textColor),
+              ),
+            ],
           ],
         );
 
       case ChatMessageType.voice:
-        // Заглушка для 4.5 — реальный плеер с waveform в задаче 4.12.
+        // Заглушка для 4.5/4.6 — реальный плеер с waveform в задаче 4.12.
         final secs = message.voiceDurationSec ?? 0;
         final mm = (secs ~/ 60).toString().padLeft(1, '0');
         final ss = (secs % 60).toString().padLeft(2, '0');
@@ -273,6 +277,142 @@ class _MessageContent extends StatelessWidget {
           ],
         );
     }
+  }
+}
+
+/// Картинка в bubble. Скруглённая, фиксированная макс-высота, BoxFit.cover.
+/// Тап открывает полноэкранный просмотр (InteractiveViewer для зума).
+class _ChatImage extends StatelessWidget {
+  const _ChatImage({required this.imageUrl, required this.heroTag});
+  final String imageUrl;
+  final String heroTag;
+
+  @override
+  Widget build(BuildContext context) {
+    if (imageUrl.isEmpty) {
+      return Container(
+        width: 200,
+        height: 150,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppColors.surfaceMedium,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(
+          Icons.broken_image_outlined,
+          color: AppColors.textTertiary,
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: () => _openFullscreen(context),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Hero(
+          tag: heroTag,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: 240,
+              maxHeight: 280,
+              minWidth: 120,
+              minHeight: 80,
+            ),
+            child: Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return Container(
+                  width: 200,
+                  height: 150,
+                  alignment: Alignment.center,
+                  color: AppColors.surfaceMedium,
+                  child: const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.terracotta,
+                    ),
+                  ),
+                );
+              },
+              errorBuilder: (_, __, ___) => Container(
+                width: 200,
+                height: 150,
+                alignment: Alignment.center,
+                color: AppColors.surfaceMedium,
+                child: const Icon(
+                  Icons.broken_image_outlined,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openFullscreen(BuildContext context) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.black,
+        pageBuilder: (_, __, ___) => _FullscreenImage(
+          imageUrl: imageUrl,
+          heroTag: heroTag,
+        ),
+      ),
+    );
+  }
+}
+
+/// Полноэкранный просмотр картинки с зумом (pinch) и закрытием по тапу/свайпу.
+class _FullscreenImage extends StatelessWidget {
+  const _FullscreenImage({required this.imageUrl, required this.heroTag});
+  final String imageUrl;
+  final String heroTag;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Center(
+              child: Hero(
+                tag: heroTag,
+                child: InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 4,
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.white54,
+                      size: 48,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            right: 8,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 28),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
