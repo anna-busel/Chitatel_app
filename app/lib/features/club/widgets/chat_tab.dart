@@ -20,7 +20,7 @@ import 'pinned_message_banner.dart';
 
 /// Таб «Чат» клуба.
 ///
-/// Навигация к закрепу/reply (как в Telegram):
+/// Navigation к закрепу/reply (как в Telegram):
 /// - Тап по баннеру закрепа или reply-превью → _jumpToMessage(id).
 /// - Если сообщение уже в загруженном окне — Scrollable.ensureVisible +
 ///   подсветка (_highlightedMessageId на ~1.8 сек, снимается таймером).
@@ -31,8 +31,11 @@ import 'pinned_message_banner.dart';
 ///   или «провалился» в старый контекст (hasMoreAfter). Тап → возврат к
 ///   свежей истории.
 ///
-/// Остальное: картинки 4.6, реакции 4.7 (optimistic+WS), edit/delete/reply
-/// 4.8, запрет ссылок (LINK_NOT_ALLOWED). Real-time через Socket.io.
+/// Real-time через Socket.io. ВАЖНО: socket-сервис — singleton (Provider с
+/// ref.onDispose). Этот виджет НЕ вызывает disconnect() в своём dispose() —
+/// иначе при пересоздании экрана (вкладка, диалог, клавиатура) соединение
+/// рвалось бы и события перставали приходить до перезахода. Виджет только
+/// отписывается от стрима; жизнью сокета управляет провайдер. (Урок #16.)
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -93,9 +96,13 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   @override
   void dispose() {
     _highlightTimer?.cancel();
+    // Отписываемся от стрима, но НЕ трогаем соединение: socket-сервис —
+    // singleton, его disconnect делает провайдер (ref.onDispose). Если
+    // звать disconnect() здесь — при любом пересоздании экрана (вкладка,
+    // диалог edit/delete, всплытие клавиатуры) сокет рвётся и события
+    // не приходят в реальном времени до перезахода. (Урок #16.)
     _socketSub?.cancel();
     _scrollController.dispose();
-    _socketService?.disconnect();
     super.dispose();
   }
 
@@ -120,6 +127,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         _isLoading = false;
       });
 
+      // connect() идемпотентен: если уже подключены к этому клубу — no-op
+      // (см. ClubSocketService.connect). Подписка на broadcast-стрим — ок
+      // даже если сокет уже подключён ранее.
       _socketService = ref.read(clubSocketServiceProvider);
       _socketSub = _socketService!.events.listen(_onSocketEvent);
       await _socketService!.connect(widget.club.id);
@@ -191,10 +201,14 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       _loadMoreBefore();
     }
 
-    // Догрузка более НОВЫХ — скролл вниз (к 0 при reverse) если провалились.
+    // Догрузка более НОВЫХ — ТОЛЬКО когда реально провалились в старый
+    // контекст (_hasMoreAfter) И юзер активно тянет к низу. Защита от
+    // ложного цикла: в обычной свежей ленте _hasMoreAfter всегда false
+    // (ставится в _bootstrap), поэтому этот блок там не срабатывает и
+    // не перезагружает ленту поверх WS-сообщений.
     if (!_isLoadingAfter &&
         _hasMoreAfter &&
-        pos.pixels <= 200) {
+        pos.pixels <= 80) {
       _loadMoreAfter();
     }
   }
@@ -225,12 +239,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Догрузка более НОВЫХ сообщений (после перехода в старый контекст).
-  /// Берём свежее самого нового в текущем окне (через context от него же —
-  /// проще переиспользовать: context целевого = самый новый, radius вперёд).
-  /// Здесь упрощаем: если дошли до низа и есть hasMoreAfter — перезагружаем
-  /// свежую историю (как при старте) и сбрасываем hasMoreAfter. Это надёжно
-  /// и для книжного чата достаточно (не бесконечная лента).
+  /// Догрузка более НОВЫХ (после перехода в старый контекст). Перезагружаем
+  /// свежую историю (как при старте) и сбрасываем hasMoreAfter — после
+  /// этого обычный real-time через WS работает как обычно.
   Future<void> _loadMoreAfter() async {
     setState(() => _isLoadingAfter = true);
     try {
@@ -249,7 +260,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         _isLoadingAfter = false;
         _showJumpDown = false;
       });
-      // Прыгаем в самый низ (свежие).
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
           _scrollController.jumpTo(0);
@@ -264,7 +274,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   /// Возврат к свежим сообщениям (тап по кнопке «вниз»).
   Future<void> _jumpToBottom() async {
     if (_hasMoreAfter) {
-      // Провалились в старый контекст — перезагрузить свежую ленту.
       await _loadMoreAfter();
       return;
     }
@@ -285,7 +294,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   Future<void> _jumpToMessage(String? id) async {
     if (id == null || id.isEmpty || _isJumping) return;
 
-    // Уже в дереве? — просто скролл + подсветка.
     final ctx = _messageKeys[id]?.currentContext;
     if (ctx != null) {
       await Scrollable.ensureVisible(
@@ -298,7 +306,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       return;
     }
 
-    // Нет в окне — грузим контекст вокруг цели.
     setState(() => _isJumping = true);
     try {
       final api = ref.read(clubApiServiceProvider);
@@ -318,7 +325,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         _isJumping = false;
       });
 
-      // После рендера — проскроллить к цели + подсветить.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final c = _messageKeys[id]?.currentContext;
         if (c != null) {
