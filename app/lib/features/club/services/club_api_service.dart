@@ -63,6 +63,25 @@ class ChatHistoryResult {
   final bool hasMore;
 }
 
+/// Результат загрузки контекста вокруг сообщения (переход к закрепу/reply).
+///
+/// messages — DESC (как и обычная история). targetId — id целевого
+/// сообщения для подсветки. hasMoreBefore/hasMoreAfter — есть ли ещё
+/// сообщения за окном (для догрузки скроллом вверх/вниз).
+class ChatContextResult {
+  const ChatContextResult({
+    required this.messages,
+    required this.targetId,
+    required this.hasMoreBefore,
+    required this.hasMoreAfter,
+  });
+
+  final List<ChatMessage> messages;
+  final String targetId;
+  final bool hasMoreBefore;
+  final bool hasMoreAfter;
+}
+
 /// Сервис для работы с REST API клуба.
 class ClubApiService {
   ClubApiService(this._api);
@@ -150,6 +169,42 @@ class ClubApiService {
     return ChatHistoryResult(
       messages: messages,
       hasMore: data['hasMore'] == true,
+    );
+  }
+
+  /// Загрузить контекст вокруг сообщения (переход к закрепу/reply как в
+  /// Telegram). Возвращает целевое + radius соседей до и после.
+  ///
+  /// Используется когда тап по баннеру закрепа или reply-превью ведёт к
+  /// сообщению которого нет в текущем загруженном окне — клиент перестраивает
+  /// ленту вокруг цели и подсвечивает её.
+  ///
+  /// Бросает DioException NOT_FOUND если сообщение скрыто/не в этом клубе.
+  Future<ChatContextResult> fetchChatContext({
+    required String clubMonthId,
+    required String messageId,
+    int radius = 15,
+  }) async {
+    final response = await _api.dio.get(
+      ApiEndpoints.clubChatContext(clubMonthId, messageId),
+      queryParameters: {'radius': radius},
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>;
+
+    final messagesRaw = data['messages'];
+    final messages = messagesRaw is List
+        ? messagesRaw
+            .whereType<Map<String, dynamic>>()
+            .map(ChatMessage.fromJson)
+            .toList(growable: false)
+        : const <ChatMessage>[];
+
+    return ChatContextResult(
+      messages: messages,
+      targetId: (data['targetId'] ?? '').toString(),
+      hasMoreBefore: data['hasMoreBefore'] == true,
+      hasMoreAfter: data['hasMoreAfter'] == true,
     );
   }
 
