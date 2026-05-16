@@ -7,6 +7,48 @@ import '../models/chat_message.dart';
 /// в server/src/models/ChatMessage.js (белый список v5).
 const List<String> kAllowedReactions = ['❤️', '👍', '🔥', '👏', '🥲', '🙏'];
 
+/// Построить Text с подсветкой @упоминаний (4.9). Слова вида @Имя
+/// красятся terracotta + жирным (на тёмном фоне своего сообщения —
+/// белым жирным, чтобы читалось). Остальной текст — обычный.
+///
+/// Эвристика: @ + последовательность букв/цифр/пробел-имя до знака
+/// препинания/конца. Имя может содержать пробел («@Анна Бусел»), поэтому
+/// захватываем буквы и одиночные пробелы между словами с заглавной — но
+/// проще и надёжно: подсвечиваем @ + одно-два слова (буквы, до 30 симв).
+Widget buildMentionText(
+  String text, {
+  required Color baseColor,
+  required bool isMine,
+}) {
+  final mentionStyle = AppTypography.body.copyWith(
+    color: isMine ? Colors.white : AppColors.terracotta,
+    fontWeight: FontWeight.w700,
+  );
+  final baseStyle = AppTypography.body.copyWith(color: baseColor);
+
+  // @ + буквы/цифры/_ + опц. один пробел + ещё буквы (для «@Имя Фамилия»).
+  final re = RegExp(
+    r'@[A-Za-zА-Яа-яЁё0-9_]+(?:\s[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё0-9_]+)?',
+  );
+
+  final spans = <InlineSpan>[];
+  int last = 0;
+  for (final m in re.allMatches(text)) {
+    if (m.start > last) {
+      spans.add(TextSpan(text: text.substring(last, m.start), style: baseStyle));
+    }
+    spans.add(TextSpan(text: m.group(0), style: mentionStyle));
+    last = m.end;
+  }
+  if (last < text.length) {
+    spans.add(TextSpan(text: text.substring(last), style: baseStyle));
+  }
+  if (spans.isEmpty) {
+    return Text(text, style: baseStyle);
+  }
+  return RichText(text: TextSpan(children: spans));
+}
+
 /// Bubble одного сообщения в чате.
 ///
 /// Логика стиля:
@@ -18,6 +60,7 @@ const List<String> kAllowedReactions = ['❤️', '👍', '🔥', '👏', '🥲'
 ///   самодостаточно — НЕ ищем родителя в загруженном списке). Тап по превью →
 ///   onReplyTap (переход к оригиналу в chat_tab, с догрузкой контекста).
 /// - Edited badge — «изменено» после времени
+/// - @упоминания в тексте — подсвечены (buildMentionText), 4.9
 /// - Реакции — ряд чипов под bubble (эмодзи + счётчик, свои подсвечены)
 /// - isHighlighted — временная подсветка (после перехода к закрепу/reply),
 ///   снимается таймером в chat_tab. Жёлтая обводка поверх обычного bubble.
@@ -35,6 +78,7 @@ const List<String> kAllowedReactions = ['❤️', '👍', '🔥', '👏', '🥲'
 /// - «Ответить» (всем)
 /// - «Изменить» (своим, не voice)
 /// - «Удалить» (своим)
+/// - «Закрепить»/«Открепить» (только админ — Анна, 4.10)
 /// - «Пожаловаться» (чужим)
 class ChatMessageBubble extends StatelessWidget {
   const ChatMessageBubble({
@@ -42,12 +86,14 @@ class ChatMessageBubble extends StatelessWidget {
     required this.message,
     required this.currentUserId,
     this.isHighlighted = false,
+    this.isAdmin = false,
     this.onReactionTap,
     this.onReport,
     this.onReply,
     this.onEdit,
     this.onDelete,
     this.onReplyTap,
+    this.onPinToggle,
   });
 
   final ChatMessage message;
@@ -56,6 +102,9 @@ class ChatMessageBubble extends StatelessWidget {
   /// Временная подсветка после перехода к этому сообщению (закреп/reply).
   /// Управляется таймером в chat_tab (выставляется на ~1.8 сек).
   final bool isHighlighted;
+
+  /// Текущий юзер — админ (Анна). Только тогда в меню есть «Закрепить» (4.10).
+  final bool isAdmin;
 
   /// Тап по эмодзи (тап по чипу реакции или выбор в меню).
   final void Function(String emoji)? onReactionTap;
@@ -74,6 +123,10 @@ class ChatMessageBubble extends StatelessWidget {
 
   /// Тап по reply-превью → переход к оригинальному сообщению.
   final VoidCallback? onReplyTap;
+
+  /// Закрепить/открепить (4.10). Передаётся только для админа. Аргумент —
+  /// новое состояние (true = закрепить, false = открепить).
+  final void Function(bool pin)? onPinToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -106,8 +159,6 @@ class ChatMessageBubble extends StatelessWidget {
     // — Внутренность bubble —
     Widget inner;
     if (bareImage) {
-      // Только картинка: никакого Container с цветом/padding.
-      // Время — поверх картинки справа снизу на полупрозрачной подложке.
       inner = Stack(
         children: [
           _ChatImage(
@@ -119,9 +170,7 @@ class ChatMessageBubble extends StatelessWidget {
           Positioned(
             right: 8,
             bottom: 8,
-            child: _TimeOverlay(
-              message: message,
-            ),
+            child: _TimeOverlay(message: message),
           ),
           if (!isMine)
             Positioned(
@@ -132,8 +181,6 @@ class ChatMessageBubble extends StatelessWidget {
         ],
       );
     } else if (isImage && hasCaption) {
-      // Картинка сверху во всю ширину bubble (без padding, скруглены верхние
-      // углы), подпись снизу на цветном фоне с padding.
       inner = Container(
         decoration: BoxDecoration(
           color: bubbleColor,
@@ -169,8 +216,6 @@ class ChatMessageBubble extends StatelessWidget {
               child: _ChatImage(
                 imageUrl: message.imageUrl ?? '',
                 heroTag: 'chat-img-${message.id}',
-                // Картинка занимает всю ширину bubble; верхние углы скруглять
-                // не нужно (она внутри clip'а), низ упирается в подпись.
                 borderRadius: BorderRadius.zero,
                 fullWidth: true,
               ),
@@ -181,9 +226,10 @@ class ChatMessageBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
+                  buildMentionText(
                     message.text,
-                    style: AppTypography.body.copyWith(color: textColor),
+                    baseColor: textColor,
+                    isMine: isMine,
                   ),
                   const SizedBox(height: 4),
                   _MetaRow(message: message, metaColor: metaColor),
@@ -194,7 +240,6 @@ class ChatMessageBubble extends StatelessWidget {
         ),
       );
     } else {
-      // Текст / voice / unknown — обычный bubble с padding и цветом.
       inner = Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
@@ -222,7 +267,11 @@ class ChatMessageBubble extends StatelessWidget {
               ),
               const SizedBox(height: 6),
             ],
-            _MessageContent(message: message, textColor: textColor),
+            _MessageContent(
+              message: message,
+              textColor: textColor,
+              isMine: isMine,
+            ),
             const SizedBox(height: 4),
             _MetaRow(message: message, metaColor: metaColor),
           ],
@@ -230,7 +279,6 @@ class ChatMessageBubble extends StatelessWidget {
       );
     }
 
-    // Подсветка перехода: жёлтая обводка вокруг bubble, плавно появляется.
     final bubble = ConstrainedBox(
       constraints: BoxConstraints(
         maxWidth: MediaQuery.of(context).size.width * 0.72,
@@ -309,7 +357,7 @@ class ChatMessageBubble extends StatelessWidget {
   }
 
   /// Long-press меню: реакции (6 эмодзи) + Ответить + (свои: Изменить/Удалить)
-  /// + (чужие: Пожаловаться). Единое меню как в Telegram.
+  /// + (админ: Закрепить/Открепить) + (чужие: Пожаловаться).
   void _showActionMenu(BuildContext context, bool isMine) {
     final canEdit = isMine &&
         onEdit != null &&
@@ -364,6 +412,24 @@ class ChatMessageBubble extends StatelessWidget {
                 onTap: () {
                   Navigator.of(ctx).pop();
                   onReply?.call();
+                },
+              ),
+            // Закрепить/Открепить — только админ (Анна), 4.10.
+            if (isAdmin && onPinToggle != null)
+              ListTile(
+                leading: Icon(
+                  message.isPinned
+                      ? Icons.push_pin_outlined
+                      : Icons.push_pin,
+                  color: AppColors.terracotta,
+                ),
+                title: Text(
+                  message.isPinned ? 'Открепить' : 'Закрепить',
+                  style: AppTypography.body,
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  onPinToggle?.call(!message.isPinned);
                 },
               ),
             if (canEdit)
@@ -645,29 +711,34 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-/// Содержимое: текст, заглушка voice. (Картинка рендерится в build напрямую
-/// — особый layout, см. ChatMessageBubble.build.)
+/// Содержимое: текст (с подсветкой @упоминаний), заглушка voice.
+/// Картинка рендерится в build напрямую (особый layout).
 class _MessageContent extends StatelessWidget {
-  const _MessageContent({required this.message, required this.textColor});
+  const _MessageContent({
+    required this.message,
+    required this.textColor,
+    required this.isMine,
+  });
   final ChatMessage message;
   final Color textColor;
+  final bool isMine;
 
   @override
   Widget build(BuildContext context) {
     switch (message.type) {
       case ChatMessageType.text:
       case ChatMessageType.unknown:
-        return Text(
+        return buildMentionText(
           message.text,
-          style: AppTypography.body.copyWith(color: textColor),
+          baseColor: textColor,
+          isMine: isMine,
         );
 
       case ChatMessageType.image:
-        // Картинка обрабатывается в ChatMessageBubble.build (особый layout).
-        // Сюда попасть не должно, но на всякий случай — текст подписи.
-        return Text(
+        return buildMentionText(
           message.text,
-          style: AppTypography.body.copyWith(color: textColor),
+          baseColor: textColor,
+          isMine: isMine,
         );
 
       case ChatMessageType.voice:
