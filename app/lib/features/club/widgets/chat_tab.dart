@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/storage/secure_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
@@ -25,6 +27,9 @@ import 'pinned_message_banner.dart';
 /// 4. При отправке — POST через REST. Сервер сам эмитит chat:new_message
 ///    через WS, наш сокет получит и добавит в список (включая своё сообщение).
 /// 5. При уходе с экрана — disconnect socket + dispose контроллеров.
+///
+/// Картинки (4.6): кнопка-скрепка → выбор источника → превью с подписью →
+/// multipart upload. Сообщение приходит обратно по WS как обычное.
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -54,9 +59,14 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   bool _isLoadingMore = false;
   bool _hasMore = false;
 
+  /// true пока идёт upload картинки — показываем баннер «Отправка фото...».
+  bool _isUploadingImage = false;
+
   /// Сохранённые ссылки на сервисы — чтобы dispose() мог их использовать
   /// БЕЗ обращения к ref (ref после dispose невалиден).
   ClubSocketService? _socketService;
+
+  final ImagePicker _imagePicker = ImagePicker();
 
   StreamSubscription<ClubSocketEvent>? _socketSub;
   final ScrollController _scrollController = ScrollController();
@@ -159,22 +169,17 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   }
 
   /// Скролл к закреплённому сообщению при тапе на баннер.
-  ///
-  /// Использует GlobalKey + Scrollable.ensureVisible. Работает только если
-  /// сообщение сейчас в загруженной истории (первые 20 сообщений, либо
-  /// больше после loadMore). Если закреп старый и не загружен — ничего
-  /// не происходит (силен будем подгружать позже в 4.7).
   void _scrollToPinned() {
     final id = _pinnedMessageId;
     if (id == null) return;
     final key = _messageKeys[id];
     final ctx = key?.currentContext;
-    if (ctx == null) return; // сообщение не в дереве, не можем доскроллить
+    if (ctx == null) return;
     Scrollable.ensureVisible(
       ctx,
       duration: const Duration(milliseconds: 400),
       curve: Curves.easeInOut,
-      alignment: 0.3, // позиционируем закреп чуть выше центра экрана
+      alignment: 0.3,
     );
   }
 
@@ -202,6 +207,178 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         content: Text(msg),
         backgroundColor: AppColors.error,
       ));
+    }
+  }
+
+  /// Тап по кнопке-скрепке: выбор источника (галерея/камера) → выбор фото →
+  /// превью-диалог с полем подписи → upload.
+  Future<void> _onAttachImage() async {
+    final source = await _showImageSourceSheet();
+    if (source == null || !mounted) return;
+
+    XFile? picked;
+    try {
+      picked = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 2000,
+        maxHeight: 2000,
+        imageQuality: 85, // лёгкое сжатие — экономия трафика/диска
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Не удалось открыть фото'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+
+    if (picked == null || !mounted) return; // юзер отменил выбор
+
+    // Превью + поле подписи.
+    final caption = await _showImagePreviewDialog(File(picked.path));
+    if (caption == null || !mounted) return; // отменил на превью
+
+    await _uploadImage(picked.path, caption);
+  }
+
+  /// Bottom sheet выбора источника картинки.
+  Future<ImageSource?> _showImageSourceSheet() {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: AppColors.cardBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined,
+                  color: AppColors.terracotta),
+              title: Text('Выбрать из галереи', style: AppTypography.body),
+              onTap: () => Navigator.of(ctx).pop(ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined,
+                  color: AppColors.terracotta),
+              title: Text('Сделать фото', style: AppTypography.body),
+              onTap: () => Navigator.of(ctx).pop(ImageSource.camera),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Диалог превью выбранной картинки + поле подписи.
+  /// Возвращает текст подписи (может быть пустым) если юзер подтвердил,
+  /// либо null если отменил.
+  Future<String?> _showImagePreviewDialog(File file) {
+    final captionController = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: AppColors.background,
+        insetPadding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(8)),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 360),
+                child: Image.file(file, fit: BoxFit.contain),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: TextField(
+                controller: captionController,
+                maxLength: 1000,
+                minLines: 1,
+                maxLines: 3,
+                style: AppTypography.body,
+                decoration: InputDecoration(
+                  hintText: 'Добавить подпись (необязательно)',
+                  hintStyle: AppTypography.body.copyWith(
+                    color: AppColors.textPlaceholder,
+                  ),
+                  counterText: '',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: Text(
+                        'Отмена',
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.terracotta,
+                      ),
+                      onPressed: () =>
+                          Navigator.of(ctx).pop(captionController.text.trim()),
+                      child: const Text('Отправить'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Загрузка картинки на сервер. Сообщение придёт обратно по WS.
+  Future<void> _uploadImage(String filePath, String caption) async {
+    setState(() => _isUploadingImage = true);
+    try {
+      final api = ref.read(clubApiServiceProvider);
+      await api.sendImageMessage(
+        clubMonthId: widget.club.id,
+        filePath: filePath,
+        caption: caption,
+      );
+      // Сообщение придёт по WS — UI обновится через _onSocketEvent.
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final code = ClubApiService.errorCodeFromException(e);
+      String msg;
+      if (code == 'VALIDATION') {
+        msg = 'Файл слишком большой или неподдерживаемый формат';
+      } else if (code == 'CLUB_BLOCKED') {
+        msg = 'Ваш аккаунт заблокирован';
+      } else if (code == 'FORBIDDEN') {
+        msg = 'В архиве нельзя отправлять сообщения';
+      } else {
+        msg = 'Не удалось отправить фото. Попробуйте ещё раз';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.error,
+      ));
+    } finally {
+      if (mounted) setState(() => _isUploadingImage = false);
     }
   }
 
@@ -271,8 +448,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     );
   }
 
-  /// Получить или создать GlobalKey для конкретного сообщения.
-  /// Используется для скролла к закрепу через Scrollable.ensureVisible.
   GlobalKey _keyForMessage(String id) {
     return _messageKeys.putIfAbsent(id, () => GlobalKey());
   }
@@ -360,8 +535,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                           }
                         }
                       }
-                      // Оборачиваем bubble в KeyedSubtree чтобы можно было
-                      // получить его BuildContext для Scrollable.ensureVisible.
                       return KeyedSubtree(
                         key: _keyForMessage(m.id),
                         child: ChatMessageBubble(
@@ -379,12 +552,35 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                     },
                   ),
           ),
+          // Баннер прогресса загрузки картинки.
+          if (_isUploadingImage)
+            Container(
+              width: double.infinity,
+              color: AppColors.surfaceLight,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.terracotta,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('Отправка фото...', style: AppTypography.caption),
+                ],
+              ),
+            ),
           ChatInput(
             canPost: widget.access.canPost,
             isMuted: widget.access.isMuted,
             mutedUntil: widget.access.mutedUntil,
             isArchive: widget.access.kind == ClubAccessKind.archive,
             onSend: _sendMessage,
+            onAttachImage: _onAttachImage,
           ),
         ],
       ),
