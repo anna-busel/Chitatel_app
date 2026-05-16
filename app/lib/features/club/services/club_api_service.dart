@@ -82,6 +82,31 @@ class ChatContextResult {
   final bool hasMoreAfter;
 }
 
+/// Пользователь которого можно упомянуть через @ (задача 4.9).
+/// Сейчас это админы (Анна). id — userId для поля mentions[] при отправке.
+class MentionableUser {
+  const MentionableUser({
+    required this.id,
+    required this.name,
+    this.avatarUrl,
+    this.isAdmin = false,
+  });
+
+  final String id;
+  final String name;
+  final String? avatarUrl;
+  final bool isAdmin;
+
+  factory MentionableUser.fromJson(Map<String, dynamic> j) {
+    return MentionableUser(
+      id: (j['id'] ?? '').toString(),
+      name: (j['name'] ?? '').toString(),
+      avatarUrl: j['avatarUrl']?.toString(),
+      isAdmin: j['isAdmin'] == true,
+    );
+  }
+}
+
 /// Сервис для работы с REST API клуба.
 class ClubApiService {
   ClubApiService(this._api);
@@ -137,6 +162,31 @@ class ClubApiService {
       access: ClubAccess.fromJson(data['access'] as Map<String, dynamic>),
       bookJson: data['book'] as Map<String, dynamic>?,
     );
+  }
+
+  /// Список кого можно упомянуть через @ (4.9). Сейчас = админы (Анна).
+  /// Возвращает пустой список при любой ошибке (упоминания — не критичный
+  /// функционал, чат должен работать и без них).
+  Future<List<MentionableUser>> fetchMentionable(String clubMonthId) async {
+    try {
+      final response =
+          await _api.dio.get(ApiEndpoints.clubMentionable(clubMonthId));
+      final body = response.data as Map<String, dynamic>;
+      final data = body['data'] as Map<String, dynamic>;
+      final raw = data['mentionable'];
+      if (raw is List) {
+        return raw
+            .whereType<Map<String, dynamic>>()
+            .map(MentionableUser.fromJson)
+            .toList(growable: false);
+      }
+      return const [];
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ClubApiService] fetchMentionable failed: $e');
+      }
+      return const [];
+    }
   }
 
   /// История чата с пагинацией. `before` — для подгрузки старых при скролле вверх.
@@ -208,7 +258,8 @@ class ClubApiService {
     );
   }
 
-  /// Отправить текстовое сообщение.
+  /// Отправить текстовое сообщение. mentions — userId упомянутых через @
+  /// (бэк отфильтрует, оставит только админов).
   Future<ChatMessage> sendTextMessage({
     required String clubMonthId,
     required String text,
@@ -236,6 +287,7 @@ class ClubApiService {
   /// [filePath] — локальный путь к файлу (из image_picker).
   /// [caption] — опциональная подпись под картинкой.
   /// [replyToId] — опциональный reply.
+  /// [mentions] — userId упомянутых через @ в подписи (бэк отфильтрует).
   ///
   /// Сервер сам создаёт ChatMessage type=image + эмитит chat:new_message
   /// по WS — сообщение придёт в ленту через socket-стрим (как текст).
@@ -247,12 +299,16 @@ class ClubApiService {
     required String filePath,
     String caption = '',
     String? replyToId,
+    List<String> mentions = const [],
   }) async {
     final fileName = filePath.split('/').last;
     final formData = FormData.fromMap({
       'image': await MultipartFile.fromFile(filePath, filename: fileName),
       if (caption.isNotEmpty) 'text': caption,
       if (replyToId != null) 'replyToId': replyToId,
+      // FormData не сериализует List напрямую как нужно бэку — шлём
+      // повторяющимся ключом mentions (express qs соберёт в массив).
+      if (mentions.isNotEmpty) 'mentions': mentions,
     });
 
     final response = await _api.dio.post(
@@ -323,6 +379,45 @@ class ClubApiService {
     );
     final body = response.data as Map<String, dynamic>;
     return body['success'] == true;
+  }
+
+  /// Закрепить / открепить сообщение (4.10). Только Анна-admin (бэк проверяет
+  /// role). pinned=true закрепить, false открепить. Сервер эмитит
+  /// chat:pin_changed по WS — баннер закрепа обновится у всех.
+  ///
+  /// Бросает DioException FORBIDDEN если не админ, NOT_FOUND если сообщения нет.
+  Future<String?> pinMessage({
+    required String clubMonthId,
+    required String messageId,
+    required bool pinned,
+  }) async {
+    final response = await _api.dio.post(
+      ApiEndpoints.clubChatPin(clubMonthId, messageId),
+      data: {'pinned': pinned},
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>;
+    final id = data['pinnedMessageId'];
+    return (id is String && id.isNotEmpty) ? id : null;
+  }
+
+  /// Отметить сообщения прочитанными (4.11). Фоновая метрика для Анны —
+  /// ошибки глушим (не критично для UX). Без WS.
+  Future<void> markRead({
+    required String clubMonthId,
+    required List<String> messageIds,
+  }) async {
+    if (messageIds.isEmpty) return;
+    try {
+      await _api.dio.post(
+        ApiEndpoints.clubChatRead(clubMonthId),
+        data: {'messageIds': messageIds},
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ClubApiService] markRead failed (ignored): $e');
+      }
+    }
   }
 
   /// Жалоба на сообщение.
