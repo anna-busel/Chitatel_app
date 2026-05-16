@@ -18,6 +18,8 @@ const QAQuestion = require('../models/QAQuestion');
 const Report = require('../models/Report');
 const Book = require('../models/Book');
 
+const { ALLOWED_REACTIONS } = ChatMessage;
+
 const router = Router();
 
 // Все endpoints клуба требуют авторизацию.
@@ -446,6 +448,95 @@ router.post(
         }
         return next(new AppError('VALIDATION', 'Ошибка загрузки файла', 400));
       }
+      return next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/club/chat/:messageId/reaction
+ * Поставить/снять реакцию на сообщение (toggle). Задача 4.7.
+ *
+ * Body: { emoji } — один из ALLOWED_REACTIONS (6 эмодзи белый список).
+ *
+ * Логика (как в Telegram — один юзер = одна реакция на сообщение):
+ * - Если юзер уже поставил ЭТОТ эмодзи → снимаем (toggle off).
+ * - Если юзер поставил ДРУГОЙ эмодзи → переносим на новый.
+ * - Если не реагировал → добавляем.
+ * - Пустые группы (без userIds) удаляем из массива.
+ *
+ * Эмитит chat:reaction_updated в комнату клуба с полным массивом reactions
+ * (клиенты заменяют локальный массив реакций целиком — проще консистентность).
+ *
+ * Доступ: нужен resolveClubAccess (любой кто видит клуб может реагировать,
+ * включая архивный read-only — реакция это не «сообщение», это лёгкий signal;
+ * но забаненный/без доступа — не пройдёт middleware).
+ */
+const reactionSchema = z.object({
+  emoji: z.enum(ALLOWED_REACTIONS),
+});
+
+router.post(
+  '/chat/:messageId/reaction',
+  validate(reactionSchema),
+  async (req, res, next) => {
+    try {
+      const { messageId } = req.params;
+      if (!mongoose.Types.ObjectId.isValid(messageId)) {
+        throw new AppError('NOT_FOUND', 'Неверный messageId', 400);
+      }
+
+      const { emoji } = req.body;
+      const userId = req.user.userId;
+
+      const message = await ChatMessage.findById(messageId);
+      if (!message || message.isHidden) {
+        throw new AppError('NOT_FOUND', 'Сообщение не найдено', 404);
+      }
+
+      const userIdStr = String(userId);
+
+      // Убираем юзера из всех групп реакций (один юзер = одна реакция).
+      let hadThisEmoji = false;
+      for (const r of message.reactions) {
+        const idx = r.userIds.findIndex((u) => String(u) === userIdStr);
+        if (idx !== -1) {
+          if (r.emoji === emoji) hadThisEmoji = true;
+          r.userIds.splice(idx, 1);
+        }
+      }
+
+      // Если юзер НЕ снимал этот же эмодзи — значит ставит реакцию.
+      if (!hadThisEmoji) {
+        const existing = message.reactions.find((r) => r.emoji === emoji);
+        if (existing) {
+          existing.userIds.push(userId);
+        } else {
+          message.reactions.push({ emoji, userIds: [userId] });
+        }
+      }
+
+      // Чистим пустые группы.
+      message.reactions = message.reactions.filter(
+        (r) => r.userIds.length > 0
+      );
+
+      await message.save();
+
+      const io = req.app.get('io');
+      emitToClub(io, message.clubMonthId, 'chat:reaction_updated', {
+        messageId: String(message._id),
+        reactions: message.reactions.map((r) => ({
+          emoji: r.emoji,
+          userIds: r.userIds.map((u) => String(u)),
+        })),
+      });
+
+      return success(res, {
+        messageId: String(message._id),
+        reactions: message.reactions,
+      });
+    } catch (err) {
       return next(err);
     }
   }
