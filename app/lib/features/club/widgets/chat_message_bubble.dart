@@ -13,12 +13,19 @@ const List<String> kAllowedReactions = ['❤️', '👍', '🔥', '👏', '🥲'
 /// - Своё сообщение — справа, terracotta фон, белый текст, без аватара
 /// - Чужое — слева, белый фон, тёмный текст, с круглым аватаром-инициалом
 /// - Удалённое (deletedAt != null) — серый курсив «Сообщение удалено»
-/// - Reply preview — серая полоска сверху bubble с цитатой родителя
-/// - Edited badge — после времени «изменено»
+/// - Reply preview — компактная полоска (1 строка) сверху bubble с цитатой
+///   родителя. Берётся из message.replySnapshot (приходит с сервера populated,
+///   самодостаточно — НЕ ищем родителя в загруженном списке). Тап по превью →
+///   onReplyTap (скролл к оригиналу в chat_tab).
+/// - Edited badge — «изменено» после времени
 /// - Реакции — ряд чипов под bubble (эмодзи + счётчик, свои подсвечены)
 ///
-/// Long-press на bubble → меню: 6 эмодзи-реакций + «Пожаловаться»
-/// (пункт жалобы только для чужих сообщений).
+/// Long-press на bubble → меню (как в Telegram, единое для всех действий):
+/// - ряд 6 эмодзи-реакций
+/// - «Ответить» (всем)
+/// - «Изменить» (своим, не voice)
+/// - «Удалить» (своим)
+/// - «Пожаловаться» (чужим)
 ///
 /// image — реальная картинка (4.6), тап открывает полноэкранный просмотр.
 /// voice — заглушка с иконкой (UI в 4.12).
@@ -27,20 +34,34 @@ class ChatMessageBubble extends StatelessWidget {
     super.key,
     required this.message,
     required this.currentUserId,
-    this.replyTo,
     this.onReactionTap,
     this.onReport,
+    this.onReply,
+    this.onEdit,
+    this.onDelete,
+    this.onReplyTap,
   });
 
   final ChatMessage message;
-  final ChatMessage? replyTo;
   final String? currentUserId;
 
-  /// Вызывается при выборе эмодзи (тап по реакции или выбор в меню).
+  /// Тап по эмодзи (тап по чипу реакции или выбор в меню).
   final void Function(String emoji)? onReactionTap;
 
-  /// Вызывается при выборе «Пожаловаться» в меню (только для чужих).
+  /// «Пожаловаться» в меню (только для чужих).
   final VoidCallback? onReport;
+
+  /// «Ответить» в меню (для всех сообщений).
+  final VoidCallback? onReply;
+
+  /// «Изменить» в меню (только для своих text/image).
+  final VoidCallback? onEdit;
+
+  /// «Удалить» в меню (только для своих).
+  final VoidCallback? onDelete;
+
+  /// Тап по reply-превью → скролл к оригинальному сообщению.
+  final VoidCallback? onReplyTap;
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +73,8 @@ class ChatMessageBubble extends StatelessWidget {
     final bubbleColor = isMine ? AppColors.terracotta : AppColors.cardBackground;
     final textColor = isMine ? Colors.white : AppColors.textPrimary;
     final metaColor = isMine ? Colors.white70 : AppColors.textTertiary;
+
+    final snapshot = message.replySnapshot;
 
     final bubble = ConstrainedBox(
       constraints: BoxConstraints(
@@ -85,9 +108,14 @@ class ChatMessageBubble extends StatelessWidget {
                 const SizedBox(height: 4),
               ],
 
-              // Reply preview (если это ответ)
-              if (replyTo != null) ...[
-                _ReplyPreview(replyTo: replyTo!, isMine: isMine),
+              // Reply preview (если это ответ) — снапшот с сервера, 1 строка,
+              // кликабельный (скролл к оригиналу).
+              if (snapshot != null) ...[
+                _ReplyPreview(
+                  snapshot: snapshot,
+                  isMine: isMine,
+                  onTap: onReplyTap,
+                ),
                 const SizedBox(height: 6),
               ],
 
@@ -179,9 +207,14 @@ class ChatMessageBubble extends StatelessWidget {
     );
   }
 
-  /// Long-press меню: выбор реакции (6 эмодзи в ряд сверху) + действия
-  /// (Пожаловаться — только для чужих сообщений).
+  /// Long-press меню: реакции (6 эмодзи) + Ответить + (свои: Изменить/Удалить)
+  /// + (чужие: Пожаловаться). Единое меню как в Telegram.
   void _showActionMenu(BuildContext context, bool isMine) {
+    // Изменять можно только свои text/image (не voice — там нет текста).
+    final canEdit = isMine &&
+        onEdit != null &&
+        message.type != ChatMessageType.voice;
+
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.cardBackground,
@@ -199,11 +232,10 @@ class ChatMessageBubble extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: kAllowedReactions.map((emoji) {
-                  final mine = message.reactions
-                      .any((r) =>
-                          r.emoji == emoji &&
-                          currentUserId != null &&
-                          r.containsUser(currentUserId!));
+                  final mine = message.reactions.any((r) =>
+                      r.emoji == emoji &&
+                      currentUserId != null &&
+                      r.containsUser(currentUserId!));
                   return GestureDetector(
                     onTap: () {
                       Navigator.of(ctx).pop();
@@ -225,6 +257,46 @@ class ChatMessageBubble extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Divider(height: 1),
+
+            // Ответить — на любое сообщение.
+            if (onReply != null)
+              ListTile(
+                leading: const Icon(Icons.reply,
+                    color: AppColors.textSecondary),
+                title: Text('Ответить', style: AppTypography.body),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  onReply?.call();
+                },
+              ),
+
+            // Изменить — только свои text/image.
+            if (canEdit)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined,
+                    color: AppColors.textSecondary),
+                title: Text('Изменить', style: AppTypography.body),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  onEdit?.call();
+                },
+              ),
+
+            // Удалить — только свои.
+            if (isMine && onDelete != null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline,
+                    color: AppColors.error),
+                title: Text(
+                  'Удалить',
+                  style: AppTypography.body.copyWith(color: AppColors.error),
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  onDelete?.call();
+                },
+              ),
+
             // Пожаловаться — только на чужие сообщения.
             if (!isMine && onReport != null)
               ListTile(
@@ -239,6 +311,7 @@ class ChatMessageBubble extends StatelessWidget {
                   onReport?.call();
                 },
               ),
+
             ListTile(
               leading: const Icon(Icons.close, color: AppColors.textTertiary),
               title: Text('Отмена', style: AppTypography.body),
@@ -588,10 +661,19 @@ class _FullscreenImage extends StatelessWidget {
 }
 
 /// Превью родительского сообщения в reply.
+///
+/// Берёт данные из ReplySnapshot (приходит с сервера populated — автор,
+/// тип, текст). Компактное: ОДНА строка (как в Telegram, не разворачивается).
+/// Тап → onTap (скролл к оригиналу в chat_tab).
 class _ReplyPreview extends StatelessWidget {
-  const _ReplyPreview({required this.replyTo, required this.isMine});
-  final ChatMessage replyTo;
+  const _ReplyPreview({
+    required this.snapshot,
+    required this.isMine,
+    this.onTap,
+  });
+  final ReplySnapshot snapshot;
   final bool isMine;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -599,42 +681,48 @@ class _ReplyPreview extends StatelessWidget {
     final textColor = isMine ? Colors.white70 : AppColors.textSecondary;
 
     String preview;
-    if (replyTo.isDeleted) {
+    if (snapshot.isDeleted) {
       preview = 'Сообщение удалено';
-    } else if (replyTo.type == ChatMessageType.image) {
+    } else if (snapshot.type == ChatMessageType.image) {
       preview = '🖼 Картинка';
-    } else if (replyTo.type == ChatMessageType.voice) {
+    } else if (snapshot.type == ChatMessageType.voice) {
       preview = '🎤 Голосовое сообщение';
     } else {
-      preview = replyTo.text;
+      preview = snapshot.text;
     }
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-      decoration: BoxDecoration(
-        color: (isMine ? Colors.white : AppColors.surfaceLight).withOpacity(
-          isMine ? 0.15 : 1,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+        decoration: BoxDecoration(
+          color: (isMine ? Colors.white : AppColors.surfaceLight).withOpacity(
+            isMine ? 0.15 : 1,
+          ),
+          borderRadius: BorderRadius.circular(8),
+          border: Border(left: BorderSide(color: accent, width: 3)),
         ),
-        borderRadius: BorderRadius.circular(8),
-        border: Border(left: BorderSide(color: accent, width: 3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            replyTo.author.name,
-            style: AppTypography.micro.copyWith(
-              color: accent,
-              fontWeight: FontWeight.w700,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              snapshot.authorName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.micro.copyWith(
+                color: accent,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
-          Text(
-            preview,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.small.copyWith(color: textColor),
-          ),
-        ],
+            Text(
+              preview,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.small.copyWith(color: textColor),
+            ),
+          ],
+        ),
       ),
     );
   }
