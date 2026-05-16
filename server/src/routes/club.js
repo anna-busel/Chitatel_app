@@ -20,6 +20,10 @@ const Book = require('../models/Book');
 
 const { ALLOWED_REACTIONS } = ChatMessage;
 
+// Окно редактирования сообщения после отправки (как в Telegram — 48 часов;
+// у нас 15 минут — книжный чат, правки только «опечатку поправить»).
+const EDIT_WINDOW_MS = 15 * 60 * 1000;
+
 const router = Router();
 
 // Все endpoints клуба требуют авторизацию.
@@ -452,6 +456,138 @@ router.post(
     }
   }
 );
+
+/**
+ * PATCH /api/club/chat/:messageId
+ * Редактировать своё сообщение (задача 4.8).
+ *
+ * Body: { text } — новый текст (для type=text) или подпись (для type=image).
+ *
+ * Правила (как в Telegram):
+ * - Только автор может редактировать своё сообщение.
+ * - Окно редактирования — EDIT_WINDOW_MS (15 минут после отправки).
+ * - Голосовые (type=voice) не редактируются — нечего (нет текста).
+ * - Картинку нельзя заменить, только подпись.
+ * - Удалённые (deletedAt) — нельзя.
+ * - Проставляем editedAt — клиент покажет «изменено».
+ *
+ * Эмитит chat:message_edited с обновлённым сообщением.
+ */
+const editSchema = z.object({
+  text: z.string().min(1).max(1000),
+});
+
+router.patch(
+  '/chat/:messageId',
+  validate(editSchema),
+  async (req, res, next) => {
+    try {
+      const { messageId } = req.params;
+      if (!mongoose.Types.ObjectId.isValid(messageId)) {
+        throw new AppError('NOT_FOUND', 'Неверный messageId', 400);
+      }
+
+      const message = await ChatMessage.findById(messageId);
+      if (!message || message.deletedAt || message.isHidden) {
+        throw new AppError('NOT_FOUND', 'Сообщение не найдено', 404);
+      }
+
+      if (String(message.userId) !== String(req.user.userId)) {
+        throw new AppError(
+          'FORBIDDEN',
+          'Можно редактировать только свои сообщения',
+          403
+        );
+      }
+
+      if (message.type === 'voice') {
+        throw new AppError(
+          'FORBIDDEN',
+          'Голосовые сообщения нельзя редактировать',
+          403
+        );
+      }
+
+      const age = Date.now() - new Date(message.createdAt).getTime();
+      if (age > EDIT_WINDOW_MS) {
+        throw new AppError(
+          'EDIT_WINDOW_EXPIRED',
+          'Прошло больше 15 минут — сообщение нельзя изменить',
+          403
+        );
+      }
+
+      message.text = req.body.text;
+      message.editedAt = new Date();
+      await message.save();
+
+      const populated = await ChatMessage.findById(message._id)
+        .populate('userId', 'name avatarUrl')
+        .lean();
+
+      const io = req.app.get('io');
+      emitToClub(io, message.clubMonthId, 'chat:message_edited', {
+        message: populated,
+      });
+
+      return success(res, { message: populated });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/**
+ * DELETE /api/club/chat/:messageId
+ * Удалить своё сообщение (задача 4.8). Soft delete.
+ *
+ * Правила:
+ * - Автор может удалить своё. Админ — любое (модерация).
+ * - Soft delete: проставляем deletedAt, текст/картинку оставляем в БД
+ *   (для аудита и контекста reply). На клиенте — «Сообщение удалено».
+ * - Голосовые тоже можно удалять (deletedAt — общий механизм).
+ *
+ * Эмитит chat:message_deleted с messageId — клиент перерисует bubble
+ * как удалённое (НЕ убирает из ленты целиком — reply-контекст должен
+ * остаться, как в Telegram).
+ */
+router.delete('/chat/:messageId', async (req, res, next) => {
+  try {
+    const { messageId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(messageId)) {
+      throw new AppError('NOT_FOUND', 'Неверный messageId', 400);
+    }
+
+    const message = await ChatMessage.findById(messageId);
+    if (!message || message.deletedAt) {
+      throw new AppError('NOT_FOUND', 'Сообщение не найдено', 404);
+    }
+
+    const user = await User.findById(req.user.userId).select('role').lean();
+    const isAdmin = user && user.role === 'admin';
+    const isAuthor = String(message.userId) === String(req.user.userId);
+
+    if (!isAuthor && !isAdmin) {
+      throw new AppError(
+        'FORBIDDEN',
+        'Можно удалять только свои сообщения',
+        403
+      );
+    }
+
+    message.deletedAt = new Date();
+    await message.save();
+
+    const io = req.app.get('io');
+    emitToClub(io, message.clubMonthId, 'chat:message_deleted', {
+      messageId: String(message._id),
+    });
+
+    return success(res, { deleted: true });
+  } catch (err) {
+    return next(err);
+  }
+});
 
 /**
  * POST /api/club/chat/:messageId/reaction
