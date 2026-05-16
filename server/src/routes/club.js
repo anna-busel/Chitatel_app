@@ -282,6 +282,110 @@ router.get(
 );
 
 /**
+ * GET /api/club/:clubMonthId/chat/context/:messageId
+ * Контекст вокруг конкретного сообщения (для перехода к закрепу / reply,
+ * как в Telegram). Возвращает целевое сообщение + N до и N после него.
+ *
+ * Зачем: тап по баннеру закрепа или по reply-превью должен ВСЕГДА вести к
+ * оригиналу, даже если он далеко в истории и не загружен в текущем окне.
+ * Старая реализация скроллила только если сообщение уже в загруженных
+ * _messages — иначе молча ничего. Теперь клиент при таком тапе запрашивает
+ * этот эндпоинт, перестраивает ленту вокруг цели и подсвечивает её.
+ *
+ * Query: radius (сколько сообщений до и после, 1-30, default 15).
+ *
+ * Ответ:
+ * - messages[] — DESC по createdAt (как и /chat), включает целевое + соседей
+ * - targetId — id целевого (для подсветки на клиенте)
+ * - hasMoreBefore — есть ли ещё более старые (для догрузки скроллом вверх)
+ * - hasMoreAfter — есть ли ещё более новые (для догрузки скроллом вниз /
+ *   кнопки «вниз»)
+ *
+ * Если целевое скрыто модератором (isHidden) или не в этом клубе — 404.
+ */
+const chatContextSchema = z.object({
+  radius: z.coerce.number().int().min(1).max(30).default(15),
+});
+
+router.get(
+  '/:clubMonthId/chat/context/:messageId',
+  validate(chatContextSchema, 'query'),
+  resolveClubAccess,
+  async (req, res, next) => {
+    try {
+      const { messageId } = req.params;
+      const { radius } = req.query;
+
+      if (!mongoose.Types.ObjectId.isValid(messageId)) {
+        throw new AppError('NOT_FOUND', 'Неверный messageId', 400);
+      }
+
+      const target = await ChatMessage.findById(messageId).lean();
+      if (
+        !target ||
+        target.isHidden ||
+        !target.clubMonthId.equals(req.club._id)
+      ) {
+        throw new AppError(
+          'NOT_FOUND',
+          'Сообщение не найдено в этом клубе',
+          404
+        );
+      }
+
+      const baseFilter = {
+        clubMonthId: req.club._id,
+        isHidden: { $ne: true },
+      };
+
+      // Соседи СТАРШЕ целевого (createdAt < target) — DESC, берём radius штук.
+      const older = await ChatMessage.find({
+        ...baseFilter,
+        createdAt: { $lt: target.createdAt },
+      })
+        .sort({ createdAt: -1 })
+        .limit(radius)
+        .populate('userId', 'name avatarUrl')
+        .populate(REPLY_POPULATE)
+        .lean();
+
+      // Соседи НОВЕЕ целевого (createdAt > target) — ASC чтобы взять ближайшие
+      // radius штук, потом развернём в DESC для единообразия с лентой.
+      const newerAsc = await ChatMessage.find({
+        ...baseFilter,
+        createdAt: { $gt: target.createdAt },
+      })
+        .sort({ createdAt: 1 })
+        .limit(radius)
+        .populate('userId', 'name avatarUrl')
+        .populate(REPLY_POPULATE)
+        .lean();
+
+      // Целевое — с полным populate (как остальные).
+      const targetPopulated = await findMessagePopulated(target._id);
+
+      // Собираем единую ленту в DESC (новые первыми, как /chat и как рендерит
+      // клиент с reverse=true): [newer DESC] + [target] + [older DESC].
+      const newerDesc = newerAsc.slice().reverse();
+      const messages = [...newerDesc, targetPopulated, ...older];
+
+      // Есть ли ещё сообщения за пределами этого окна — для догрузки.
+      const hasMoreAfter = newerAsc.length === radius;
+      const hasMoreBefore = older.length === radius;
+
+      return success(res, {
+        messages,
+        targetId: String(target._id),
+        hasMoreBefore,
+        hasMoreAfter,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/**
  * POST /api/club/:clubMonthId/chat
  * Создать text/image/voice сообщение в чате.
  *
