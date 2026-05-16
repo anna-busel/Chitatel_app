@@ -31,6 +31,11 @@ dependencies:
   # Socket.io клиент для real-time чата клуба.
   # Версия 2.x совместима с сервером Socket.io 4.x (наш сервер — 4.7.5).
   socket_io_client: ^2.0.3+1
+  # — Картинки в чате (задача 4.6) —
+  # image_picker: выбор фото из галереи / съёмка камерой на iOS.
+  # 1.x стабильна с Flutter 3.22.3. Требует NSPhotoLibraryUsageDescription
+  # и NSCameraUsageDescription в Info.plist (уже добавлены в задаче 0.6).
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:
