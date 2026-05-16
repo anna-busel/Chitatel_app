@@ -15,6 +15,10 @@ import '../../../core/theme/app_typography.dart';
 ///
 /// onAttachImage вызывается при тапе на кнопку-скрепку (выбор фото).
 /// Сам выбор/загрузку делает родитель (ChatTab) — инпут только сигналит.
+///
+/// Reply (4.8): когда replyToName != null — над полем показывается
+/// компактная плашка «Ответ на <имя>: <текст>» с крестиком отмены
+/// (как в Telegram). onCancelReply сбрасывает reply в родителе.
 class ChatInput extends StatefulWidget {
   const ChatInput({
     super.key,
@@ -24,6 +28,9 @@ class ChatInput extends StatefulWidget {
     required this.onSend,
     required this.onAttachImage,
     this.mutedUntil,
+    this.replyToName,
+    this.replyToText,
+    this.onCancelReply,
   });
 
   final bool canPost;
@@ -32,6 +39,15 @@ class ChatInput extends StatefulWidget {
   final DateTime? mutedUntil;
   final ValueChanged<String> onSend;
   final VoidCallback onAttachImage;
+
+  /// Имя автора сообщения на которое отвечаем (null = не в режиме ответа).
+  final String? replyToName;
+
+  /// Краткий текст/тип сообщения на которое отвечаем (для плашки).
+  final String? replyToText;
+
+  /// Сброс режима ответа (крестик на плашке).
+  final VoidCallback? onCancelReply;
 
   @override
   State<ChatInput> createState() => _ChatInputState();
@@ -51,6 +67,15 @@ class _ChatInputState extends State<ChatInput> {
       final has = _controller.text.trim().isNotEmpty;
       if (has != _hasText) setState(() => _hasText = has);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatInput old) {
+    super.didUpdateWidget(old);
+    // Когда родитель включил режим ответа — фокусируем поле (как в Telegram).
+    if (widget.replyToName != null && old.replyToName == null) {
+      _focusNode.requestFocus();
+    }
   }
 
   @override
@@ -79,6 +104,7 @@ class _ChatInputState extends State<ChatInput> {
 
     final remaining = _maxChars - _controller.text.length;
     final showCounter = remaining <= 50;
+    final isReplying = widget.replyToName != null;
 
     return Container(
       decoration: BoxDecoration(
@@ -87,68 +113,122 @@ class _ChatInputState extends State<ChatInput> {
       ),
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (showCounter)
-                Padding(
-                  padding: const EdgeInsets.only(right: 60, bottom: 4),
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      '$remaining',
-                      style: AppTypography.micro.copyWith(
-                        color: remaining < 0
-                            ? AppColors.error
-                            : AppColors.textTertiary,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // — Плашка «Ответ на …» —
+            if (isReplying)
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 3,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: AppColors.terracotta,
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                  ),
-                ),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  // — Кнопка прикрепить фото —
-                  _AttachButton(onTap: widget.onAttachImage),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Container(
-                      constraints: const BoxConstraints(maxHeight: 120),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceLight,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: TextField(
-                        controller: _controller,
-                        focusNode: _focusNode,
-                        minLines: 1,
-                        maxLines: 5,
-                        maxLength: _maxChars,
-                        textInputAction: TextInputAction.newline,
-                        style: AppTypography.body,
-                        decoration: InputDecoration(
-                          hintText: 'Сообщение...',
-                          hintStyle: AppTypography.body.copyWith(
-                            color: AppColors.textPlaceholder,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Ответ ${widget.replyToName}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.micro.copyWith(
+                              color: AppColors.terracotta,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                          border: InputBorder.none,
-                          counterText: '',
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
+                          Text(
+                            widget.replyToText ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.small.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      color: AppColors.textTertiary,
+                      onPressed: widget.onCancelReply,
+                    ),
+                  ],
+                ),
+              ),
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (showCounter)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 60, bottom: 4),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          '$remaining',
+                          style: AppTypography.micro.copyWith(
+                            color: remaining < 0
+                                ? AppColors.error
+                                : AppColors.textTertiary,
                           ),
                         ),
                       ),
                     ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      // — Кнопка прикрепить фото —
+                      _AttachButton(onTap: widget.onAttachImage),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Container(
+                          constraints: const BoxConstraints(maxHeight: 120),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceLight,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: TextField(
+                            controller: _controller,
+                            focusNode: _focusNode,
+                            minLines: 1,
+                            maxLines: 5,
+                            maxLength: _maxChars,
+                            textInputAction: TextInputAction.newline,
+                            style: AppTypography.body,
+                            decoration: InputDecoration(
+                              hintText: 'Сообщение...',
+                              hintStyle: AppTypography.body.copyWith(
+                                color: AppColors.textPlaceholder,
+                              ),
+                              border: InputBorder.none,
+                              counterText: '',
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      _SendButton(enabled: _hasText, onTap: _handleSend),
+                    ],
                   ),
-                  const SizedBox(width: 6),
-                  _SendButton(enabled: _hasText, onTap: _handleSend),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
