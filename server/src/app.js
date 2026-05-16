@@ -9,6 +9,7 @@ const bookRoutes = require('./routes/books');
 const packageRoutes = require('./routes/packages');
 const homeRoutes = require('./routes/home');
 const audioRoutes = require('./routes/audio');
+const imageRoutes = require('./routes/images');
 const progressRoutes = require('./routes/progress');
 const clubRoutes = require('./routes/club');
 const adminRoutes = require('./routes/admin');
@@ -47,6 +48,9 @@ app.use('/api/admin', adminRoutes);
 // Audio streaming (на корне, не под /api — это стриминг файлов, не JSON API)
 // Защита через signed URL — проверяется внутри роута.
 app.use('/audio', audioRoutes);
+
+// Картинки чата клуба (4.6) — тоже на корне, защита через signed URL.
+app.use('/images', imageRoutes);
 
 // 404 handler
 app.use((_req, res) => {
