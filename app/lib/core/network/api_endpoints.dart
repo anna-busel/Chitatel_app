@@ -85,6 +85,12 @@ class ApiEndpoints {
   static String clubChatImage(String clubMonthId) =>
       '/club/$clubMonthId/chat/image';
 
+  /// PATCH /api/club/chat/:messageId — редактировать своё сообщение.
+  /// Body: { text }. Окно 15 мин, только автор, не voice.
+  /// DELETE /api/club/chat/:messageId — soft-delete своё сообщение (автор/админ).
+  static String clubChatMessage(String messageId) =>
+      '/club/chat/$messageId';
+
   /// POST /api/club/chat/:messageId/reaction — поставить/снять реакцию (toggle).
   /// Body: { emoji } — один из 6 разрешённых (❤️👍🔥👏🥲🙏).
   /// Возвращает обновлённый массив reactions; эмитит chat:reaction_updated по WS.
