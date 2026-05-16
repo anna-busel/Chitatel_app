@@ -21,6 +21,12 @@ const mongoose = require('mongoose');
  * - voiceDurationSec — длительность в секундах (макс 180)
  * - voiceWaveform — 40 семплов 0-100 для отрисовки, считаются на клиенте
  *
+ * Картинки (4.6):
+ * - imageUrl — signed URL (TTL 1 час, тот же AUDIO_SECRET)
+ * - imageStoragePath — относительный путь от AUDIO_BASE_PATH
+ *   (club-images/<clubId>/<uuid>.<ext>). Нужен чтобы перевыпустить signed URL
+ *   когда старый истечёт — клиент перезапросит историю/сообщение.
+ *
  * Soft delete:
  * - Удалённые сообщения остаются в БД с deletedAt
  * - На клиенте показываются как «сообщение удалено» (для контекста reply)
@@ -82,7 +88,8 @@ const chatMessageSchema = new mongoose.Schema(
     text: { type: String, default: '' },
 
     // Картинка (type='image')
-    imageUrl: { type: String, default: null },
+    imageUrl: { type: String, default: null }, // signed URL, TTL 1 час
+    imageStoragePath: { type: String, default: null }, // отн. путь для перевыпуска URL
 
     // Голосовое (type='voice')
     voiceUrl: { type: String, default: null }, // signed URL
