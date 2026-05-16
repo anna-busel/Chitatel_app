@@ -1,12 +1,16 @@
+const path = require('path');
+const fs = require('fs');
 const { Router } = require('express');
 const { z } = require('zod');
 const mongoose = require('mongoose');
+const multer = require('multer');
 const { validate } = require('../middleware/validate');
 const { requireAuth } = require('../middleware/auth');
 const { resolveClubAccess } = require('../middleware/subscription');
 const { success } = require('../utils/response');
 const { AppError } = require('../middleware/error');
 const { emitToClub } = require('../socket');
+const imageService = require('../services/image.service');
 const User = require('../models/User');
 const ClubMonth = require('../models/ClubMonth');
 const ChatMessage = require('../models/ChatMessage');
@@ -18,6 +22,14 @@ const router = Router();
 
 // Все endpoints клуба требуют авторизацию.
 router.use(requireAuth);
+
+// Multer: храним загруженный файл в памяти (буфер), потом сами пишем на диск
+// через image.service. memoryStorage т.к. файлы небольшие (макс 8 МБ),
+// и нам нужно проверить mime/размер до записи.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: imageService.MAX_FILE_SIZE_BYTES },
+});
 
 /* ------------------------------------------------------------------ *
  *                          ИНФА О КЛУБЕ                              *
@@ -211,6 +223,11 @@ router.get(
 /**
  * POST /api/club/:clubMonthId/chat
  * Создать text/image/voice сообщение в чате.
+ *
+ * Примечание: для image обычно используется POST .../chat/image (multipart),
+ * который сам создаёт сообщение. Этот эндпоинт принимает уже готовый imageUrl
+ * (на случай если клиент шлёт ссылку), но штатный путь картинки — через
+ * /chat/image ниже.
  */
 const chatCreateSchema = z
   .object({
@@ -305,6 +322,130 @@ router.post(
 
       return success(res, { message: populated }, 201);
     } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/club/:clubMonthId/chat/image
+ * Загрузить картинку в чат (multipart/form-data, поле "image").
+ * Опционально поля: text (caption, до 1000), replyToId.
+ *
+ * Поток:
+ * 1. multer принимает файл в память (лимит 8 МБ).
+ * 2. Проверяем mime по白списку (jpeg/png/webp/heic/heif).
+ * 3. Пишем файл на диск: AUDIO_BASE_PATH/club-images/<clubId>/<uuid>.<ext>.
+ * 4. Создаём ChatMessage type=image, imageUrl = signed URL (TTL 1 час).
+ * 5. Эмитим chat:new_message в комнату клуба.
+ *
+ * Apple Guideline 1.2 (UGC): картинка — пользовательский контент. На неё
+ * распространяется тот же report-флоу что на текст (см. /chat/:messageId/report),
+ * + модерация в админке (reportCount, isHidden).
+ *
+ * isHidden по умолчанию false. Жалоба инкрементит reportCount; админ
+ * скрывает через существующий /api/admin/reports/action (задача 4.4).
+ */
+router.post(
+  '/:clubMonthId/chat/image',
+  resolveClubAccess,
+  upload.single('image'),
+  async (req, res, next) => {
+    try {
+      if (!req.clubAccess.canPost) {
+        throw new AppError(
+          'FORBIDDEN',
+          'В архивном клубе нельзя отправлять сообщения',
+          403
+        );
+      }
+
+      if (!req.file) {
+        throw new AppError('VALIDATION', 'Файл картинки не передан', 400);
+      }
+
+      const ext = imageService.ALLOWED_MIME.get(req.file.mimetype);
+      if (!ext) {
+        throw new AppError(
+          'VALIDATION',
+          'Недопустимый тип файла. Разрешены JPEG, PNG, WEBP, HEIC',
+          400
+        );
+      }
+
+      // Caption и reply — опциональны.
+      const caption =
+        typeof req.body.text === 'string'
+          ? req.body.text.slice(0, 1000)
+          : '';
+
+      let replyToId = null;
+      if (req.body.replyToId) {
+        if (!mongoose.Types.ObjectId.isValid(req.body.replyToId)) {
+          throw new AppError('VALIDATION', 'Неверный replyToId', 400);
+        }
+        const parent = await ChatMessage.findById(req.body.replyToId)
+          .select('clubMonthId')
+          .lean();
+        if (!parent || !parent.clubMonthId.equals(req.club._id)) {
+          throw new AppError(
+            'NOT_FOUND',
+            'Сообщение для ответа не найдено в этом клубе',
+            404
+          );
+        }
+        replyToId = req.body.replyToId;
+      }
+
+      // Пишем файл на диск.
+      const dir = imageService.clubImagesDir(req.club._id);
+      await fs.promises.mkdir(dir, { recursive: true });
+      const fileName = imageService.generateImageFileName(ext);
+      const fullPath = path.join(dir, fileName);
+      await fs.promises.writeFile(fullPath, req.file.buffer);
+
+      const relPath = imageService.relativeImagePath(
+        req.club._id,
+        fileName
+      );
+      const signedUrl = imageService.generateImageSignedUrl(relPath);
+
+      const message = await ChatMessage.create({
+        clubMonthId: req.club._id,
+        userId: req.user.userId,
+        type: 'image',
+        text: caption,
+        imageUrl: signedUrl,
+        // imageStoragePath — относительный путь, чтобы можно было перевыпустить
+        // signed URL при истечении (клиент перезапросит сообщение/историю).
+        imageStoragePath: relPath,
+        replyToId,
+        mentions: [],
+      });
+
+      await ClubMonth.updateOne(
+        { _id: req.club._id },
+        { $inc: { messageCount: 1 } }
+      );
+
+      const populated = await ChatMessage.findById(message._id)
+        .populate('userId', 'name avatarUrl')
+        .lean();
+
+      const io = req.app.get('io');
+      emitToClub(io, req.club._id, 'chat:new_message', { message: populated });
+
+      return success(res, { message: populated }, 201);
+    } catch (err) {
+      // multer выбрасывает ошибку лимита размера — переводим в AppError.
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return next(
+            new AppError('VALIDATION', 'Файл больше 8 МБ', 400)
+          );
+        }
+        return next(new AppError('VALIDATION', 'Ошибка загрузки файла', 400));
+      }
       return next(err);
     }
   }
