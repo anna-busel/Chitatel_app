@@ -32,6 +32,21 @@ class ChatMessageHiddenEvent extends ClubSocketEvent {
   final String messageId;
 }
 
+/// Сообщение отредактировано (4.8). Приходит обновлённое сообщение —
+/// клиент заменяет его в списке (новый text + editedAt).
+class ChatMessageEditedEvent extends ClubSocketEvent {
+  const ChatMessageEditedEvent(this.message);
+  final ChatMessage message;
+}
+
+/// Сообщение удалено (4.8, soft delete). Клиент перерисовывает bubble
+/// как «Сообщение удалено» — НЕ убирает из ленты (reply-контекст
+/// должен сохраниться, как в Telegram).
+class ChatMessageDeletedEvent extends ClubSocketEvent {
+  const ChatMessageDeletedEvent(this.messageId);
+  final String messageId;
+}
+
 /// Закреплённое сообщение изменилось (или сброшено null).
 class ChatPinChangedEvent extends ClubSocketEvent {
   const ChatPinChangedEvent(this.pinnedMessageId);
@@ -206,6 +221,30 @@ class ClubSocketService {
       if (data is Map && data['messageId'] is String) {
         _eventsController.add(
           ChatMessageHiddenEvent((data['messageId']).toString()),
+        );
+      }
+    });
+
+    _socket!.on('chat:message_edited', (data) {
+      if (data is Map && data['message'] is Map) {
+        try {
+          final msg = ChatMessage.fromJson(
+            (data['message'] as Map).cast<String, dynamic>(),
+          );
+          _eventsController.add(ChatMessageEditedEvent(msg));
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint(
+                '[ClubSocketService] failed to parse chat:message_edited: $e');
+          }
+        }
+      }
+    });
+
+    _socket!.on('chat:message_deleted', (data) {
+      if (data is Map && data['messageId'] != null) {
+        _eventsController.add(
+          ChatMessageDeletedEvent(data['messageId'].toString()),
         );
       }
     });
