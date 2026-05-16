@@ -209,6 +209,34 @@ class ClubApiService {
     return ChatMessage.fromJson(data['message'] as Map<String, dynamic>);
   }
 
+  /// Поставить/снять реакцию на сообщение (toggle).
+  ///
+  /// [emoji] — один из 6 разрешённых (❤️👍🔥👏🥲🙏). Бэк валидирует.
+  /// Логика toggle на сервере: один юзер = одна реакция (как в Telegram).
+  ///
+  /// Сервер эмитит chat:reaction_updated по WS — UI обновится через
+  /// socket-стрим (ChatReactionUpdatedEvent). Метод возвращает обновлённый
+  /// массив реакций (на случай если нужно применить сразу, не дожидаясь WS).
+  Future<List<MessageReaction>> toggleReaction({
+    required String messageId,
+    required String emoji,
+  }) async {
+    final response = await _api.dio.post(
+      ApiEndpoints.clubChatReaction(messageId),
+      data: {'emoji': emoji},
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>;
+    final raw = data['reactions'];
+    if (raw is List) {
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(MessageReaction.fromJson)
+          .toList(growable: false);
+    }
+    return const [];
+  }
+
   /// Жалоба на сообщение.
   Future<bool> reportMessage({
     required String messageId,
