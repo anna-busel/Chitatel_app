@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../services/club_api_service.dart';
 
 /// Поле ввода чата клуба.
 ///
@@ -19,6 +20,11 @@ import '../../../core/theme/app_typography.dart';
 /// Reply (4.8): когда replyToName != null — над полем показывается
 /// компактная плашка «Ответ на <имя>: <текст>» с крестиком отмены
 /// (как в Telegram). onCancelReply сбрасывает reply в родителе.
+///
+/// Mentions (4.9): при вводе '@' появляется оверлей со списком кого можно
+/// упомянуть (mentionable — обычно одна Анна). Фильтруется по тексту после
+/// '@'. Тап вставляет '@Имя ' и запоминает userId. onSend отдаёт текст +
+/// список userId реально упомянутых (чьё '@Имя' осталось в тексте).
 class ChatInput extends StatefulWidget {
   const ChatInput({
     super.key,
@@ -27,6 +33,7 @@ class ChatInput extends StatefulWidget {
     required this.isArchive,
     required this.onSend,
     required this.onAttachImage,
+    this.mentionable = const [],
     this.mutedUntil,
     this.replyToName,
     this.replyToText,
@@ -37,8 +44,13 @@ class ChatInput extends StatefulWidget {
   final bool isMuted;
   final bool isArchive;
   final DateTime? mutedUntil;
-  final ValueChanged<String> onSend;
+
+  /// Текст + userId упомянутых (4.9). Родитель шлёт mentions на бэк.
+  final void Function(String text, List<String> mentions) onSend;
   final VoidCallback onAttachImage;
+
+  /// Кого можно упомянуть через @ (обычно одна Анна). Пусто — автокомплита нет.
+  final List<MentionableUser> mentionable;
 
   /// Имя автора сообщения на которое отвечаем (null = не в режиме ответа).
   final String? replyToName;
@@ -58,21 +70,88 @@ class _ChatInputState extends State<ChatInput> {
   final _focusNode = FocusNode();
   bool _hasText = false;
 
+  /// Кого юзер реально упомянул (имя → userId). При отправке оставляем
+  /// только тех, чьё «@Имя» осталось в тексте (вдруг стёр).
+  final Map<String, String> _mentionedByName = {};
+
+  /// Текущий фильтр автокомплита (текст после '@'), null = оверлей скрыт.
+  String? _mentionQuery;
+
   static const int _maxChars = 1000;
 
   @override
   void initState() {
     super.initState();
-    _controller.addListener(() {
-      final has = _controller.text.trim().isNotEmpty;
-      if (has != _hasText) setState(() => _hasText = has);
+    _controller.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    final has = _controller.text.trim().isNotEmpty;
+    if (has != _hasText) setState(() => _hasText = has);
+    _updateMentionQuery();
+  }
+
+  /// Определяем, печатает ли юзер сейчас @-упоминание: ищем последний '@'
+  /// перед курсором, за которым идут только буквы (без пробела).
+  void _updateMentionQuery() {
+    if (widget.mentionable.isEmpty) return;
+    final sel = _controller.selection;
+    if (!sel.isValid || sel.start < 0) {
+      _setMentionQuery(null);
+      return;
+    }
+    final textBefore = _controller.text.substring(0, sel.start);
+    final at = textBefore.lastIndexOf('@');
+    if (at == -1) {
+      _setMentionQuery(null);
+      return;
+    }
+    final after = textBefore.substring(at + 1);
+    // Прерываем если после @ есть пробел/перевод строки (упоминание кончилось).
+    if (after.contains(RegExp(r'\s'))) {
+      _setMentionQuery(null);
+      return;
+    }
+    _setMentionQuery(after);
+  }
+
+  void _setMentionQuery(String? q) {
+    if (q != _mentionQuery) {
+      setState(() => _mentionQuery = q);
+    }
+  }
+
+  /// Вставка выбранного упоминания: заменяем «@частичный_ввод» на «@Имя ».
+  void _pickMention(MentionableUser u) {
+    final sel = _controller.selection;
+    final fullText = _controller.text;
+    final caret = sel.isValid ? sel.start : fullText.length;
+    final textBefore = fullText.substring(0, caret);
+    final at = textBefore.lastIndexOf('@');
+    if (at == -1) return;
+
+    final newBefore = '${textBefore.substring(0, at)}@${u.name} ';
+    final newText = newBefore + fullText.substring(caret);
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newBefore.length),
+    );
+    _mentionedByName[u.name] = u.id;
+    _setMentionQuery(null);
+  }
+
+  /// userId реально упомянутых: тех, чьё «@Имя» осталось в финальном тексте.
+  List<String> _resolveMentions(String text) {
+    final ids = <String>[];
+    _mentionedByName.forEach((name, id) {
+      if (text.contains('@$name')) ids.add(id);
     });
+    return ids;
   }
 
   @override
   void didUpdateWidget(covariant ChatInput old) {
     super.didUpdateWidget(old);
-    // Когда родитель включил режим ответа — фокусируем поле (как в Telegram).
     if (widget.replyToName != null && old.replyToName == null) {
       _focusNode.requestFocus();
     }
@@ -88,8 +167,22 @@ class _ChatInputState extends State<ChatInput> {
   void _handleSend() {
     final text = _controller.text.trim();
     if (text.isEmpty || text.length > _maxChars) return;
-    widget.onSend(text);
+    final mentions = _resolveMentions(text);
+    widget.onSend(text, mentions);
     _controller.clear();
+    _mentionedByName.clear();
+    _setMentionQuery(null);
+  }
+
+  /// Отфильтрованный список для автокомплита по текущему _mentionQuery.
+  List<MentionableUser> get _filteredMentionable {
+    final q = _mentionQuery;
+    if (q == null) return const [];
+    if (q.isEmpty) return widget.mentionable;
+    final lower = q.toLowerCase();
+    return widget.mentionable
+        .where((m) => m.name.toLowerCase().contains(lower))
+        .toList(growable: false);
   }
 
   @override
@@ -105,6 +198,7 @@ class _ChatInputState extends State<ChatInput> {
     final remaining = _maxChars - _controller.text.length;
     final showCounter = remaining <= 50;
     final isReplying = widget.replyToName != null;
+    final suggestions = _filteredMentionable;
 
     return Container(
       decoration: BoxDecoration(
@@ -116,6 +210,53 @@ class _ChatInputState extends State<ChatInput> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // — Оверлей автокомплита @упоминаний —
+            if (suggestions.isNotEmpty)
+              Container(
+                constraints: const BoxConstraints(maxHeight: 180),
+                decoration: BoxDecoration(
+                  color: AppColors.cardBackground,
+                  border: Border(
+                    bottom: BorderSide(color: AppColors.border),
+                  ),
+                ),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  itemCount: suggestions.length,
+                  itemBuilder: (ctx, i) {
+                    final u = suggestions[i];
+                    return ListTile(
+                      dense: true,
+                      leading: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: AppColors.terracotta,
+                        child: Text(
+                          u.name.isNotEmpty
+                              ? u.name.characters.first.toUpperCase()
+                              : '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      title: Text(u.name, style: AppTypography.bodyMedium),
+                      subtitle: u.isAdmin
+                          ? Text(
+                              'Ведущая клуба',
+                              style: AppTypography.micro.copyWith(
+                                color: AppColors.terracotta,
+                              ),
+                            )
+                          : null,
+                      onTap: () => _pickMention(u),
+                    );
+                  },
+                ),
+              ),
+
             // — Плашка «Ответ на …» —
             if (isReplying)
               Container(
@@ -188,7 +329,6 @@ class _ChatInputState extends State<ChatInput> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      // — Кнопка прикрепить фото —
                       _AttachButton(onTap: widget.onAttachImage),
                       const SizedBox(width: 4),
                       Expanded(
