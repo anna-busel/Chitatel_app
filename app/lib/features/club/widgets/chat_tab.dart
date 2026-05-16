@@ -30,6 +30,10 @@ import 'pinned_message_banner.dart';
 ///
 /// Картинки (4.6): кнопка-скрепка → выбор источника → превью с подписью →
 /// multipart upload. Сообщение приходит обратно по WS как обычное.
+///
+/// Реакции (4.7): long-press на bubble → меню с 6 эмодзи. Toggle через REST,
+/// обновление прилетает по WS (chat:reaction_updated). Также делаем optimistic
+/// апдейт чтобы реакция появилась мгновенно (WS подтвердит/скорректирует).
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -134,6 +138,16 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       });
     } else if (event is ChatPinChangedEvent) {
       setState(() => _pinnedMessageId = event.pinnedMessageId);
+    } else if (event is ChatReactionUpdatedEvent) {
+      // Заменяем реакции у конкретного сообщения целиком (сервер прислал
+      // полный массив). copyWith — иммутабельная замена в списке.
+      final idx = _messages.indexWhere((m) => m.id == event.messageId);
+      if (idx != -1) {
+        setState(() {
+          _messages[idx] =
+              _messages[idx].copyWith(reactions: event.reactions);
+        });
+      }
     }
   }
 
@@ -203,6 +217,71 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       } else {
         msg = 'Не удалось отправить. Попробуйте ещё раз';
       }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.error,
+      ));
+    }
+  }
+
+  /// Toggle реакции на сообщение. Optimistic update: меняем локально сразу,
+  /// сервер подтвердит через chat:reaction_updated (перезапишет точным
+  /// состоянием). Если запрос упал — откатываем (WS не придёт, восстановим).
+  Future<void> _toggleReaction(String messageId, String emoji) async {
+    final uid = _currentUserId;
+    if (uid == null) return;
+
+    final idx = _messages.indexWhere((m) => m.id == messageId);
+    if (idx == -1) return;
+
+    final original = _messages[idx];
+
+    // — Optimistic пересчёт реакций (та же логика что на сервере:
+    //   один юзер = одна реакция, toggle того же эмодзи снимает) —
+    final reactions = original.reactions
+        .map((r) => MessageReaction(
+              emoji: r.emoji,
+              userIds: List<String>.from(r.userIds),
+            ))
+        .toList();
+
+    bool hadThisEmoji = false;
+    for (final r in reactions) {
+      if (r.userIds.remove(uid) && r.emoji == emoji) {
+        hadThisEmoji = true;
+      }
+    }
+    if (!hadThisEmoji) {
+      final existing = reactions.where((r) => r.emoji == emoji).toList();
+      if (existing.isNotEmpty) {
+        existing.first.userIds.add(uid);
+      } else {
+        reactions.add(MessageReaction(emoji: emoji, userIds: [uid]));
+      }
+    }
+    final cleaned = reactions.where((r) => r.userIds.isNotEmpty).toList();
+
+    setState(() {
+      _messages[idx] = original.copyWith(reactions: cleaned);
+    });
+
+    HapticFeedback.selectionClick();
+
+    try {
+      final api = ref.read(clubApiServiceProvider);
+      await api.toggleReaction(messageId: messageId, emoji: emoji);
+      // WS-событие chat:reaction_updated перезапишет точным состоянием.
+    } on DioException catch (e) {
+      if (!mounted) return;
+      // Откат к исходному состоянию.
+      final curIdx = _messages.indexWhere((m) => m.id == messageId);
+      if (curIdx != -1) {
+        setState(() => _messages[curIdx] = original);
+      }
+      final code = ClubApiService.errorCodeFromException(e);
+      final msg = code == 'NOT_FOUND'
+          ? 'Сообщение не найдено'
+          : 'Не удалось поставить реакцию';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg),
         backgroundColor: AppColors.error,
@@ -541,12 +620,11 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                           message: m,
                           replyTo: replyTo,
                           currentUserId: _currentUserId,
-                          onLongPress: m.isMine(_currentUserId)
+                          onReactionTap: (emoji) =>
+                              _toggleReaction(m.id, emoji),
+                          onReport: m.isMine(_currentUserId)
                               ? null
-                              : () {
-                                  HapticFeedback.lightImpact();
-                                  _reportMessage(m.id);
-                                },
+                              : () => _reportMessage(m.id),
                         ),
                       );
                     },
