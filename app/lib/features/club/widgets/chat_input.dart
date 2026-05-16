@@ -5,13 +5,16 @@ import '../../../core/theme/app_typography.dart';
 /// Поле ввода чата клуба.
 ///
 /// Поведение:
-/// - canPost=true (активная подписка, не мьют) → обычное поле + кнопка send
+/// - canPost=true (активная подписка, не мьют) → поле + кнопка фото + send
 /// - canPost=false:
 ///   - kind=archive → серая полоска «Архив — чтение разрешено»
 ///   - isMuted=true → «Вы заблокированы в чате до DD.MM HH:mm»
 ///   - иначе → пустой контейнер (не должно случаться, но защитно)
 ///
 /// Лимит на сервере — 1000 символов; counter показываем когда осталось ≤50.
+///
+/// onAttachImage вызывается при тапе на кнопку-скрепку (выбор фото).
+/// Сам выбор/загрузку делает родитель (ChatTab) — инпут только сигналит.
 class ChatInput extends StatefulWidget {
   const ChatInput({
     super.key,
@@ -19,6 +22,7 @@ class ChatInput extends StatefulWidget {
     required this.isMuted,
     required this.isArchive,
     required this.onSend,
+    required this.onAttachImage,
     this.mutedUntil,
   });
 
@@ -27,6 +31,7 @@ class ChatInput extends StatefulWidget {
   final bool isArchive;
   final DateTime? mutedUntil;
   final ValueChanged<String> onSend;
+  final VoidCallback onAttachImage;
 
   @override
   State<ChatInput> createState() => _ChatInputState();
@@ -83,7 +88,7 @@ class _ChatInputState extends State<ChatInput> {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -105,6 +110,9 @@ class _ChatInputState extends State<ChatInput> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  // — Кнопка прикрепить фото —
+                  _AttachButton(onTap: widget.onAttachImage),
+                  const SizedBox(width: 4),
                   Expanded(
                     child: Container(
                       constraints: const BoxConstraints(maxHeight: 120),
@@ -140,6 +148,34 @@ class _ChatInputState extends State<ChatInput> {
                 ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Кнопка-скрепка для прикрепления фото. Открывает выбор источника
+/// (галерея/камера) — реализовано в родителе через onAttachImage.
+class _AttachButton extends StatelessWidget {
+  const _AttachButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: const SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(
+            Icons.add_photo_alternate_outlined,
+            size: 24,
+            color: AppColors.textSecondary,
           ),
         ),
       ),
