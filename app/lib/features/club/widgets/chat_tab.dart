@@ -20,22 +20,16 @@ import 'pinned_message_banner.dart';
 
 /// Таб «Чат» клуба.
 ///
-/// Navigation к закрепу/reply (как в Telegram):
-/// - Тап по баннеру закрепа или reply-превью → _jumpToMessage(id).
-/// - Если сообщение уже в загруженном окне — Scrollable.ensureVisible +
-///   подсветка (_highlightedMessageId на ~1.8 сек, снимается таймером).
-/// - Если НЕ в окне — fetchChatContext (целевое + соседи), заменяем ленту,
-///   после рендера ensureVisible к цели + подсветка. Флаги hasMoreBefore/
-///   hasMoreAfter позволяют догружать в обе стороны.
-/// - Плавающая кнопка «вниз» (стрелка) появляется когда юзер не внизу ленты
-///   или «провалился» в старый контекст (hasMoreAfter). Тап → возврат к
-///   свежей истории.
+/// Navigation к закрепу/reply (как в Telegram): тап по баннеру закрепа или
+/// reply-превью → _jumpToMessage. Если в окне — скролл+подсветка; если нет —
+/// fetchChatContext, замена ленты, скролл+подсветка. Кнопка «вниз».
 ///
-/// Real-time через Socket.io. ВАЖНО: socket-сервис — singleton (Provider с
-/// ref.onDispose). Этот виджет НЕ вызывает disconnect() в своём dispose() —
-/// иначе при пересоздании экрана (вкладка, диалог, клавиатура) соединение
-/// рвалось бы и события перставали приходить до перезахода. Виджет только
-/// отписывается от стрима; жизнью сокета управляет провайдер. (Урок #16.)
+/// Real-time через Socket.io (singleton-провайдер; виджет не рвёт сокет в
+/// dispose — урок #16).
+///
+/// 4.9 mentions: при @ в инпуте — автокомплит mentionable (Анна). Упомянутые
+/// userId уходят на бэк, в bubble @имя подсвечено. 4.10 закреп: у админа в
+/// меню «Закрепить»/«Открепить». 4.11 read: видимые сообщения батчем в markRead.
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -46,38 +40,38 @@ class ChatTab extends ConsumerStatefulWidget {
 }
 
 class _ChatTabState extends ConsumerState<ChatTab> {
-  /// Сообщения в порядке DESC (новые в начале). ListView reverse=true —
-  /// визуально новые внизу (как в Telegram). pixels≈0 это низ (свежие).
   final List<ChatMessage> _messages = [];
-
-  /// GlobalKey на сообщение по id — для Scrollable.ensureVisible.
   final Map<String, GlobalKey> _messageKeys = {};
 
   String? _currentUserId;
   String? _pinnedMessageId;
   ChatMessage? _replyingTo;
 
-  /// Сообщение подсвеченное после перехода (закреп/reply). Снимается таймером.
+  /// Кого можно упомянуть через @ (4.9). Обычно одна Анна.
+  List<MentionableUser> _mentionable = const [];
+
+  /// Текущий юзер — админ (Анна). Тогда в меню есть «Закрепить» (4.10).
+  /// Вычисляем: _currentUserId есть в списке mentionable (там только админы).
+  bool _isAdmin = false;
+
+  /// Уже отправленные в markRead id — чтобы не слать повторно (4.11).
+  final Set<String> _readSent = {};
+  Timer? _readDebounce;
+
   String? _highlightedMessageId;
   Timer? _highlightTimer;
 
   bool _isLoading = true;
   bool _hasError = false;
 
-  /// Догрузка более старых (скролл вверх к maxScrollExtent).
   bool _isLoadingMore = false;
   bool _hasMoreBefore = false;
 
-  /// Догрузка более новых (после перехода в старый контекст; скролл вниз).
   bool _hasMoreAfter = false;
   bool _isLoadingAfter = false;
 
-  /// Показывать ли плавающую кнопку «вниз» (юзер не внизу ленты).
   bool _showJumpDown = false;
-
-  /// Идёт переход к сообщению (показываем лёгкий лоадер, блокируем повтор).
   bool _isJumping = false;
-
   bool _isUploadingImage = false;
 
   ClubSocketService? _socketService;
@@ -96,11 +90,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   @override
   void dispose() {
     _highlightTimer?.cancel();
-    // Отписываемся от стрима, но НЕ трогаем соединение: socket-сервис —
-    // singleton, его disconnect делает провайдер (ref.onDispose). Если
-    // звать disconnect() здесь — при любом пересоздании экрана (вкладка,
-    // диалог edit/delete, всплытие клавиатуры) сокет рвётся и события
-    // не приходят в реальном времени до перезахода. (Урок #16.)
+    _readDebounce?.cancel();
+    // НЕ рвём сокет (singleton, управляется провайдером). Урок #16.
     _socketSub?.cancel();
     _scrollController.dispose();
     super.dispose();
@@ -118,21 +109,28 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       );
       if (!mounted) return;
 
+      // Список упоминаемых (Анна). Не критично — пустой при ошибке.
+      final mentionable =
+          await api.fetchMentionable(widget.club.id);
+
+      if (!mounted) return;
       setState(() {
         _messages
           ..clear()
           ..addAll(history.messages);
         _hasMoreBefore = history.hasMore;
-        _hasMoreAfter = false; // свежая лента — новее некуда
+        _hasMoreAfter = false;
+        _mentionable = mentionable;
+        _isAdmin = _currentUserId != null &&
+            mentionable.any((m) => m.id == _currentUserId && m.isAdmin);
         _isLoading = false;
       });
 
-      // connect() идемпотентен: если уже подключены к этому клубу — no-op
-      // (см. ClubSocketService.connect). Подписка на broadcast-стрим — ок
-      // даже если сокет уже подключён ранее.
       _socketService = ref.read(clubSocketServiceProvider);
       _socketSub = _socketService!.events.listen(_onSocketEvent);
       await _socketService!.connect(widget.club.id);
+
+      _scheduleMarkRead();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -147,12 +145,10 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
     if (event is ChatNewMessageEvent) {
       if (_messages.any((m) => m.id == event.message.id)) return;
-      // Новое сообщение всегда добавляем в начало (=низ при reverse).
-      // Если юзер «провалился» в старый контекст (_hasMoreAfter) — не дёргаем
-      // его вниз, просто кнопка «вниз» останется/появится.
       setState(() {
         _messages.insert(0, event.message);
       });
+      _scheduleMarkRead();
     } else if (event is ChatMessageHiddenEvent) {
       setState(() {
         _messages.removeWhere((m) => m.id == event.messageId);
@@ -183,32 +179,39 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
+  /// 4.11: отметить видимые сообщения прочитанными (батч с дебаунсом).
+  /// Шлём все ещё не отправленные id из текущей ленты — для книжного чата
+  /// (не бесконечная лента) этого достаточно и проще, чем считать пиксели.
+  void _scheduleMarkRead() {
+    _readDebounce?.cancel();
+    _readDebounce = Timer(const Duration(seconds: 2), () {
+      final ids = _messages
+          .map((m) => m.id)
+          .where((id) => !_readSent.contains(id))
+          .toList();
+      if (ids.isEmpty) return;
+      _readSent.addAll(ids);
+      final api = ref.read(clubApiServiceProvider);
+      api.markRead(clubMonthId: widget.club.id, messageIds: ids);
+    });
+  }
+
   void _onScroll() {
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
 
-    // Кнопка «вниз»: показываем если ушли от низа (pixels>отступ) ИЛИ есть
-    // более новые за окном (провалились в старый контекст).
     final notAtBottom = pos.pixels > 300 || _hasMoreAfter;
     if (notAtBottom != _showJumpDown) {
       setState(() => _showJumpDown = notAtBottom);
     }
 
-    // Догрузка более СТАРЫХ — скролл вверх (к maxScrollExtent при reverse).
     if (!_isLoadingMore &&
         _hasMoreBefore &&
         pos.pixels >= pos.maxScrollExtent - 200) {
       _loadMoreBefore();
     }
 
-    // Догрузка более НОВЫХ — ТОЛЬКО когда реально провалились в старый
-    // контекст (_hasMoreAfter) И юзер активно тянет к низу. Защита от
-    // ложного цикла: в обычной свежей ленте _hasMoreAfter всегда false
-    // (ставится в _bootstrap), поэтому этот блок там не срабатывает и
-    // не перезагружает ленту поверх WS-сообщений.
-    if (!_isLoadingAfter &&
-        _hasMoreAfter &&
-        pos.pixels <= 80) {
+    if (!_isLoadingAfter && _hasMoreAfter && pos.pixels <= 80) {
       _loadMoreAfter();
     }
   }
@@ -225,7 +228,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       );
       if (!mounted) return;
       setState(() {
-        // Дедупликация на случай пересечения с context-окном.
         final existing = _messages.map((m) => m.id).toSet();
         _messages.addAll(
           history.messages.where((m) => !existing.contains(m.id)),
@@ -233,15 +235,13 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         _hasMoreBefore = history.hasMore;
         _isLoadingMore = false;
       });
+      _scheduleMarkRead();
     } catch (_) {
       if (!mounted) return;
       setState(() => _isLoadingMore = false);
     }
   }
 
-  /// Догрузка более НОВЫХ (после перехода в старый контекст). Перезагружаем
-  /// свежую историю (как при старте) и сбрасываем hasMoreAfter — после
-  /// этого обычный real-time через WS работает как обычно.
   Future<void> _loadMoreAfter() async {
     setState(() => _isLoadingAfter = true);
     try {
@@ -271,7 +271,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Возврат к свежим сообщениям (тап по кнопке «вниз»).
   Future<void> _jumpToBottom() async {
     if (_hasMoreAfter) {
       await _loadMoreAfter();
@@ -288,9 +287,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
   void _scrollToPinned() => _jumpToMessage(_pinnedMessageId);
 
-  /// Переход к сообщению по id (закреп или оригинал reply), как в Telegram.
-  /// Если в загруженном окне — скролл + подсветка. Если нет — догрузка
-  /// контекста вокруг, замена ленты, скролл + подсветка.
   Future<void> _jumpToMessage(String? id) async {
     if (id == null || id.isEmpty || _isJumping) return;
 
@@ -354,7 +350,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Подсветить сообщение на ~1.8 сек (после перехода).
   void _highlight(String id) {
     _highlightTimer?.cancel();
     setState(() => _highlightedMessageId = id);
@@ -377,7 +372,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     return m.text;
   }
 
-  Future<void> _sendMessage(String text) async {
+  /// Отправка текста. mentions — userId упомянутых через @ (из chat_input).
+  Future<void> _sendMessage(String text, List<String> mentions) async {
     if (text.trim().isEmpty) return;
     final replyId = _replyingTo?.id;
     try {
@@ -386,6 +382,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         clubMonthId: widget.club.id,
         text: text.trim(),
         replyToId: replyId,
+        mentions: mentions,
       );
       if (mounted) _cancelReply();
     } on DioException catch (e) {
@@ -520,6 +517,33 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       final msg = code == 'FORBIDDEN'
           ? 'Это сообщение нельзя удалить'
           : 'Не удалось удалить сообщение';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.error,
+      ));
+    }
+  }
+
+  /// 4.10: закрепить/открепить (только админ — кнопка показывается лишь ему).
+  /// Баннер закрепа обновится по WS (ChatPinChangedEvent).
+  Future<void> _togglePin(String messageId, bool pin) async {
+    try {
+      final api = ref.read(clubApiServiceProvider);
+      await api.pinMessage(
+        clubMonthId: widget.club.id,
+        messageId: messageId,
+        pinned: pin,
+      );
+      // Локально сразу (WS придёт и подтвердит/синхронизирует).
+      if (mounted) {
+        setState(() => _pinnedMessageId = pin ? messageId : null);
+      }
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final code = ClubApiService.errorCodeFromException(e);
+      final msg = code == 'FORBIDDEN'
+          ? 'Закреплять может только ведущая клуба'
+          : 'Не удалось изменить закреп';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg),
         backgroundColor: AppColors.error,
@@ -906,6 +930,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                               currentUserId: _currentUserId,
                               isHighlighted:
                                   _highlightedMessageId == m.id,
+                              isAdmin: _isAdmin,
                               onReactionTap: (emoji) =>
                                   _toggleReaction(m.id, emoji),
                               onReply: () => _startReply(m),
@@ -920,12 +945,14 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                               onReport: isMine
                                   ? null
                                   : () => _reportMessage(m.id),
+                              onPinToggle: _isAdmin
+                                  ? (pin) => _togglePin(m.id, pin)
+                                  : null,
                             ),
                           );
                         },
                       ),
 
-                // Лёгкий лоадер во время перехода к контексту.
                 if (_isJumping)
                   const Positioned.fill(
                     child: ColoredBox(
@@ -943,7 +970,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                     ),
                   ),
 
-                // Плавающая кнопка «вниз» (как в Telegram).
                 if (_showJumpDown)
                   Positioned(
                     right: 16,
@@ -982,6 +1008,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
             isMuted: widget.access.isMuted,
             mutedUntil: widget.access.mutedUntil,
             isArchive: widget.access.kind == ClubAccessKind.archive,
+            mentionable: _mentionable,
             onSend: _sendMessage,
             onAttachImage: _onAttachImage,
             replyToName: _replyingTo?.author.name,
