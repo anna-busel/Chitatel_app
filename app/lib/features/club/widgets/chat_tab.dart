@@ -20,28 +20,19 @@ import 'pinned_message_banner.dart';
 
 /// Таб «Чат» клуба.
 ///
-/// Архитектура:
-/// 1. При init — загружаем историю через REST (последние 20 сообщений).
-/// 2. Подключаемся к Socket.io комнате клуба (JWT + clubMonthId).
-/// 3. Подписываемся на стрим событий — добавляем новые сообщения в state.
-/// 4. При отправке — POST через REST. Сервер сам эмитит chat:new_message
-///    через WS, наш сокет получит и добавит в список (включая своё сообщение).
-/// 5. При уходе с экрана — disconnect socket + dispose контроллеров.
+/// Навигация к закрепу/reply (как в Telegram):
+/// - Тап по баннеру закрепа или reply-превью → _jumpToMessage(id).
+/// - Если сообщение уже в загруженном окне — Scrollable.ensureVisible +
+///   подсветка (_highlightedMessageId на ~1.8 сек, снимается таймером).
+/// - Если НЕ в окне — fetchChatContext (целевое + соседи), заменяем ленту,
+///   после рендера ensureVisible к цели + подсветка. Флаги hasMoreBefore/
+///   hasMoreAfter позволяют догружать в обе стороны.
+/// - Плавающая кнопка «вниз» (стрелка) появляется когда юзер не внизу ленты
+///   или «провалился» в старый контекст (hasMoreAfter). Тап → возврат к
+///   свежей истории.
 ///
-/// Картинки (4.6): кнопка-скрепка → выбор источника → превью с подписью →
-/// multipart upload. Сообщение приходит обратно по WS как обычное.
-///
-/// Реакции (4.7): long-press → меню 6 эмодзи. Toggle через REST, обновление
-/// по WS (chat:reaction_updated) + optimistic с откатом.
-///
-/// Edit/Delete/Reply (4.8): long-press меню. Edit — диалог с предзаполненным
-/// текстом (окно 15 мин на бэке). Delete — confirm, soft-delete (остаётся
-/// «Сообщение удалено», reply-контекст сохраняется). Reply — плашка над
-/// инпутом + тап по reply-превью скроллит к оригиналу (как в Telegram).
-/// Обновления edit/delete прилетают по WS.
-///
-/// Запрет ссылок: участницы (не admin) не могут слать ссылки — бэк
-/// возвращает LINK_NOT_ALLOWED, показываем понятное сообщение.
+/// Остальное: картинки 4.6, реакции 4.7 (optimistic+WS), edit/delete/reply
+/// 4.8, запрет ссылок (LINK_NOT_ALLOWED). Real-time через Socket.io.
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -52,38 +43,42 @@ class ChatTab extends ConsumerStatefulWidget {
 }
 
 class _ChatTabState extends ConsumerState<ChatTab> {
-  /// Сообщения в порядке DESC (новые в начале списка).
-  /// ListView рендерим с reverse=true — визуально новые внизу, как в Telegram.
+  /// Сообщения в порядке DESC (новые в начале). ListView reverse=true —
+  /// визуально новые внизу (как в Telegram). pixels≈0 это низ (свежие).
   final List<ChatMessage> _messages = [];
 
-  /// GlobalKey для каждого сообщения по ID. Используется для скролла к закрепу
-  /// и к оригиналу reply через Scrollable.ensureVisible. Заполняется при
-  /// рендере bubble в itemBuilder.
+  /// GlobalKey на сообщение по id — для Scrollable.ensureVisible.
   final Map<String, GlobalKey> _messageKeys = {};
 
-  /// ID текущего юзера (для отличения «свой/чужой» в bubble).
   String? _currentUserId;
-
-  /// ID закреплённого сообщения. Обновляется через chat:pin_changed.
   String? _pinnedMessageId;
-
-  /// Сообщение на которое отвечаем (null = не в режиме ответа).
   ChatMessage? _replyingTo;
+
+  /// Сообщение подсвеченное после перехода (закреп/reply). Снимается таймером.
+  String? _highlightedMessageId;
+  Timer? _highlightTimer;
 
   bool _isLoading = true;
   bool _hasError = false;
-  bool _isLoadingMore = false;
-  bool _hasMore = false;
 
-  /// true пока идёт upload картинки — показываем баннер «Отправка фото...».
+  /// Догрузка более старых (скролл вверх к maxScrollExtent).
+  bool _isLoadingMore = false;
+  bool _hasMoreBefore = false;
+
+  /// Догрузка более новых (после перехода в старый контекст; скролл вниз).
+  bool _hasMoreAfter = false;
+  bool _isLoadingAfter = false;
+
+  /// Показывать ли плавающую кнопку «вниз» (юзер не внизу ленты).
+  bool _showJumpDown = false;
+
+  /// Идёт переход к сообщению (показываем лёгкий лоадер, блокируем повтор).
+  bool _isJumping = false;
+
   bool _isUploadingImage = false;
 
-  /// Сохранённые ссылки на сервисы — чтобы dispose() мог их использовать
-  /// БЕЗ обращения к ref (ref после dispose невалиден).
   ClubSocketService? _socketService;
-
   final ImagePicker _imagePicker = ImagePicker();
-
   StreamSubscription<ClubSocketEvent>? _socketSub;
   final ScrollController _scrollController = ScrollController();
 
@@ -97,13 +92,13 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
   @override
   void dispose() {
+    _highlightTimer?.cancel();
     _socketSub?.cancel();
     _scrollController.dispose();
     _socketService?.disconnect();
     super.dispose();
   }
 
-  /// Начальная загрузка: userId из storage + история чата + WS-подключение.
   Future<void> _bootstrap() async {
     try {
       final storage = ref.read(secureStorageProvider);
@@ -120,7 +115,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         _messages
           ..clear()
           ..addAll(history.messages);
-        _hasMore = history.hasMore;
+        _hasMoreBefore = history.hasMore;
+        _hasMoreAfter = false; // свежая лента — новее некуда
         _isLoading = false;
       });
 
@@ -141,6 +137,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
     if (event is ChatNewMessageEvent) {
       if (_messages.any((m) => m.id == event.message.id)) return;
+      // Новое сообщение всегда добавляем в начало (=низ при reverse).
+      // Если юзер «провалился» в старый контекст (_hasMoreAfter) — не дёргаем
+      // его вниз, просто кнопка «вниз» останется/появится.
       setState(() {
         _messages.insert(0, event.message);
       });
@@ -151,8 +150,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     } else if (event is ChatPinChangedEvent) {
       setState(() => _pinnedMessageId = event.pinnedMessageId);
     } else if (event is ChatReactionUpdatedEvent) {
-      // Заменяем реакции у конкретного сообщения целиком (сервер прислал
-      // полный массив). copyWith — иммутабельная замена в списке.
       final idx = _messages.indexWhere((m) => m.id == event.messageId);
       if (idx != -1) {
         setState(() {
@@ -161,18 +158,12 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         });
       }
     } else if (event is ChatMessageEditedEvent) {
-      // Сервер прислал полностью populated сообщение (автор + reply-снапшот)
-      // — заменяем объект целиком.
-      final idx =
-          _messages.indexWhere((m) => m.id == event.message.id);
+      final idx = _messages.indexWhere((m) => m.id == event.message.id);
       if (idx != -1) {
         setState(() => _messages[idx] = event.message);
       }
     } else if (event is ChatMessageDeletedEvent) {
-      // Soft delete — НЕ убираем из ленты (reply-контекст сохраняется,
-      // bubble сам рисует «Сообщение удалено»). Только проставляем deletedAt.
-      final idx =
-          _messages.indexWhere((m) => m.id == event.messageId);
+      final idx = _messages.indexWhere((m) => m.id == event.messageId);
       if (idx != -1) {
         setState(() {
           _messages[idx] =
@@ -183,17 +174,34 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   }
 
   void _onScroll() {
-    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) return;
+    if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
-    if (pos.pixels >= pos.maxScrollExtent - 200) {
-      _loadMore();
+
+    // Кнопка «вниз»: показываем если ушли от низа (pixels>отступ) ИЛИ есть
+    // более новые за окном (провалились в старый контекст).
+    final notAtBottom = pos.pixels > 300 || _hasMoreAfter;
+    if (notAtBottom != _showJumpDown) {
+      setState(() => _showJumpDown = notAtBottom);
+    }
+
+    // Догрузка более СТАРЫХ — скролл вверх (к maxScrollExtent при reverse).
+    if (!_isLoadingMore &&
+        _hasMoreBefore &&
+        pos.pixels >= pos.maxScrollExtent - 200) {
+      _loadMoreBefore();
+    }
+
+    // Догрузка более НОВЫХ — скролл вниз (к 0 при reverse) если провалились.
+    if (!_isLoadingAfter &&
+        _hasMoreAfter &&
+        pos.pixels <= 200) {
+      _loadMoreAfter();
     }
   }
 
-  Future<void> _loadMore() async {
+  Future<void> _loadMoreBefore() async {
     if (_messages.isEmpty) return;
     setState(() => _isLoadingMore = true);
-
     try {
       final api = ref.read(clubApiServiceProvider);
       final history = await api.fetchChatHistory(
@@ -203,8 +211,12 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       );
       if (!mounted) return;
       setState(() {
-        _messages.addAll(history.messages);
-        _hasMore = history.hasMore;
+        // Дедупликация на случай пересечения с context-окном.
+        final existing = _messages.map((m) => m.id).toSet();
+        _messages.addAll(
+          history.messages.where((m) => !existing.contains(m.id)),
+        );
+        _hasMoreBefore = history.hasMore;
         _isLoadingMore = false;
       });
     } catch (_) {
@@ -213,24 +225,138 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Скролл к закреплённому сообщению при тапе на баннер.
-  void _scrollToPinned() => _scrollToMessage(_pinnedMessageId);
-
-  /// Скролл к сообщению по id (закреп или оригинал reply). Если сообщения
-  /// нет в дереве (вне загруженного окна) — тихо ничего не делаем.
-  void _scrollToMessage(String? id) {
-    if (id == null) return;
-    final ctx = _messageKeys[id]?.currentContext;
-    if (ctx == null) return;
-    Scrollable.ensureVisible(
-      ctx,
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeInOut,
-      alignment: 0.3,
-    );
+  /// Догрузка более НОВЫХ сообщений (после перехода в старый контекст).
+  /// Берём свежее самого нового в текущем окне (через context от него же —
+  /// проще переиспользовать: context целевого = самый новый, radius вперёд).
+  /// Здесь упрощаем: если дошли до низа и есть hasMoreAfter — перезагружаем
+  /// свежую историю (как при старте) и сбрасываем hasMoreAfter. Это надёжно
+  /// и для книжного чата достаточно (не бесконечная лента).
+  Future<void> _loadMoreAfter() async {
+    setState(() => _isLoadingAfter = true);
+    try {
+      final api = ref.read(clubApiServiceProvider);
+      final history = await api.fetchChatHistory(
+        clubMonthId: widget.club.id,
+        limit: 20,
+      );
+      if (!mounted) return;
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(history.messages);
+        _hasMoreBefore = history.hasMore;
+        _hasMoreAfter = false;
+        _isLoadingAfter = false;
+        _showJumpDown = false;
+      });
+      // Прыгаем в самый низ (свежие).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingAfter = false);
+    }
   }
 
-  /// Начать ответ на сообщение — показывает плашку над инпутом.
+  /// Возврат к свежим сообщениям (тап по кнопке «вниз»).
+  Future<void> _jumpToBottom() async {
+    if (_hasMoreAfter) {
+      // Провалились в старый контекст — перезагрузить свежую ленту.
+      await _loadMoreAfter();
+      return;
+    }
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  void _scrollToPinned() => _jumpToMessage(_pinnedMessageId);
+
+  /// Переход к сообщению по id (закреп или оригинал reply), как в Telegram.
+  /// Если в загруженном окне — скролл + подсветка. Если нет — догрузка
+  /// контекста вокруг, замена ленты, скролл + подсветка.
+  Future<void> _jumpToMessage(String? id) async {
+    if (id == null || id.isEmpty || _isJumping) return;
+
+    // Уже в дереве? — просто скролл + подсветка.
+    final ctx = _messageKeys[id]?.currentContext;
+    if (ctx != null) {
+      await Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+        alignment: 0.3,
+      );
+      _highlight(id);
+      return;
+    }
+
+    // Нет в окне — грузим контекст вокруг цели.
+    setState(() => _isJumping = true);
+    try {
+      final api = ref.read(clubApiServiceProvider);
+      final ctxResult = await api.fetchChatContext(
+        clubMonthId: widget.club.id,
+        messageId: id,
+        radius: 15,
+      );
+      if (!mounted) return;
+
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(ctxResult.messages);
+        _hasMoreBefore = ctxResult.hasMoreBefore;
+        _hasMoreAfter = ctxResult.hasMoreAfter;
+        _isJumping = false;
+      });
+
+      // После рендера — проскроллить к цели + подсветить.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final c = _messageKeys[id]?.currentContext;
+        if (c != null) {
+          Scrollable.ensureVisible(
+            c,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOut,
+            alignment: 0.3,
+          );
+        }
+        _highlight(id);
+      });
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() => _isJumping = false);
+      final code = ClubApiService.errorCodeFromException(e);
+      final msg = code == 'NOT_FOUND'
+          ? 'Сообщение не найдено или удалено'
+          : 'Не удалось перейти к сообщению';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.error,
+      ));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isJumping = false);
+    }
+  }
+
+  /// Подсветить сообщение на ~1.8 сек (после перехода).
+  void _highlight(String id) {
+    _highlightTimer?.cancel();
+    setState(() => _highlightedMessageId = id);
+    _highlightTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (mounted) setState(() => _highlightedMessageId = null);
+    });
+  }
+
   void _startReply(ChatMessage m) {
     setState(() => _replyingTo = m);
   }
@@ -239,7 +365,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     setState(() => _replyingTo = null);
   }
 
-  /// Краткое описание сообщения для плашки «Ответ на …» (по типу).
   String _replyPreviewText(ChatMessage m) {
     if (m.type == ChatMessageType.image) return '🖼 Картинка';
     if (m.type == ChatMessageType.voice) return '🎤 Голосовое сообщение';
@@ -248,7 +373,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty) return;
-
     final replyId = _replyingTo?.id;
     try {
       final api = ref.read(clubApiServiceProvider);
@@ -278,8 +402,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Редактирование своего сообщения. Диалог с предзаполненным текстом.
-  /// Обновление прилетит по WS (ChatMessageEditedEvent).
   Future<void> _editMessage(ChatMessage m) async {
     final controller = TextEditingController(text: m.text);
     final newText = await showDialog<String>(
@@ -323,12 +445,11 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     );
 
     if (newText == null || newText.isEmpty || !mounted) return;
-    if (newText == m.text) return; // ничего не изменилось
+    if (newText == m.text) return;
 
     try {
       final api = ref.read(clubApiServiceProvider);
       await api.editMessage(messageId: m.id, text: newText);
-      // Обновление прилетит по WS (ChatMessageEditedEvent).
     } on DioException catch (e) {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
@@ -351,8 +472,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Удаление своего сообщения. Confirm-диалог.
-  /// Обновление прилетит по WS (ChatMessageDeletedEvent).
   Future<void> _deleteMessage(String messageId) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -389,7 +508,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     try {
       final api = ref.read(clubApiServiceProvider);
       await api.deleteMessage(messageId);
-      // Обновление прилетит по WS (ChatMessageDeletedEvent).
     } on DioException catch (e) {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
@@ -403,20 +521,14 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Toggle реакции на сообщение. Optimistic update: меняем локально сразу,
-  /// сервер подтвердит через chat:reaction_updated (перезапишет точным
-  /// состоянием). Если запрос упал — откатываем (WS не придёт, восстановим).
   Future<void> _toggleReaction(String messageId, String emoji) async {
     final uid = _currentUserId;
     if (uid == null) return;
 
     final idx = _messages.indexWhere((m) => m.id == messageId);
     if (idx == -1) return;
-
     final original = _messages[idx];
 
-    // — Optimistic пересчёт реакций (та же логика что на сервере:
-    //   один юзер = одна реакция, toggle того же эмодзи снимает) —
     final reactions = original.reactions
         .map((r) => MessageReaction(
               emoji: r.emoji,
@@ -443,16 +555,13 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     setState(() {
       _messages[idx] = original.copyWith(reactions: cleaned);
     });
-
     HapticFeedback.selectionClick();
 
     try {
       final api = ref.read(clubApiServiceProvider);
       await api.toggleReaction(messageId: messageId, emoji: emoji);
-      // WS-событие chat:reaction_updated перезапишет точным состоянием.
     } on DioException catch (e) {
       if (!mounted) return;
-      // Откат к исходному состоянию.
       final curIdx = _messages.indexWhere((m) => m.id == messageId);
       if (curIdx != -1) {
         setState(() => _messages[curIdx] = original);
@@ -468,8 +577,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Тап по кнопке-скрепке: выбор источника (галерея/камера) → выбор фото →
-  /// превью-диалог с полем подписи → upload.
   Future<void> _onAttachImage() async {
     final source = await _showImageSourceSheet();
     if (source == null || !mounted) return;
@@ -480,7 +587,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         source: source,
         maxWidth: 2000,
         maxHeight: 2000,
-        imageQuality: 85, // лёгкое сжатие — экономия трафика/диска
+        imageQuality: 85,
       );
     } catch (_) {
       if (!mounted) return;
@@ -491,16 +598,14 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       return;
     }
 
-    if (picked == null || !mounted) return; // юзер отменил выбор
+    if (picked == null || !mounted) return;
 
-    // Превью + поле подписи.
     final caption = await _showImagePreviewDialog(File(picked.path));
-    if (caption == null || !mounted) return; // отменил на превью
+    if (caption == null || !mounted) return;
 
     await _uploadImage(picked.path, caption);
   }
 
-  /// Bottom sheet выбора источника картинки.
   Future<ImageSource?> _showImageSourceSheet() {
     return showModalBottomSheet<ImageSource>(
       context: context,
@@ -532,9 +637,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     );
   }
 
-  /// Диалог превью выбранной картинки + поле подписи.
-  /// Возвращает текст подписи (может быть пустым) если юзер подтвердил,
-  /// либо null если отменил.
   Future<String?> _showImagePreviewDialog(File file) {
     final captionController = TextEditingController();
     return showDialog<String>(
@@ -607,7 +709,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     );
   }
 
-  /// Загрузка картинки на сервер. Сообщение придёт обратно по WS.
   Future<void> _uploadImage(String filePath, String caption) async {
     setState(() => _isUploadingImage = true);
     final replyId = _replyingTo?.id;
@@ -620,7 +721,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         replyToId: replyId,
       );
       if (mounted) _cancelReply();
-      // Сообщение придёт по WS — UI обновится через _onSocketEvent.
     } on DioException catch (e) {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
@@ -762,56 +862,94 @@ class _ChatTabState extends ConsumerState<ChatTab> {
               onTap: _scrollToPinned,
             ),
           Expanded(
-            child: _messages.isEmpty
-                ? _EmptyChat()
-                : ListView.builder(
-                    controller: _scrollController,
-                    reverse: true,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    itemCount: _messages.length + (_isLoadingMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (_isLoadingMore && index == _messages.length) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          child: Center(
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.terracotta,
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-                      final m = _messages[index];
-                      final isMine = m.isMine(_currentUserId);
-                      return KeyedSubtree(
-                        key: _keyForMessage(m.id),
-                        child: ChatMessageBubble(
-                          message: m,
-                          currentUserId: _currentUserId,
-                          onReactionTap: (emoji) =>
-                              _toggleReaction(m.id, emoji),
-                          onReply: () => _startReply(m),
-                          onEdit: isMine ? () => _editMessage(m) : null,
-                          onDelete:
-                              isMine ? () => _deleteMessage(m.id) : null,
-                          onReplyTap: m.hasReply
-                              ? () => _scrollToMessage(m.replyToId)
-                              : null,
-                          onReport:
-                              isMine ? null : () => _reportMessage(m.id),
+            child: Stack(
+              children: [
+                _messages.isEmpty
+                    ? _EmptyChat()
+                    : ListView.builder(
+                        controller: _scrollController,
+                        reverse: true,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
                         ),
-                      );
-                    },
+                        itemCount:
+                            _messages.length + (_isLoadingMore ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (_isLoadingMore && index == _messages.length) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              child: Center(
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.terracotta,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          final m = _messages[index];
+                          final isMine = m.isMine(_currentUserId);
+                          return KeyedSubtree(
+                            key: _keyForMessage(m.id),
+                            child: ChatMessageBubble(
+                              message: m,
+                              currentUserId: _currentUserId,
+                              isHighlighted:
+                                  _highlightedMessageId == m.id,
+                              onReactionTap: (emoji) =>
+                                  _toggleReaction(m.id, emoji),
+                              onReply: () => _startReply(m),
+                              onEdit:
+                                  isMine ? () => _editMessage(m) : null,
+                              onDelete: isMine
+                                  ? () => _deleteMessage(m.id)
+                                  : null,
+                              onReplyTap: m.hasReply
+                                  ? () => _jumpToMessage(m.replyToId)
+                                  : null,
+                              onReport: isMine
+                                  ? null
+                                  : () => _reportMessage(m.id),
+                            ),
+                          );
+                        },
+                      ),
+
+                // Лёгкий лоадер во время перехода к контексту.
+                if (_isJumping)
+                  const Positioned.fill(
+                    child: ColoredBox(
+                      color: Color(0x11000000),
+                      child: Center(
+                        child: SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: AppColors.terracotta,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
+
+                // Плавающая кнопка «вниз» (как в Telegram).
+                if (_showJumpDown)
+                  Positioned(
+                    right: 16,
+                    bottom: 16,
+                    child: _JumpDownButton(
+                      onTap: _jumpToBottom,
+                      hasNewer: _hasMoreAfter,
+                    ),
+                  ),
+              ],
+            ),
           ),
-          // Баннер прогресса загрузки картинки.
           if (_isUploadingImage)
             Container(
               width: double.infinity,
@@ -847,6 +985,54 @@ class _ChatTabState extends ConsumerState<ChatTab> {
             onCancelReply: _replyingTo == null ? null : _cancelReply,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Плавающая кнопка «вниз» — возврат к свежим сообщениям (как в Telegram).
+/// Если есть более новые за окном (hasNewer) — маленькая точка-индикатор.
+class _JumpDownButton extends StatelessWidget {
+  const _JumpDownButton({required this.onTap, required this.hasNewer});
+  final VoidCallback onTap;
+  final bool hasNewer;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.cardBackground,
+      shape: const CircleBorder(),
+      elevation: 3,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              const Icon(
+                Icons.keyboard_arrow_down,
+                color: AppColors.textSecondary,
+                size: 26,
+              ),
+              if (hasNewer)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Container(
+                    width: 9,
+                    height: 9,
+                    decoration: const BoxDecoration(
+                      color: AppColors.terracotta,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
