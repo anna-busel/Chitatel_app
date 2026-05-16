@@ -4,6 +4,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../models/club_summary.dart';
 import '../providers/club_provider.dart';
+import '../services/club_api_service.dart';
 
 /// Bottom sheet переключателя клубов. Открывается по тапу на шапку клуба.
 ///
