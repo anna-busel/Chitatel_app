@@ -13,9 +13,12 @@ import '../../../core/theme/app_typography.dart';
 /// ведущая (разборы, ответы голосом).
 ///
 /// Состояния:
-/// - свёрнут → круглая кнопка-микрофон (terracotta)
+/// - свёрнут → круглая кнопка-микрофон (terracotta), фиксированная 44x44
 /// - запись → красная пульсирующая точка + таймер MM:SS + кнопки
-///   «корзина» (отмена) и «отправить» (стоп + onSend)
+///   «корзина» (отмена) и «отправить» (стоп + onSend). РАСТЯГИВАЕТСЯ на
+///   всю строку ввода — поэтому родитель (chat_input) при записи оборачивает
+///   виджет в Expanded и убирает скрепку/текстфилд. О смене состояния
+///   родитель узнаёт через onRecordingStateChanged.
 ///
 /// Запись: AAC в .m4a (encoder aacLc, 64 kbps, 44100) во временную
 /// директорию. Параллельно семплируем амплитуду каждые 200мс и строим
@@ -32,11 +35,21 @@ import '../../../core/theme/app_typography.dart';
 /// Лимит — 180 сек (совпадает с MAX_DURATION_SEC на бэке). На 180 сек
 /// автостоп с автоотправкой.
 class VoiceRecorder extends StatefulWidget {
-  const VoiceRecorder({super.key, required this.onSend});
+  const VoiceRecorder({
+    super.key,
+    required this.onSend,
+    this.onRecordingStateChanged,
+  });
 
   /// Вызывается при отправке: путь к файлу .m4a, длительность сек, waveform[40].
   final void Function(String filePath, int durationSec, List<int> waveform)
       onSend;
+
+  /// Сообщает родителю о смене состояния записи (true = идёт запись).
+  /// chat_input по этому колбэку перестраивает layout: в режиме записи
+  /// отдаёт виджету всю строку через Expanded (иначе Spacer внутри Row
+  /// падает на unbounded width).
+  final ValueChanged<bool>? onRecordingStateChanged;
 
   @override
   State<VoiceRecorder> createState() => _VoiceRecorderState();
@@ -63,6 +76,12 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
     _ampSampler?.cancel();
     _recorder.dispose();
     super.dispose();
+  }
+
+  /// Меняем _isRecording + уведомляем родителя (для перестройки layout).
+  void _setRecording(bool v) {
+    setState(() => _isRecording = v);
+    widget.onRecordingStateChanged?.call(v);
   }
 
   Future<void> _start() async {
@@ -97,7 +116,7 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
       _amplitudes.clear();
       _elapsedSec = 0;
 
-      setState(() => _isRecording = true);
+      _setRecording(true);
 
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
         setState(() => _elapsedSec++);
@@ -165,10 +184,8 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
       path = _filePath;
     }
 
-    setState(() {
-      _isRecording = false;
-      _elapsedSec = 0;
-    });
+    _setRecording(false);
+    setState(() => _elapsedSec = 0);
 
     if (path == null) return;
     // Слишком короткая запись — игнорируем (защита от случайного тапа).
@@ -196,10 +213,8 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
       path = _filePath;
     }
     if (path != null) _safeDelete(path);
-    setState(() {
-      _isRecording = false;
-      _elapsedSec = 0;
-    });
+    _setRecording(false);
+    setState(() => _elapsedSec = 0);
   }
 
   void _safeDelete(String path) {
@@ -218,7 +233,7 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
   @override
   Widget build(BuildContext context) {
     if (!_isRecording) {
-      // Свёрнутое состояние — кнопка-микрофон.
+      // Свёрнутое состояние — кнопка-микрофон фиксированного размера.
       return Material(
         color: Colors.transparent,
         shape: const CircleBorder(),
@@ -238,7 +253,9 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
       );
     }
 
-    // Состояние записи — занимает строку ввода.
+    // Состояние записи — растягивается на всю строку ввода. Родитель
+    // (chat_input) при записи оборачивает этот виджет в Expanded, поэтому
+    // здесь ширина ограничена и Spacer() работает корректно.
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 8),
