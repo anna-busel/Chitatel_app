@@ -28,8 +28,10 @@ import 'voice_recorder.dart';
 /// список userId реально упомянутых (чьё '@Имя' осталось в тексте).
 ///
 /// Voice (4.12): если isAdmin && onSendVoice != null — рядом со скрепкой
-/// кнопка-микрофон (VoiceRecorder). В режиме записи занимает строку ввода.
-/// Только Анна-admin (продуктовое правило) — для остальных кнопки нет.
+/// кнопка-микрофон (VoiceRecorder). Когда идёт запись — VoiceRecorder
+/// растягивается на ВСЮ строку (Expanded), скрепка/текстфилд/кнопка
+/// отправки скрыты. Состояние записи приходит из VoiceRecorder через
+/// onRecordingStateChanged. Только Анна-admin — для остальных кнопки нет.
 class ChatInput extends StatefulWidget {
   const ChatInput({
     super.key,
@@ -84,6 +86,12 @@ class _ChatInputState extends State<ChatInput> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   bool _hasText = false;
+
+  /// Идёт запись голосового — приходит из VoiceRecorder через колбэк.
+  /// В этом режиме строка ввода полностью отдана VoiceRecorder (Expanded),
+  /// скрепка/текстфилд/кнопка скрыты (иначе Spacer в VoiceRecorder падал
+  /// на unbounded width — RenderFlex assertion).
+  bool _isRecordingVoice = false;
 
   /// Кого юзер реально упомянул (имя → userId). При отправке оставляем
   /// только тех, чьё «@Имя» осталось в тексте (вдруг стёр).
@@ -211,13 +219,26 @@ class _ChatInputState extends State<ChatInput> {
     }
 
     final remaining = _maxChars - _controller.text.length;
-    final showCounter = remaining <= 50;
+    final showCounter = remaining <= 50 && !_isRecordingVoice;
     final isReplying = widget.replyToName != null;
-    final suggestions = _filteredMentionable;
+    final suggestions = _isRecordingVoice ? const <MentionableUser>[] : _filteredMentionable;
 
     // Запись голосовых — только Анна-admin (продуктовое правило 4.12).
     final canRecordVoice =
         widget.isAdmin && widget.onSendVoice != null;
+
+    // Единый инстанс VoiceRecorder — чтобы при перестройке layout
+    // (свёрнут ↔ запись) не пересоздавался State и не терялась запись.
+    final voiceRecorder = canRecordVoice
+        ? VoiceRecorder(
+            onSend: widget.onSendVoice!,
+            onRecordingStateChanged: (rec) {
+              if (rec != _isRecordingVoice) {
+                setState(() => _isRecordingVoice = rec);
+              }
+            },
+          )
+        : null;
 
     return Container(
       decoration: BoxDecoration(
@@ -276,8 +297,8 @@ class _ChatInputState extends State<ChatInput> {
                 ),
               ),
 
-            // — Плашка «Ответ на …» —
-            if (isReplying)
+            // — Плашка «Ответ на …» — (скрыта во время записи голосового)
+            if (isReplying && !_isRecordingVoice)
               Container(
                 padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
                 child: Row(
@@ -347,51 +368,58 @@ class _ChatInputState extends State<ChatInput> {
                     ),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      _AttachButton(onTap: widget.onAttachImage),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Container(
-                          constraints: const BoxConstraints(maxHeight: 120),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceLight,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: TextField(
-                            controller: _controller,
-                            focusNode: _focusNode,
-                            minLines: 1,
-                            maxLines: 5,
-                            maxLength: _maxChars,
-                            textInputAction: TextInputAction.newline,
-                            style: AppTypography.body,
-                            decoration: InputDecoration(
-                              hintText: 'Сообщение...',
-                              hintStyle: AppTypography.body.copyWith(
-                                color: AppColors.textPlaceholder,
-                              ),
-                              border: InputBorder.none,
-                              counterText: '',
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
+                    children: _isRecordingVoice && voiceRecorder != null
+                        // — Режим записи: VoiceRecorder занимает всю строку —
+                        ? [Expanded(child: voiceRecorder)]
+                        // — Обычный режим: скрепка + поле + (микрофон/отправка) —
+                        : [
+                            _AttachButton(onTap: widget.onAttachImage),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Container(
+                                constraints:
+                                    const BoxConstraints(maxHeight: 120),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceLight,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: TextField(
+                                  controller: _controller,
+                                  focusNode: _focusNode,
+                                  minLines: 1,
+                                  maxLines: 5,
+                                  maxLength: _maxChars,
+                                  textInputAction: TextInputAction.newline,
+                                  style: AppTypography.body,
+                                  decoration: InputDecoration(
+                                    hintText: 'Сообщение...',
+                                    hintStyle: AppTypography.body.copyWith(
+                                      color: AppColors.textPlaceholder,
+                                    ),
+                                    border: InputBorder.none,
+                                    counterText: '',
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 10,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      // Голосовое (4.12) — только Анна-admin. Когда нет
-                      // текста — показываем микрофон; как только Анна печатает
-                      // — заменяем на кнопку отправки текста (как в Telegram).
-                      if (canRecordVoice && !_hasText)
-                        VoiceRecorder(onSend: widget.onSendVoice!)
-                      else
-                        _SendButton(
-                          enabled: _hasText,
-                          onTap: _handleSend,
-                        ),
-                    ],
+                            const SizedBox(width: 6),
+                            // Голосовое (4.12) — только Анна-admin. Пусто —
+                            // микрофон; есть текст — кнопка отправки текста.
+                            if (canRecordVoice &&
+                                !_hasText &&
+                                voiceRecorder != null)
+                              voiceRecorder
+                            else
+                              _SendButton(
+                                enabled: _hasText,
+                                onTap: _handleSend,
+                              ),
+                          ],
                   ),
                 ],
               ),
