@@ -30,6 +30,7 @@ import 'pinned_message_banner.dart';
 /// 4.9 mentions: при @ в инпуте — автокомплит mentionable (Анна). Упомянутые
 /// userId уходят на бэк, в bubble @имя подсвечено. 4.10 закреп: у админа в
 /// меню «Закрепить»/«Открепить». 4.11 read: видимые сообщения батчем в markRead.
+/// 4.12 voice: у Анны-admin кнопка записи в инпуте → _sendVoice.
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -73,6 +74,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   bool _showJumpDown = false;
   bool _isJumping = false;
   bool _isUploadingImage = false;
+
+  /// Идёт отправка голосового (4.12) — показываем полоску, блокируем повтор.
+  bool _isUploadingVoice = false;
 
   ClubSocketService? _socketService;
   final ImagePicker _imagePicker = ImagePicker();
@@ -402,6 +406,50 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         content: Text(msg),
         backgroundColor: AppColors.error,
       ));
+    }
+  }
+
+  /// 4.12: отправка голосового (только Анна-admin — кнопка записи показана
+  /// лишь ей). Параметры приходят из VoiceRecorder через ChatInput.onSendVoice.
+  Future<void> _sendVoice(
+    String filePath,
+    int durationSec,
+    List<int> waveform,
+  ) async {
+    if (_isUploadingVoice) return;
+    setState(() => _isUploadingVoice = true);
+    final replyId = _replyingTo?.id;
+    try {
+      final api = ref.read(clubApiServiceProvider);
+      await api.sendVoiceMessage(
+        clubMonthId: widget.club.id,
+        filePath: filePath,
+        durationSec: durationSec,
+        waveform: waveform,
+        replyToId: replyId,
+      );
+      if (mounted) _cancelReply();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final code = ClubApiService.errorCodeFromException(e);
+      String msg;
+      if (code == 'VOICE_ADMIN_ONLY') {
+        msg = 'Голосовые может отправлять только ведущая клуба';
+      } else if (code == 'VALIDATION') {
+        msg = 'Запись не прошла проверку. Попробуйте записать ещё раз';
+      } else if (code == 'CLUB_BLOCKED') {
+        msg = 'Ваш аккаунт заблокирован';
+      } else if (code == 'FORBIDDEN') {
+        msg = 'В архиве нельзя отправлять сообщения';
+      } else {
+        msg = 'Не удалось отправить голосовое. Попробуйте ещё раз';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.error,
+      ));
+    } finally {
+      if (mounted) setState(() => _isUploadingVoice = false);
     }
   }
 
@@ -1003,13 +1051,37 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                 ],
               ),
             ),
+          if (_isUploadingVoice)
+            Container(
+              width: double.infinity,
+              color: AppColors.surfaceLight,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.terracotta,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('Отправка голосового...',
+                      style: AppTypography.caption),
+                ],
+              ),
+            ),
           ChatInput(
             canPost: widget.access.canPost,
             isMuted: widget.access.isMuted,
             mutedUntil: widget.access.mutedUntil,
             isArchive: widget.access.kind == ClubAccessKind.archive,
             mentionable: _mentionable,
+            isAdmin: _isAdmin,
             onSend: _sendMessage,
+            onSendVoice: _isAdmin ? _sendVoice : null,
             onAttachImage: _onAttachImage,
             replyToName: _replyingTo?.author.name,
             replyToText: _replyingTo == null
