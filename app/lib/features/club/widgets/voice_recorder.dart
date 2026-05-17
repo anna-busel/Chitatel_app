@@ -17,9 +17,14 @@ import '../../../core/theme/app_typography.dart';
 /// - запись → красная пульсирующая точка + таймер MM:SS + кнопки
 ///   «корзина» (отмена) и «отправить» (стоп + onSend)
 ///
-/// Запись: AAC в .m4a (AudioEncoder.aacLc, 64 kbps, mono, 44100) во временную
+/// Запись: AAC в .m4a (encoder aacLc, 64 kbps, 44100) во временную
 /// директорию. Параллельно семплируем амплитуду каждые 200мс и строим
 /// waveform из 40 значений 0..100 (как ожидает бэк).
+///
+/// Использует пакет record 4.4.x (НЕ 5.x): в 4.x API класс Record(),
+/// параметры записи передаются прямо в start() (encoder/bitRate/
+/// samplingRate/path), без RecordConfig. 5.x ломает сборку iOS на
+/// Flutter 3.22.3 (несовместимый граф под-пакетов record_linux).
 ///
 /// Apple 5.1.2(iii): во время записи виден явный индикатор (красная точка +
 /// таймер) — пользователь всегда понимает что идёт запись.
@@ -38,7 +43,8 @@ class VoiceRecorder extends StatefulWidget {
 }
 
 class _VoiceRecorderState extends State<VoiceRecorder> {
-  final AudioRecorder _recorder = AudioRecorder();
+  // record 4.x: класс Record (в 5.x был бы AudioRecorder).
+  final Record _recorder = Record();
 
   bool _isRecording = false;
   int _elapsedSec = 0;
@@ -76,14 +82,15 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
       final path =
           '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
+      // record 4.x: параметры прямо в start() (нет RecordConfig).
+      // samplingRate (4.x) вместо sampleRate (5.x). Нет numChannels —
+      // AAC mono задаётся через samplingRate + encoder по умолчанию моно
+      // для речи; для голосовых клуба этого достаточно.
       await _recorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 64000,
-          numChannels: 1,
-          sampleRate: 44100,
-        ),
         path: path,
+        encoder: AudioEncoder.aacLc,
+        bitRate: 64000,
+        samplingRate: 44100,
       );
 
       _filePath = path;
