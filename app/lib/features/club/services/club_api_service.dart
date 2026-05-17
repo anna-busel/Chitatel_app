@@ -320,6 +320,43 @@ class ClubApiService {
     return ChatMessage.fromJson(data['message'] as Map<String, dynamic>);
   }
 
+  /// Отправить голосовое сообщение (4.12, multipart/form-data).
+  ///
+  /// [filePath] — путь к .m4a файлу записи (из пакета record).
+  /// [durationSec] — длительность записи в секундах (1..180).
+  /// [waveform] — 40 чисел 0..100 (амплитуды для отрисовки), шлём JSON-строкой.
+  /// [replyToId] — опциональный reply.
+  ///
+  /// ТОЛЬКО Анна-admin (бэк вернёт VOICE_ADMIN_ONLY для остальных). Сервер
+  /// создаёт ChatMessage type=voice + эмитит chat:new_message по WS.
+  ///
+  /// Бросает DioException: VOICE_ADMIN_ONLY (не админ), VALIDATION (формат/
+  /// длительность/waveform), FORBIDDEN (архив/бан).
+  Future<ChatMessage> sendVoiceMessage({
+    required String clubMonthId,
+    required String filePath,
+    required int durationSec,
+    required List<int> waveform,
+    String? replyToId,
+  }) async {
+    final fileName = filePath.split('/').last;
+    final formData = FormData.fromMap({
+      'voice': await MultipartFile.fromFile(filePath, filename: fileName),
+      'durationSec': durationSec.toString(),
+      // waveform — JSON-строка массива, бэк делает JSON.parse.
+      'waveform': '[${waveform.join(',')}]',
+      if (replyToId != null) 'replyToId': replyToId,
+    });
+
+    final response = await _api.dio.post(
+      ApiEndpoints.clubChatVoice(clubMonthId),
+      data: formData,
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>;
+    return ChatMessage.fromJson(data['message'] as Map<String, dynamic>);
+  }
+
   /// Поставить/снять реакцию на сообщение (toggle).
   ///
   /// [emoji] — один из 6 разрешённых (❤️👍🔥👏🥲🙏). Бэк валидирует.
