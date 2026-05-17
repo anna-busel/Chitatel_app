@@ -10,6 +10,7 @@ const packageRoutes = require('./routes/packages');
 const homeRoutes = require('./routes/home');
 const audioRoutes = require('./routes/audio');
 const imageRoutes = require('./routes/images');
+const voiceRoutes = require('./routes/voice');
 const progressRoutes = require('./routes/progress');
 const clubRoutes = require('./routes/club');
 const adminRoutes = require('./routes/admin');
@@ -51,6 +52,9 @@ app.use('/audio', audioRoutes);
 
 // Картинки чата клуба (4.6) — тоже на корне, защита через signed URL.
 app.use('/images', imageRoutes);
+
+// Голосовые сообщения чата клуба (4.12) — на корне, защита через signed URL.
+app.use('/voice', voiceRoutes);
 
 // 404 handler
 app.use((_req, res) => {
