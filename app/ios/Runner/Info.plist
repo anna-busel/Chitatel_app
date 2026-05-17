@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Для фото профиля с камеры</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Для записи голосовых сообщений в чате клуба</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Для загрузки фото профиля</string>
 	<key>NSUserTrackingUsageDescription</key>
