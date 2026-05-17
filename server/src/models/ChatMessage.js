@@ -15,11 +15,14 @@ const mongoose = require('mongoose');
  * 8. Push на новое сообщение (обрабатывается в socket-хендлере)
  * 9. Голосовые сообщения (type='voice', AAC m4a 64kbps mono, макс 3 мин)
  *
- * Voice messages:
+ * Voice messages (4.12):
  * - voiceUrl — signed URL через тот же AUDIO_SECRET что и в задаче 2.3
- *   (другая подпапка: AUDIO_BASE_PATH/voice-messages/<userId>/<messageId>.m4a)
+ *   (другая подпапка: AUDIO_BASE_PATH/voice-messages/<userId>/<uuid>.m4a)
+ * - voiceStoragePath — относительный путь от AUDIO_BASE_PATH для перевыпуска
+ *   signed URL когда старый истечёт (как imageStoragePath у картинок)
  * - voiceDurationSec — длительность в секундах (макс 180)
  * - voiceWaveform — 40 семплов 0-100 для отрисовки, считаются на клиенте
+ * - ПРАВИЛО: отправлять может только Анна (role=admin) — проверка в роуте
  *
  * Картинки (4.6):
  * - imageUrl — signed URL (TTL 1 час, тот же AUDIO_SECRET)
@@ -93,6 +96,7 @@ const chatMessageSchema = new mongoose.Schema(
 
     // Голосовое (type='voice')
     voiceUrl: { type: String, default: null }, // signed URL
+    voiceStoragePath: { type: String, default: null }, // отн. путь для перевыпуска URL
     voiceDurationSec: { type: Number, default: null }, // макс 180 (3 мин)
     voiceWaveform: { type: [Number], default: [] }, // 40 семплов 0-100
 
