@@ -81,8 +81,8 @@ class ApiEndpoints {
   /// Query: limit (1-50, default 20), before (ISO date, опц.).
   /// Возвращает messages[] DESC + hasMore.
   ///
-  /// POST /api/club/:clubMonthId/chat — отправить text/image/voice сообщение.
-  /// Body: { type, text?, imageUrl?, voiceUrl?, voiceDurationSec?, voiceWaveform?, replyToId?, mentions? }
+  /// POST /api/club/:clubMonthId/chat — отправить text/image сообщение.
+  /// Body: { type, text?, imageUrl?, replyToId?, mentions? }
   static String clubChat(String clubMonthId) => '/club/$clubMonthId/chat';
 
   /// GET /api/club/:clubMonthId/chat/context/:messageId — сообщение + контекст
@@ -97,6 +97,14 @@ class ApiEndpoints {
   /// Возвращает созданное сообщение type=image с signed imageUrl (TTL 1 час).
   static String clubChatImage(String clubMonthId) =>
       '/club/$clubMonthId/chat/image';
+
+  /// POST /api/club/:clubMonthId/chat/voice — загрузить голосовое (4.12).
+  /// multipart/form-data: "voice" (m4a файл), "durationSec", "waveform"
+  /// (JSON-массив 40 чисел), опц. "replyToId".
+  /// ТОЛЬКО Анна-admin (бэк проверяет role). Возвращает сообщение type=voice
+  /// с signed voiceUrl (TTL 1 час).
+  static String clubChatVoice(String clubMonthId) =>
+      '/club/$clubMonthId/chat/voice';
 
   /// POST /api/club/:clubMonthId/chat/read — отметить сообщения прочитанными
   /// (задача 4.11). Body: { messageIds: [string] } (1-100).
