@@ -36,6 +36,13 @@ dependencies:
   # 1.x стабильна с Flutter 3.22.3. Требует NSPhotoLibraryUsageDescription
   # и NSCameraUsageDescription в Info.plist (уже добавлены в задаче 0.6).
   image_picker: ^1.1.2
+  # — Голосовые сообщения (задача 4.12) —
+  # record: запись аудио на iOS (AAC m4a). 5.1.x стабильна с Flutter 3.22.3
+  # (5.2+ тянет свежие транзитивные зависимости). Требует
+  # NSMicrophoneUsageDescription в Info.plist (добавлено в этой задаче).
+  # Только Анна-admin записывает (продуктовое правило) — кнопка скрыта у др.
+  # Воспроизведение голосовых — через just_audio (уже есть выше, не дублируем).
+  record: ^5.1.2
 
 dev_dependencies:
   flutter_test:
