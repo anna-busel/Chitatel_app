@@ -41,10 +41,15 @@ dependencies:
   # (продуктовое правило). Требует NSMicrophoneUsageDescription в Info.plist.
   # Воспроизведение — через just_audio (выше, не дублируем).
   #
-  # Примечание: на этой версии возможен конфликт транзитивного record_linux
-  # с record_platform_interface при сборке iOS. Точные совместимые версии
-  # подбираются по выводу `flutter pub deps` (без угадывания номеров).
-  record: ^5.1.2
+  # Версия 4.x (НЕ 5.x): в 5.x пакет раскладывается на под-пакеты
+  # (record_platform_interface / record_linux / record_darwin), и их
+  # авто-резолв на Flutter 3.22.3 даёт несовместимый граф — record_linux
+  # не реализует методы интерфейса, и сборка iOS падает
+  # ("RecordLinux is missing implementations"), хотя Linux-код на iOS не
+  # нужен. Ветка 4.4.x — цельный пакет, граф простой, ставится без
+  # конфликта на 3.22.3. API записи отличается (класс Record(), см.
+  # voice_recorder.dart) — учтено.
+  record: ^4.4.4
 
 dev_dependencies:
   flutter_test:
