@@ -11,6 +11,7 @@ const { success } = require('../utils/response');
 const { AppError } = require('../middleware/error');
 const { emitToClub } = require('../socket');
 const imageService = require('../services/image.service');
+const voiceService = require('../services/voice.service');
 const User = require('../models/User');
 const ClubMonth = require('../models/ClubMonth');
 const ChatMessage = require('../models/ChatMessage');
@@ -89,6 +90,13 @@ router.use(requireAuth);
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: imageService.MAX_FILE_SIZE_BYTES },
+});
+
+// Отдельный multer для голосовых (4.12) — свой лимит размера (~4 МБ,
+// AAC 64kbps mono за 3 мин ≈ 1.4 МБ, берём с запасом).
+const uploadVoice = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: voiceService.MAX_FILE_SIZE_BYTES },
 });
 
 /* ------------------------------------------------------------------ *
@@ -430,7 +438,7 @@ router.get(
  * Примечание: для image обычно используется POST .../chat/image (multipart),
  * который сам создаёт сообщение. Этот эндпоинт принимает уже готовый imageUrl
  * (на случай если клиент шлёт ссылку), но штатный путь картинки — через
- * /chat/image ниже.
+ * /chat/image ниже. Голосовые — только через /chat/voice (multipart).
  *
  * Запрет ссылок: участницы (не admin) не могут слать ссылки в text —
  * см. assertNoLinkForNonAdmin.
@@ -509,6 +517,17 @@ router.post(
         );
       }
 
+      // Голосовые не создаём через этот эндпоинт — только через /chat/voice
+      // (там проверка role=admin + загрузка файла). Защита от обхода правила
+      // «голосовые только Анна» через прямой JSON с voiceUrl.
+      if (req.body.type === 'voice') {
+        throw new AppError(
+          'FORBIDDEN',
+          'Голосовые отправляются только через загрузку записи',
+          403
+        );
+      }
+
       // Запрет ссылок для не-админов (text-сообщения).
       const author = await User.findById(req.user.userId)
         .select('role')
@@ -537,9 +556,9 @@ router.post(
         type: req.body.type,
         text: req.body.text,
         imageUrl: req.body.imageUrl || null,
-        voiceUrl: req.body.voiceUrl || null,
-        voiceDurationSec: req.body.voiceDurationSec || null,
-        voiceWaveform: req.body.voiceWaveform || [],
+        voiceUrl: null,
+        voiceDurationSec: null,
+        voiceWaveform: [],
         replyToId: req.body.replyToId || null,
         mentions,
       });
@@ -695,6 +714,175 @@ router.post(
           );
         }
         return next(new AppError('VALIDATION', 'Ошибка загрузки файла', 400));
+      }
+      return next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/club/:clubMonthId/chat/voice
+ * Загрузить голосовое сообщение (multipart/form-data, поле "voice").
+ * Задача 4.12.
+ *
+ * Поля формы:
+ * - voice (файл .m4a, AAC) — обязательно
+ * - durationSec (число, 1..180) — обязательно
+ * - waveform (JSON-строка массива 40 чисел 0..100) — обязательно
+ * - replyToId — опционально
+ *
+ * ПРОДУКТОВОЕ ПРАВИЛО: голосовые отправляет ТОЛЬКО Анна (role=admin).
+ * Формат ведущей (разборы, ответы голосом), не общий чат участниц.
+ * Не-админ → 403 VOICE_ADMIN_ONLY.
+ *
+ * Поток:
+ * 1. uploadVoice принимает файл в память (лимит ~4 МБ).
+ * 2. Проверяем role=admin.
+ * 3. Проверяем mime (audio/mp4|m4a|aac).
+ * 4. Пишем файл: AUDIO_BASE_PATH/voice-messages/<userId>/<uuid>.m4a.
+ * 5. Создаём ChatMessage type=voice, voiceUrl = signed URL (TTL 1 час).
+ * 6. Эмитим chat:new_message.
+ *
+ * Apple 1.2 (UGC): голосовое — пользовательский контент, тот же report-флоу
+ * (жалоба + isHidden). Apple 5.1.2(iii): индикатор записи — на клиенте.
+ */
+router.post(
+  '/:clubMonthId/chat/voice',
+  resolveClubAccess,
+  uploadVoice.single('voice'),
+  async (req, res, next) => {
+    try {
+      if (!req.clubAccess.canPost) {
+        throw new AppError(
+          'FORBIDDEN',
+          'В архивном клубе нельзя отправлять сообщения',
+          403
+        );
+      }
+
+      // Только Анна-admin отправляет голосовые.
+      const author = await User.findById(req.user.userId)
+        .select('role')
+        .lean();
+      if (!author || author.role !== 'admin') {
+        throw new AppError(
+          'VOICE_ADMIN_ONLY',
+          'Голосовые сообщения может отправлять только ведущая клуба',
+          403
+        );
+      }
+
+      if (!req.file) {
+        throw new AppError('VALIDATION', 'Файл записи не передан', 400);
+      }
+
+      const ext = voiceService.ALLOWED_MIME.get(req.file.mimetype);
+      if (!ext) {
+        throw new AppError(
+          'VALIDATION',
+          'Недопустимый формат аудио. Ожидается m4a (AAC)',
+          400
+        );
+      }
+
+      // Длительность.
+      const durationSec = parseInt(req.body.durationSec, 10);
+      if (
+        !Number.isFinite(durationSec) ||
+        durationSec < 1 ||
+        durationSec > voiceService.MAX_DURATION_SEC
+      ) {
+        throw new AppError(
+          'VALIDATION',
+          `Длительность должна быть 1..${voiceService.MAX_DURATION_SEC} сек`,
+          400
+        );
+      }
+
+      // Waveform: JSON-строка массива из 40 чисел 0..100.
+      let waveform;
+      try {
+        waveform = JSON.parse(req.body.waveform);
+      } catch (_e) {
+        waveform = null;
+      }
+      if (
+        !Array.isArray(waveform) ||
+        waveform.length !== 40 ||
+        !waveform.every(
+          (n) => typeof n === 'number' && n >= 0 && n <= 100
+        )
+      ) {
+        throw new AppError(
+          'VALIDATION',
+          'waveform должен быть массивом из 40 чисел 0..100',
+          400
+        );
+      }
+
+      let replyToId = null;
+      if (req.body.replyToId) {
+        if (!mongoose.Types.ObjectId.isValid(req.body.replyToId)) {
+          throw new AppError('VALIDATION', 'Неверный replyToId', 400);
+        }
+        const parent = await ChatMessage.findById(req.body.replyToId)
+          .select('clubMonthId')
+          .lean();
+        if (!parent || !parent.clubMonthId.equals(req.club._id)) {
+          throw new AppError(
+            'NOT_FOUND',
+            'Сообщение для ответа не найдено в этом клубе',
+            404
+          );
+        }
+        replyToId = req.body.replyToId;
+      }
+
+      // Пишем файл на диск.
+      const dir = voiceService.voiceMessagesDir(req.user.userId);
+      await fs.promises.mkdir(dir, { recursive: true });
+      const fileName = voiceService.generateVoiceFileName();
+      const fullPath = path.join(dir, fileName);
+      await fs.promises.writeFile(fullPath, req.file.buffer);
+
+      const relPath = voiceService.relativeVoicePath(
+        req.user.userId,
+        fileName
+      );
+      const signedUrl = voiceService.generateVoiceSignedUrl(relPath);
+
+      const message = await ChatMessage.create({
+        clubMonthId: req.club._id,
+        userId: req.user.userId,
+        type: 'voice',
+        text: '',
+        voiceUrl: signedUrl,
+        voiceStoragePath: relPath,
+        voiceDurationSec: durationSec,
+        voiceWaveform: waveform,
+        replyToId,
+        mentions: [],
+      });
+
+      await ClubMonth.updateOne(
+        { _id: req.club._id },
+        { $inc: { messageCount: 1 } }
+      );
+
+      const populated = await findMessagePopulated(message._id);
+
+      const io = req.app.get('io');
+      emitToClub(io, req.club._id, 'chat:new_message', { message: populated });
+
+      return success(res, { message: populated }, 201);
+    } catch (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return next(
+            new AppError('VALIDATION', 'Запись слишком большая', 400)
+          );
+        }
+        return next(new AppError('VALIDATION', 'Ошибка загрузки записи', 400));
       }
       return next(err);
     }
