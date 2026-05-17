@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../services/club_api_service.dart';
+import 'voice_recorder.dart';
 
 /// Поле ввода чата клуба.
 ///
@@ -25,6 +26,10 @@ import '../services/club_api_service.dart';
 /// упомянуть (mentionable — обычно одна Анна). Фильтруется по тексту после
 /// '@'. Тап вставляет '@Имя ' и запоминает userId. onSend отдаёт текст +
 /// список userId реально упомянутых (чьё '@Имя' осталось в тексте).
+///
+/// Voice (4.12): если isAdmin && onSendVoice != null — рядом со скрепкой
+/// кнопка-микрофон (VoiceRecorder). В режиме записи занимает строку ввода.
+/// Только Анна-admin (продуктовое правило) — для остальных кнопки нет.
 class ChatInput extends StatefulWidget {
   const ChatInput({
     super.key,
@@ -34,6 +39,8 @@ class ChatInput extends StatefulWidget {
     required this.onSend,
     required this.onAttachImage,
     this.mentionable = const [],
+    this.isAdmin = false,
+    this.onSendVoice,
     this.mutedUntil,
     this.replyToName,
     this.replyToText,
@@ -51,6 +58,14 @@ class ChatInput extends StatefulWidget {
 
   /// Кого можно упомянуть через @ (обычно одна Анна). Пусто — автокомплита нет.
   final List<MentionableUser> mentionable;
+
+  /// Текущий юзер — админ (Анна). Только тогда показываем запись голосовых.
+  final bool isAdmin;
+
+  /// Колбэк отправки голосового (4.12): путь к .m4a, длительность, waveform.
+  /// null или !isAdmin → кнопки записи нет (правило: только Анна).
+  final void Function(String filePath, int durationSec, List<int> waveform)?
+      onSendVoice;
 
   /// Имя автора сообщения на которое отвечаем (null = не в режиме ответа).
   final String? replyToName;
@@ -199,6 +214,10 @@ class _ChatInputState extends State<ChatInput> {
     final showCounter = remaining <= 50;
     final isReplying = widget.replyToName != null;
     final suggestions = _filteredMentionable;
+
+    // Запись голосовых — только Анна-admin (продуктовое правило 4.12).
+    final canRecordVoice =
+        widget.isAdmin && widget.onSendVoice != null;
 
     return Container(
       decoration: BoxDecoration(
@@ -362,7 +381,16 @@ class _ChatInputState extends State<ChatInput> {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      _SendButton(enabled: _hasText, onTap: _handleSend),
+                      // Голосовое (4.12) — только Анна-admin. Когда нет
+                      // текста — показываем микрофон; как только Анна печатает
+                      // — заменяем на кнопку отправки текста (как в Telegram).
+                      if (canRecordVoice && !_hasText)
+                        VoiceRecorder(onSend: widget.onSendVoice!)
+                      else
+                        _SendButton(
+                          enabled: _hasText,
+                          onTap: _handleSend,
+                        ),
                     ],
                   ),
                 ],
