@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../models/chat_message.dart';
+import 'voice_player.dart';
 
 /// 6 разрешённых реакций. Должен совпадать с ALLOWED_REACTIONS
 /// в server/src/models/ChatMessage.js (белый список v5).
@@ -61,6 +62,7 @@ Widget buildMentionText(
 ///   onReplyTap (переход к оригиналу в chat_tab, с догрузкой контекста).
 /// - Edited badge — «изменено» после времени
 /// - @упоминания в тексте — подсвечены (buildMentionText), 4.9
+/// - Голосовое (type=voice) — VoicePlayer (play/pause + waveform), 4.12
 /// - Реакции — ряд чипов под bubble (эмодзи + счётчик, свои подсвечены)
 /// - isHighlighted — временная подсветка (после перехода к закрепу/reply),
 ///   снимается таймером в chat_tab. Жёлтая обводка поверх обычного bubble.
@@ -711,7 +713,7 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-/// Содержимое: текст (с подсветкой @упоминаний), заглушка voice.
+/// Содержимое: текст (с подсветкой @упоминаний), голосовое (VoicePlayer).
 /// Картинка рендерится в build напрямую (особый layout).
 class _MessageContent extends StatelessWidget {
   const _MessageContent({
@@ -742,19 +744,12 @@ class _MessageContent extends StatelessWidget {
         );
 
       case ChatMessageType.voice:
-        final secs = message.voiceDurationSec ?? 0;
-        final mm = (secs ~/ 60).toString().padLeft(1, '0');
-        final ss = (secs % 60).toString().padLeft(2, '0');
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.mic, size: 20, color: textColor),
-            const SizedBox(width: 8),
-            Text(
-              'Голосовое  $mm:$ss',
-              style: AppTypography.body.copyWith(color: textColor),
-            ),
-          ],
+        // 4.12 — реальный плеер голосового (play/pause + waveform).
+        return VoicePlayer(
+          url: message.voiceUrl ?? '',
+          durationSec: message.voiceDurationSec ?? 0,
+          waveform: message.voiceWaveform,
+          isMine: isMine,
         );
     }
   }
