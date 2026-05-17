@@ -1,34 +1,35 @@
 import 'dart:async';
-import 'dart:math' as math;
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 
-/// Кнопка записи голосового сообщения (задача 4.12).
+/// Виджет записи голосового сообщения (задача 4.12).
 ///
-/// ПРОДУКТОВОЕ ПРАВИЛО: показывается ТОЛЬКО Анне (role=admin) — родитель
-/// рендерит этот виджет лишь при isAdmin. Сама кнопка дополнительно ничего
-/// не проверяет (бэк всё равно отклонит не-админа с VOICE_ADMIN_ONLY).
+/// Показывается ТОЛЬКО Анне-admin (родитель решает, передавать ли его —
+/// см. chat_input). Продуктовое правило: голосовые отправляет только
+/// ведущая (разборы, ответы голосом).
 ///
-/// Поведение (как в Telegram, упрощённо — тап вместо hold):
-/// - Тап по микрофону → запрос разрешения (iOS, лениво — Apple 5.1.1(i)) →
-///   старт записи. AAC .m4a, 64 kbps, mono.
-/// - Во время записи: красная пульсирующая точка + таймер MM:SS
-///   (Apple 5.1.2(iii) — явный индикатор записи), кнопки «корзина» (отмена)
-///   и «отправить» (стоп + upload через onSend).
-/// - Автостоп на 180 сек (лимит бэка voiceService.MAX_DURATION_SEC).
-/// - Waveform: семплируем амплитуду каждые ~N мс, нормализуем в 40 значений
-///   0..100 (бэк требует ровно 40). Если семплов мало/много — ресемплим.
+/// Состояния:
+/// - свёрнут → круглая кнопка-микрофон (terracotta)
+/// - запись → красная пульсирующая точка + таймер MM:SS + кнопки
+///   «корзина» (отмена) и «отправить» (стоп + onSend)
 ///
-/// Разрешение микрофона: пакет record сам триггерит системный диалог при
-/// первом start(). NSMicrophoneUsageDescription уже в Info.plist.
+/// Запись: AAC в .m4a (AudioEncoder.aacLc, 64 kbps, mono, 44100) во временную
+/// директорию. Параллельно семплируем амплитуду каждые 200мс и строим
+/// waveform из 40 значений 0..100 (как ожидает бэк).
+///
+/// Apple 5.1.2(iii): во время записи виден явный индикатор (красная точка +
+/// таймер) — пользователь всегда понимает что идёт запись.
+///
+/// Лимит — 180 сек (совпадает с MAX_DURATION_SEC на бэке). На 180 сек
+/// автостоп с автоотправкой.
 class VoiceRecorder extends StatefulWidget {
   const VoiceRecorder({super.key, required this.onSend});
 
-  /// Вызывается когда запись завершена и подтверждена отправка.
-  /// (filePath .m4a, durationSec, waveform 40×[0..100]).
+  /// Вызывается при отправке: путь к файлу .m4a, длительность сек, waveform[40].
   final void Function(String filePath, int durationSec, List<int> waveform)
       onSend;
 
@@ -40,37 +41,31 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
   final AudioRecorder _recorder = AudioRecorder();
 
   bool _isRecording = false;
-  bool _isBusy = false; // идёт старт/стоп — блокируем повторные тапы
   int _elapsedSec = 0;
   Timer? _ticker;
+  Timer? _ampSampler;
+  String? _filePath;
 
-  /// Накопленные амплитуды (raw), потом ресемплим в 40 значений.
+  /// Сырые амплитуды (0..1), собираем каждые 200мс, потом ресемплим в 40.
   final List<double> _amplitudes = [];
-  Timer? _ampTimer;
 
-  static const int _maxSec = 180; // = voiceService.MAX_DURATION_SEC
+  static const int _maxSec = 180;
 
   @override
   void dispose() {
     _ticker?.cancel();
-    _ampTimer?.cancel();
+    _ampSampler?.cancel();
     _recorder.dispose();
     super.dispose();
   }
 
   Future<void> _start() async {
-    if (_isBusy || _isRecording) return;
-    setState(() => _isBusy = true);
-
     try {
-      final hasPermission = await _recorder.hasPermission();
-      if (!hasPermission) {
+      final hasPerm = await _recorder.hasPermission();
+      if (!hasPerm) {
         if (mounted) {
-          setState(() => _isBusy = false);
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-              'Нет доступа к микрофону. Разрешите в настройках iOS',
-            ),
+            content: Text('Нет доступа к микрофону. Разрешите в настройках'),
             backgroundColor: AppColors.error,
           ));
         }
@@ -78,7 +73,7 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
       }
 
       final dir = await getTemporaryDirectory();
-      final filePath =
+      final path =
           '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
       await _recorder.start(
@@ -88,27 +83,28 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
           numChannels: 1,
           sampleRate: 44100,
         ),
-        path: filePath,
+        path: path,
       );
 
+      _filePath = path;
       _amplitudes.clear();
       _elapsedSec = 0;
 
+      setState(() => _isRecording = true);
+
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (!mounted) return;
         setState(() => _elapsedSec++);
         if (_elapsedSec >= _maxSec) {
           _stopAndSend();
         }
       });
 
-      // Семплируем амплитуду ~5 раз/сек для waveform.
-      _ampTimer = Timer.periodic(
+      _ampSampler = Timer.periodic(
         const Duration(milliseconds: 200),
         (_) async {
           try {
             final amp = await _recorder.getAmplitude();
-            // amp.current в дБ (отрицательное, ~ -60..0). Нормализуем 0..1.
+            // amp.current в дБ (отрицательное, ~-60..0). Нормируем в 0..1.
             final db = amp.current;
             final norm = ((db + 60) / 60).clamp(0.0, 1.0);
             _amplitudes.add(norm);
@@ -117,81 +113,60 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
           }
         },
       );
-
+    } catch (e) {
       if (mounted) {
-        setState(() {
-          _isRecording = true;
-          _isBusy = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _isBusy = false;
-          _isRecording = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Не удалось начать запись'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Не удалось начать запись: $e'),
           backgroundColor: AppColors.error,
         ));
       }
     }
   }
 
-  /// Привести накопленные амплитуды к ровно 40 значениям 0..100.
+  /// Ресемпл собранных амплитуд в ровно 40 значений 0..100 (как ждёт бэк).
+  /// Если семплов мало — растягиваем; много — усредняем по корзинам.
   List<int> _buildWaveform() {
     const target = 40;
     if (_amplitudes.isEmpty) {
-      return List<int>.filled(target, 8); // плоская линия-заглушка
+      return List<int>.filled(target, 6); // плоская линия-минимум
     }
-    final src = _amplitudes;
-    final out = <int>[];
+    final result = <int>[];
+    final n = _amplitudes.length;
     for (var i = 0; i < target; i++) {
-      // Усредняем «корзину» исходных семплов на каждый из 40 баров.
-      final startF = i * src.length / target;
-      final endF = (i + 1) * src.length / target;
-      final start = startF.floor();
-      final end = math.max(start + 1, endF.ceil()).clamp(0, src.length);
+      final start = (i * n / target).floor();
+      final end = ((i + 1) * n / target).ceil().clamp(start + 1, n);
       double sum = 0;
-      var cnt = 0;
-      for (var j = start; j < end && j < src.length; j++) {
-        sum += src[j];
-        cnt++;
+      for (var j = start; j < end; j++) {
+        sum += _amplitudes[j];
       }
-      final avg = cnt > 0 ? sum / cnt : 0.0;
-      // Лёгкий «пол», чтобы тихие места не были нулевыми барами.
-      final v = (avg * 100).clamp(0, 100).round();
-      out.add(v < 6 ? 6 : v);
+      final avg = sum / (end - start);
+      // Минимальный пол 6 чтобы бары были видны даже на тишине.
+      result.add((avg * 100).round().clamp(6, 100));
     }
-    return out;
+    return result;
   }
 
   Future<void> _stopAndSend() async {
-    if (_isBusy || !_isRecording) return;
-    setState(() => _isBusy = true);
-
     _ticker?.cancel();
-    _ampTimer?.cancel();
+    _ampSampler?.cancel();
 
+    final duration = _elapsedSec;
     String? path;
     try {
       path = await _recorder.stop();
     } catch (_) {
-      path = null;
+      path = _filePath;
     }
 
-    final duration = _elapsedSec;
-    final waveform = _buildWaveform();
+    setState(() {
+      _isRecording = false;
+      _elapsedSec = 0;
+    });
 
-    if (mounted) {
-      setState(() {
-        _isRecording = false;
-        _isBusy = false;
-        _elapsedSec = 0;
-      });
-    }
-
-    if (path == null || duration < 1) {
+    if (path == null) return;
+    // Слишком короткая запись — игнорируем (защита от случайного тапа).
+    if (duration < 1) {
+      _safeDelete(path);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Запись слишком короткая'),
@@ -201,30 +176,36 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
       return;
     }
 
-    widget.onSend(path, duration, waveform);
+    widget.onSend(path, duration, _buildWaveform());
   }
 
   Future<void> _cancel() async {
-    if (_isBusy || !_isRecording) return;
-    setState(() => _isBusy = true);
     _ticker?.cancel();
-    _ampTimer?.cancel();
+    _ampSampler?.cancel();
+    String? path;
     try {
-      await _recorder.stop();
-    } catch (_) {}
-    if (mounted) {
-      setState(() {
-        _isRecording = false;
-        _isBusy = false;
-        _elapsedSec = 0;
-      });
+      path = await _recorder.stop();
+    } catch (_) {
+      path = _filePath;
     }
+    if (path != null) _safeDelete(path);
+    setState(() {
+      _isRecording = false;
+      _elapsedSec = 0;
+    });
   }
 
-  String _fmt(int s) {
-    final mm = (s ~/ 60).toString().padLeft(2, '0');
-    final ss = (s % 60).toString().padLeft(2, '0');
-    return '$mm:$ss';
+  void _safeDelete(String path) {
+    try {
+      final f = File(path);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {/* не критично */}
+  }
+
+  String _fmt(int sec) {
+    final m = (sec ~/ 60).toString();
+    final s = (sec % 60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override
@@ -236,7 +217,7 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
-          onTap: _isBusy ? null : _start,
+          onTap: _start,
           child: const SizedBox(
             width: 44,
             height: 44,
@@ -250,19 +231,21 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
       );
     }
 
-    // Состояние записи: красная точка + таймер + отмена/отправить.
+    // Состояние записи — занимает строку ввода.
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
         color: AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(24),
       ),
       child: Row(
         children: [
+          // Отмена (корзина).
           IconButton(
             icon: const Icon(Icons.delete_outline, color: AppColors.error),
-            onPressed: _isBusy ? null : _cancel,
-            tooltip: 'Отменить',
+            onPressed: _cancel,
+            tooltip: 'Отменить запись',
           ),
           // Пульсирующая красная точка — индикатор записи (Apple 5.1.2(iii)).
           const _RecDot(),
@@ -282,16 +265,18 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
             ),
           ),
           const SizedBox(width: 8),
+          // Отправить (стоп + onSend).
           Material(
             color: AppColors.terracotta,
             shape: const CircleBorder(),
             child: InkWell(
               customBorder: const CircleBorder(),
-              onTap: _isBusy ? null : _stopAndSend,
+              onTap: _stopAndSend,
               child: const SizedBox(
                 width: 40,
                 height: 40,
-                child: Icon(Icons.send, size: 20, color: Colors.white),
+                child: Icon(Icons.arrow_upward,
+                    size: 20, color: Colors.white),
               ),
             ),
           ),
@@ -301,7 +286,7 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
   }
 }
 
-/// Пульсирующая красная точка — визуальный индикатор активной записи.
+/// Пульсирующая красная точка — индикатор активной записи.
 class _RecDot extends StatefulWidget {
   const _RecDot();
 
@@ -311,10 +296,16 @@ class _RecDot extends StatefulWidget {
 
 class _RecDotState extends State<_RecDot>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 800),
-  )..repeat(reverse: true);
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+  }
 
   @override
   void dispose() {
@@ -325,12 +316,12 @@ class _RecDotState extends State<_RecDot>
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
-      opacity: Tween<double>(begin: 0.3, end: 1.0).animate(_c),
+      opacity: Tween(begin: 0.35, end: 1.0).animate(_c),
       child: Container(
         width: 12,
         height: 12,
         decoration: const BoxDecoration(
-          color: Color(0xFFE53935),
+          color: AppColors.error,
           shape: BoxShape.circle,
         ),
       ),
