@@ -41,26 +41,15 @@ dependencies:
   # (продуктовое правило). Требует NSMicrophoneUsageDescription в Info.plist.
   # Воспроизведение — через just_audio (выше, не дублируем).
   #
-  # ВАЖНО (конфликт версий): record 5.1.x по умолчанию тянет свежий
-  # record_linux 0.7.2, который реализует НЕ ту версию RecordPlatform что
-  # требует подтянутый record_platform_interface → сборка iOS падает
-  # "RecordLinux is missing implementations". record_linux на iOS не нужен
-  # вовсе (Linux-реализация), но Flutter компилирует весь граф зависимостей.
-  # Лечится фиксацией точных совместимых версий + dependency_overrides ниже.
-  record: 5.1.2
+  # Примечание: на этой версии возможен конфликт транзитивного record_linux
+  # с record_platform_interface при сборке iOS. Точные совместимые версии
+  # подбираются по выводу `flutter pub deps` (без угадывания номеров).
+  record: ^5.1.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
-
-# Принудительная фиксация транзитивных зависимостей record под Flutter 3.22.3.
-# record_linux 0.7.1 реализует тот же интерфейс, что и закреплённый
-# record_platform_interface 1.0.4 → "missing implementations" исчезает.
-# record_darwin — нативная iOS-реализация (её и используем фактически).
-dependency_overrides:
-  record_linux: 0.7.1
-  record_platform_interface: 1.0.4
 
 flutter:
   uses-material-design: true
