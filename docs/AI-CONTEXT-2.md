@@ -22,9 +22,9 @@
 
 **НЕ подтверждено отдельно юзером** (написано и в `main`, но юзер на этом тесте явно не называл — НЕ значит «сломано», значит «не верифицировано вручную»): 4.9 mentions автокомплит @, 4.10 закрепы long-press, 4.11 read receipts, real-time после диалогов/табов, поведение под участницей (нет микрофона/закрепа). Бэк всех этих фич стабилен; фронт написан по тем же паттернам что прошли тест. Рекомендуется добегать этот чек-лист при следующем заходе в чат, но Фаза 4 считается функционально завершённой (ключевые тяжёлые фичи — голосовые и фото — подтверждены).
 
-**Следующее:** опционально Фаза 5 (ИИ-дневник 5.1-5.3) → покупка Apple Dev Account ($99) → Фаза 1.3 (Apple Sign In) + 1.8 (guest mode) вместе → Фаза 3 (платежи) → Фаза 6 (полировка, вкл push — фича #8 чата) → Фаза 7 (TestFlight).
+**Следующее:** 1.8 (guest mode, бэк+фронт) + Flutter-сторона Apple Sign In (часть 1.7) → Фаза 5 (ИИ-дневник 5.1-5.3) → Фаза 3 (платежи) → Фаза 6 (полировка) → Фаза 7 (TestFlight). **Бэкенд 1.3 (Apple Sign In) — ✅ ГОТОВ 11.06.2026** (коммит `bcb3df1`, см. секцию «APPLE-АККАУНТ ЗАРЕГИСТРИРОВАН + ЗАДАЧА 1.3»).
 
-**Блокеры:** без изменений (см. AI-CONTEXT.md). Apple Dev — решения по аккаунту согласованы (см. секцию «РЕШЕНИЯ ПО APPLE DEVELOPER АККАУНТУ»), ждёт фактической регистрации Анной. 1.8 критично перед Фазой 7.
+**Блокеры:** **Apple Dev аккаунт — ✅ ЗАРЕГИСТРИРОВАН 11.06.2026** (Individual/ИП Hanna Busel; разработчик добавлен Admin; App ID `app.chitatel.ios` + Sign in with Apple; запись приложения создана; DSA на проверке; Team ID `3GS6F87RKZ`). 1.8 (guest mode) критично перед Фазой 7.
 
 ---
 
@@ -141,9 +141,39 @@
 
 ---
 
-## АКТУАЛЬНЫЕ sha ФАЙЛОВ (всё в `main` на 19.05.2026)
+## APPLE-АККАУНТ ЗАРЕГИСТРИРОВАН + ЗАДАЧА 1.3 APPLE SIGN IN — 11.06.2026
 
-**Бэкенд (4.12 + всё предыдущее):**
+### Apple Developer аккаунт — ОФОРМЛЕН (портал, действия юзера под Анной)
+Пройдено вместе с юзером в этой сессии (раньше плана — пункт 8.2 закрыт):
+- **Тип — Individual/Sole Proprietor**, продавец **Hanna Busel** (ИП Грузия, ID 302269391, рег. 09.03.2023, юр-адрес Tbilisi, Chugureti, Iv. Javakhishvili str. N91). Соглашение о бесплатных приложениях активно (10.06.2026–07.06.2027).
+- **Разработчик добавлен как Admin** (App Store Connect → Users and Access, под своим Apple ID, не под паролем Анны). Account-Holder-only за Анной: Paid Apps agreement, Request access к App Store Connect API (для Codemagic), продление членства.
+- **App ID `app.chitatel.ios`** зарегистрирован (developer.apple.com → Identifiers), capabilities: **Sign in with Apple**, Push Notifications, Associated Domains. Apple Pay НЕ ставили (для цифровых подписок нужен IAP, не Apple Pay). **Team ID: `3GS6F87RKZ`**.
+- **Запись приложения «Читатель»** создана в App Store Connect (Bundle ID app.chitatel.ios, язык русский, SKU chitatel-ios-001). Метаданные/скриншоты/цены НЕ заполнялись — Фаза 7.
+- **DSA (EU trader status)** подан: статус «продавец/трейдер» + контакты ИП, загружена выписка из реестра ИП. Статус «на проверке» (27 стран ЕС). Контакты публичны на странице ЕС; телефон/почту юзер уточняет с Анной (правятся в любой момент: Business → DSA → Edit, верификация по коду).
+- Не делать сейчас (свои фазы): App Store Connect API-ключ для Codemagic (Фаза 7; Request access — Анна), Paid Apps + IAP + Small Business 15% (Фаза 3, Анна), APNs `.p8` (Фаза 6).
+- ⚠️ **Машина для сборки** — см. секцию «РЕШЕНИЯ ПО СБОРКЕ И МАШИНЕ»: 2017 MBP не поднимет Xcode 26, релиз через Codemagic. Аккаунт рабочий, не хватает только сборочной машины (Codemagic закрывает).
+
+### Задача 1.3 Apple Sign In (бэкенд) — ✅ ГОТОВ (коммит `bcb3df1`)
+Разблокирована регистрацией аккаунта. Серверная верификация по MASTER 7.4 / 12.1 / 6.1#1.
+- **`server/src/services/apple-auth.service.js`** (новый) — `authenticateWithApple({ identityToken, fullName })`: `appleSignin.verifyIdToken(identityToken, { audience: config.apple.clientId })` через Apple JWKS (глобальный fetch Node 20), извлечение `sub`→appleUserId и `email`, поиск/создание User, выдача JWT. Зеркало `google-auth.service.js`.
+  - email приходит ТОЛЬКО при первой авторизации и может отсутствовать (private relay скрыт) → при отсутствии поле email НЕ пишется (иначе конфликт sparse unique индекса). При наличии email — линк к существующему аккаунту (email/google).
+  - `fullName` приходит от клиента ТОЛЬКО при первой авторизации (в identityToken имени нет).
+- **`server/src/routes/auth.js`** — добавлен `POST /api/auth/apple` (Zod: identityToken required; authorizationCode/fullName optional). authorizationCode в теле принимается, но обмен кода НЕ делаем (для MVP не требуется, .p8-ключ не нужен). Невалидный токен → `AUTH_APPLE_FAILED` (401).
+- **`server/package.json`** — `+ apple-signin-auth ^2.0.0` (CommonJS, Node ≥18; версия и API verifyIdToken проверены перед написанием — уроки #21/#22).
+- User-схема НЕ менялась (`appleUserId` unique sparse + `authProvider:'apple'` уже были).
+- Синтаксис обоих файлов проверен `node --check` ✅. **Тест end-to-end — только на реальном устройстве через TestFlight (1.8/Фаза 7):** Apple Sign In в симуляторе не работает; локально проверяется лишь верификация (невалидный токен → 401).
+- ⚠️ **Юзеру на сервере:** `cd ~/Chitatel_app/server && npm install` (поставить apple-signin-auth) перед `npm run dev`.
+
+---
+
+## АКТУАЛЬНЫЕ sha ФАЙЛОВ (всё в `main`)
+
+**Auth / задача 1.3 (коммит `bcb3df1`, 11.06.2026):**
+- `server/src/services/apple-auth.service.js` — `9b1ed173e8c88b124a267ae7f194edf14dba5a3a` (новый: Apple Sign In, verifyIdToken JWKS, зеркало google-сервиса)
+- `server/src/routes/auth.js` — обновлён, +`POST /api/auth/apple` (коммит `bcb3df1`)
+- `server/package.json` — обновлён, +`apple-signin-auth ^2.0.0` (коммит `bcb3df1`)
+
+**Бэкенд (4.12 + всё предыдущее, на 19.05.2026):**
 - `server/src/routes/club.js` — `16137589b3078ec9f7d028190b4b495b92d4746c` (context + mentionable + sanitizeMentions + pin + read + `POST /chat/voice` + антиобход type=voice)
 - `server/src/models/ChatMessage.js` — `4811ac13ae233903f050bc92ede44093d0381d74` (v5 + imageStoragePath + voiceStoragePath)
 - `server/src/services/voice.service.js` — `c937715cda3c48c1993f22978a81f759b64b2e5e` (ALLOWED_MIME audio/mp4|m4a|aac→m4a, MAX_DURATION_SEC=180, MAX 4МБ, generateVoiceSignedUrl /audio/→/voice/)
@@ -169,7 +199,7 @@
 
 ## ХРОНОЛОГИЯ КОММИТОВ (Фаза 4 чат, все в `main`)
 
-Бэк 4.9/4.10/4.11: `aaa7a8d`. Фронт 4.9/4.10/4.11: `252aefb`(endpoints) `933bca0`(api+MentionableUser) `3b50dc8`(chat_input автокомплит @, СИГНАТУРА onSend→(text,mentions)) `cd4bbc4`(bubble @подсветка+Закрепить) `37e6fd9`(chat_tab интеграция). Real-time фикс: `49b5b41`. Бэк 4.12: `3057645`(voice.service) `e2694a4`(routes/voice) `ee7367b`(app.js) `0b64f78`(club.js POST /chat/voice) `6017ab5`(ChatMessage +voiceStoragePath). Фронт 4.12: `a95f5b2`(api sendVoiceMessage) `6ef83c4`→`6640d63`(endpoints) `4875b87`/`db8a1c4`(voice_player) `5054bd2`(bubble VoicePlayer) `53324f5`(chat_input кнопка) `f7d2e7f`(chat_tab _sendVoice) `4f8a92c`(Info.plist). Фикс record: `814a7e9`(битый override — откачен) `611bd26`(откат override) `c8bb44d`(record ^4.4.4) `b1ecc01`(voice_recorder под 4.x). Layout-фикс: `d3be72a`(voice_recorder +колбэк) `c5f5d17`(chat_input Expanded при записи). Контекст-файлы: `743d854`(создан AI-CONTEXT-2.md).
+Бэк 4.9/4.10/4.11: `aaa7a8d`. Фронт 4.9/4.10/4.11: `252aefb`(endpoints) `933bca0`(api+MentionableUser) `3b50dc8`(chat_input автокомплит @, СИГНАТУРА onSend→(text,mentions)) `cd4bbc4`(bubble @подсветка+Закрепить) `37e6fd9`(chat_tab интеграция). Real-time фикс: `49b5b41`. Бэк 4.12: `3057645`(voice.service) `e2694a4`(routes/voice) `ee7367b`(app.js) `0b64f78`(club.js POST /chat/voice) `6017ab5`(ChatMessage +voiceStoragePath). Фронт 4.12: `a95f5b2`(api sendVoiceMessage) `6ef83c4`→`6640d63`(endpoints) `4875b87`/`db8a1c4`(voice_player) `5054bd2`(bubble VoicePlayer) `53324f5`(chat_input кнопка) `f7d2e7f`(chat_tab _sendVoice) `4f8a92c`(Info.plist). Фикс record: `814a7e9`(битый override — откачен) `611bd26`(откат override) `c8bb44d`(record ^4.4.4) `b1ecc01`(voice_recorder под 4.x). Layout-фикс: `d3be72a`(voice_recorder +колбэк) `c5f5d17`(chat_input Expanded при записи). Контекст-файлы: `743d854`(создан AI-CONTEXT-2.md). Apple Sign In 1.3: `bcb3df1`(apple-auth.service + POST /api/auth/apple + apple-signin-auth).
 
 ---
 
@@ -178,7 +208,8 @@
 ### Запуск после правок
 ```bash
 cd ~/Chitatel_app && git pull origin main
-cd server && npm run dev          # рестарт если новые роуты (4.12 voice — да)
+cd server && npm install           # ⚠️ ПОСЛЕ 1.3: поставить apple-signin-auth (новая зависимость)
+cd server && npm run dev          # рестарт если новые роуты (1.3 apple — да)
 cd ../app && flutter run          # только Dart-правки → можно 'R' (hot restart) если уже запущен
 ```
 `pod install` нужен ТОЛЬКО при смене нативных пакетов (был нужен при добавлении record; чисто Dart-правки layout-фикса — НЕ нужен). НЕ делать `flutter clean`.
@@ -214,7 +245,7 @@ Seed: `cd ~/Chitatel_app/server && npm run seed:club`.
 
 **#20 ⚠️ КОНТЕКСТ-ФАЙЛ РАЗРОС — ДЕЛИТЬ, НЕ ПЕРЕПИСЫВАТЬ (17.05.2026):** при превышении ~50KB AI-CONTEXT.md заводится AI-CONTEXT-2.md (продолжение). Первый файл НЕ редактируется (стабильный фундамент-архив), прогресс фиксируется во втором. AI читает оба по порядку. Юзер должен добавить упоминание второго файла в Project Instructions проекта Claude (инструкция о роли — там, не в репо; файла CHAT-INSTRUCTION.md в репо нет).
 
-**#21 ⚠️ НЕ УГАДЫВАТЬ ВЕРСИИ ПАКЕТОВ (17.05.2026):** Claude выдумал `record_platform_interface 1.0.4` (не существует) в dependency_overrides — `pub get` упал. Нарушение правила «не угадывать». Правильно: либо цельный пакет без под-зависимостей (перешли на `record 4.x`), либо подбор по фактическому выводу `flutter pub get`/`flutter pub deps`. Признал ошибку, откатил, исправил по фактам.
+**#21 ⚠️ НЕ УГАДЫВАТЬ ВЕРСИИ ПАКЕТОВ (17.05.2026):** Claude выдумал `record_platform_interface 1.0.4` (не существует) в dependency_overrides — `pub get` упал. Нарушение правила «не угадывать». Правильно: либо цельный пакет без под-зависимостей (перешли на `record 4.x`), либо подбор по фактическому выводу `flutter pub get`/`flutter pub deps`. Признал ошибку, откатил, исправил по фактам. **(11.06: при 1.3 версия `apple-signin-auth@2.0.0` и API проверены через npm registry + установку перед написанием — урок применён.)**
 
 **#22 ⚠️ API ПАКЕТА МЕНЯЕТСЯ МЕЖДУ МАЖОРАМИ:** record 5.x (`AudioRecorder()`, `RecordConfig`, `sampleRate`) ≠ record 4.x (`Record()`, параметры в `start()`, `samplingRate`). При смене мажорной версии пакета — переписать вызовы под фактический API целевой версии, не копировать вслепую.
 
@@ -222,7 +253,7 @@ Seed: `cd ~/Chitatel_app/server && npm run seed:club`.
 
 **#24 ⚠️ ПРИЧИНА БАГА ИЗ СТЕКТРЕЙСА, НЕ ИЗ ДОГАДКИ (17.05.2026):** layout-баг и конфликт record — оба раза причина установлена из фактического вывода (стектрейс до файла:строки / текст ошибки pub), потом фикс. Подтверждает урок #17.
 
-**#25 ⚠️ ИНФРАСТРУКТУРНЫЕ/ВЛАДЕЛЬЧЕСКИЕ ВОПРОСЫ — РАЗДЕЛЯТЬ ДОСТУП И ВЛАДЕНИЕ (19.05.2026):** при вопросах «на кого аккаунт / дать пароль» — не сводить к «дай пароль». Активы проекта (Apple/домен/сервер) на владельце (Анна/ИП), разработчику — делегированный техдоступ (App Store Connect Users&Access; Namecheap Share Access; SSH-ключ на Contabo). «Дать пароль и поменять» = передача владения + ломается о 2FA + против ToS. Факты по Apple/Namecheap проверены web-поиском по офиц.докам, не по памяти; подписи панелей меняются — проверять на момент деплоя.
+**#25 ⚠️ ИНФРАСТРУКТУРНЫЕ/ВЛАДЕЛЬЧЕСКИЕ ВОПРОСЫ — РАЗДЕЛЯТЬ ДОСТУП И ВЛАДЕНИЕ (19.05.2026):** при вопросах «на кого аккаунт / дать пароль» — не сводить к «дай пароль». Активы проекта (Apple/домен/сервер) на владельце (Анна/ИП), разработчику — делегированный техдоступ (App Store Connect Users&Access; Namecheap Share Access; SSH-ключ на Contabo). «Дать пароль и поменять» = передача владения + ломается о 2FA + против ToS. Факты по Apple/Namecheap проверены web-поиском по офиц.докам, не по памяти; подписи панелей меняются — проверять на момент деплоя. **(11.06 применено: разработчик добавлен Admin под своим Apple ID, Account-Holder-only осталось за Анной.)**
 
 **#26 ⚠️ СВЕРЯТЬ ФАКТИЧЕСКИЕ ХАРАКТЕРИСТИКИ ЖЕЛЕЗА, НЕ ВЕРИТЬ СТАРОЙ ЗАПИСИ (11.06.2026):** в контексте машина значилась как «MacBook Pro 2018», по факту оказался **2017** (13″, 2×TB3, i5 2.3GHz, 8GB) — а это разные миры по поддержке macOS (2017 упирается в Ventura, 2018 тянет до Sequoia). Из-за разницы менялся весь вывод про сборку: на 2017 Xcode 26 локально не поставить вообще → App Store/TestFlight только через облачный CI. Перед инфраструктурными решениями уточнять реальную под-модель/год/RAM у юзера (Apple-меню → «Об этом Mac»), а Apple-требования (минимальный Xcode/SDK, совместимость macOS, цены сервисов) проверять web-поиском по официальным источникам, не по памяти. См. секцию «РЕШЕНИЯ ПО СБОРКЕ И МАШИНЕ».
 
@@ -238,7 +269,7 @@ Seed: `cd ~/Chitatel_app/server && npm run seed:club`.
 
 - **Плеер Маленького Принца:** `PlatformException(-11800)` AVFoundation iOS на сетевой MP3, вероятно баг симулятора. Отложено до физустройства/VPS. Test ID `6a0347c62598cd8bc4f96df8`, bookSlug `malenkii_princ`.
 - **Сборка/релиз (toolchain):** машина 2017 не поднимет Xcode 26 → App Store/TestFlight только через облачный CI **Codemagic** (бесплатно 500 мин/мес, без карты не спишут, подпись через App Store Connect API key). Подробности — секция «РЕШЕНИЯ ПО СБОРКЕ И МАШИНЕ». Нужно к Фазе 7, сейчас НЕ делать. Mac mini M1 (~$350–450) — апгрейд при упоре в потолок разработки.
-- **Задача 1.8 «Гостевой режим»** — критично перед Фазой 7 (Apple 5.1.1(v)), делать с 1.3 когда Apple Dev.
+- **Задача 1.8 «Гостевой режим»** — критично перед Фазой 7 (Apple 5.1.1(v)). Бэкенд 1.3 готов + Apple Dev оформлен → 1.8 можно делать, следующий код-кандидат (бэк+фронт).
 - **Чек-лист 4.9/4.10/4.11/real-time/участница** — не верифицирован отдельно (см. секцию выше). Не блокер, добегать при следующем заходе в чат.
 - **Вопросы к Анне:** 6.1 (пакеты «Достоевский» эксклюзив?/2.5.5), 8.1 (отзывы в v1?/6.9), 8.2 (когда Apple Dev $99? — РЕШЕНИЯ ПО АККАУНТУ согласованы 19.05, см. секцию «РЕШЕНИЯ ПО APPLE DEVELOPER АККАУНТУ»; памятка Анне готова; ждёт фактической регистрации/решения о дате покупки), 8.3 (когда MP3 остальных разборов?), 8.5 (когда Анна активно отвечает в чате?/релиз), NEW (обложка клуба как книга или арт?/схема ClubMonth+переключатель).
 - **Визуальный переключатель клубов** — не дорабатывать пока Анна не ответит про обложку/название клуба.
@@ -262,4 +293,4 @@ Seed: `cd ~/Chitatel_app/server && npm run seed:club`.
 
 ---
 
-*Обновлён: 11.06.2026. Продолжение AI-CONTEXT.md (тот разросся 52KB, не редактируется). **Фаза 4 ЗАВЕРШЕНА И ПРОТЕСТИРОВАНА**: бэк+фронт 4.1-4.12 ✅ в main, голосовые (4.12) и фото (4.6) подтверждены тестом юзера, layout-баг исправлен. 4.9/4.10/4.11/real-time не верифицированы отдельно (не блокер, чек-лист в файле). **РЕШЕНИЯ ПО APPLE DEVELOPER АККАУНТУ (вопрос 8.2): Individual/ИП, отдельный Apple ID, разработчик через Users&Access роль Admin, Small Business на Фазе 3; памятка Анне готова.** **НОВОЕ 11.06: РЕШЕНИЯ ПО СБОРКЕ И МАШИНЕ (toolchain) — машина уточнена как MacBook Pro 13″ 2017 (потолок Ventura; Xcode 26 локально не встанет → App Store/TestFlight только через облачный CI Codemagic, бесплатно 500 мин/мес, без карты не спишут, подпись через App Store Connect API key); Mac mini M1 как апгрейд при упоре в потолок; цены/условия Codemagic и требования Apple проверены по офиц.источникам. Правка 2018→2017 в РАБОЧАЯ СРЕДА. Урок #26.** Уроки #20-26. Прогресс фиксировать далее ТОЛЬКО здесь.*
+*Обновлён: 11.06.2026. Продолжение AI-CONTEXT.md (тот разросся 52KB, не редактируется). **Фаза 4 ЗАВЕРШЕНА И ПРОТЕСТИРОВАНА**: бэк+фронт 4.1-4.12 ✅ в main, голосовые (4.12) и фото (4.6) подтверждены тестом юзера, layout-баг исправлен. 4.9/4.10/4.11/real-time не верифицированы отдельно (не блокер, чек-лист в файле). **РЕШЕНИЯ ПО APPLE DEVELOPER АККАУНТУ (вопрос 8.2): Individual/ИП, отдельный Apple ID, разработчик через Users&Access роль Admin, Small Business на Фазе 3; памятка Анне готова.** **НОВОЕ 11.06: РЕШЕНИЯ ПО СБОРКЕ И МАШИНЕ (toolchain) — машина уточнена как MacBook Pro 13″ 2017 (потолок Ventura; Xcode 26 локально не встанет → App Store/TestFlight только через облачный CI Codemagic, бесплатно 500 мин/мес, без карты не спишут, подпись через App Store Connect API key); Mac mini M1 как апгрейд при упоре в потолок; цены/условия Codemagic и требования Apple проверены по офиц.источникам. Правка 2018→2017 в РАБОЧАЯ СРЕДА. Урок #26.** **НОВОЕ 11.06 (часть 2): Apple Dev аккаунт ЗАРЕГИСТРИРОВАН (Individual/ИП Hanna Busel; разработчик Admin; App ID app.chitatel.ios + Sign in with Apple; запись приложения; DSA на проверке; Team ID 3GS6F87RKZ). Задача 1.3 Apple Sign In (бэкенд) ✅ ГОТОВА — коммит bcb3df1 (apple-auth.service.js + POST /api/auth/apple + apple-signin-auth ^2.0.0). Юзеру: npm install на сервере. Тест 1.3 — на устройстве (Фаза 7).** Уроки #20-26. Прогресс фиксировать далее ТОЛЬКО здесь.*
