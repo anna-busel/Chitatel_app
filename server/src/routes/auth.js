@@ -5,6 +5,7 @@ const { requireAuth } = require('../middleware/auth');
 const { success } = require('../utils/response');
 const authService = require('../services/auth.service');
 const googleAuthService = require('../services/google-auth.service');
+const appleAuthService = require('../services/apple-auth.service');
 
 const router = Router();
 
@@ -35,6 +36,12 @@ const googleSchema = z.object({
   idToken: z.string().min(1, 'Google ID token обязателен'),
 });
 
+const appleSchema = z.object({
+  identityToken: z.string().min(1, 'Apple identity token обязателен'),
+  authorizationCode: z.string().optional(),
+  fullName: z.string().max(100, 'Имя максимум 100 символов').optional(),
+});
+
 /**
  * POST /api/auth/register
  * MASTER 7.4: { email, password, name } → { accessToken, refreshToken, user }
@@ -56,6 +63,20 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
   try {
     const result = await authService.login(req.body);
     return success(res, result);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/auth/apple
+ * MASTER 7.4: { identityToken, authorizationCode, fullName } → { accessToken, refreshToken, user, isNewUser }
+ */
+router.post('/apple', validate(appleSchema), async (req, res, next) => {
+  try {
+    const result = await appleAuthService.authenticateWithApple(req.body);
+    const statusCode = result.isNewUser ? 201 : 200;
+    return success(res, result, statusCode);
   } catch (err) {
     return next(err);
   }
