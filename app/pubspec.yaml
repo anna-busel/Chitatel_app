@@ -18,6 +18,24 @@ dependencies:
   dio: ^5.4.0
   flutter_secure_storage: ^9.0.0
   google_sign_in: ^6.2.1
+  # — Apple Sign In (задача 1.7 / бэкенд 1.3) —
+  # sign_in_with_apple: вход через Apple ID на iOS. Отдаёт identityToken,
+  # который бэкенд (POST /api/auth/apple) верифицирует через Apple JWKS.
+  # fullName (givenName + familyName) приходит ТОЛЬКО при первой авторизации.
+  #
+  # Версия 6.1.x (НЕ 7.x/8.x): 8.0.0 требует Flutter 3.41+; 7.x таргетит
+  # Swift 6 (Xcode 16). Машина проекта — Xcode 15.2, Flutter 3.22.3. Ветка
+  # 6.1.x: min Flutter 3.19.0, поддерживает Xcode 15 И 16 (6.1.3 — «Support
+  # Xcode 16 in addition to all previously supported versions»). Поэтому
+  # ^6.1.4 = >=6.1.4 <7.0.0 — остаётся в Xcode-15-совместимой ветке (та же
+  # логика пиннинга что у record ^4.4.4 и just_audio ^0.9.40).
+  #
+  # ВАЖНО: в Xcode добавить capability «Sign in with Apple» (Runner → Targets
+  # → Runner → Signing & Capabilities → +), иначе вход падает без визуальной
+  # ошибки. App ID в портале уже с этой capability (Team 3GS6F87RKZ,
+  # app.chitatel.ios). Тест Apple Sign In — только на реальном устройстве
+  # (в симуляторе не работает), Фаза 7 / TestFlight.
+  sign_in_with_apple: ^6.1.4
   url_launcher: ^6.2.6
   # — Аудиоплеер (задача 2.7) —
   # Версии зафиксированы: latest несовместим с Flutter 3.22.3
