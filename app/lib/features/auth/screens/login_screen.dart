@@ -79,12 +79,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 textColor: Colors.white,
                 icon: const Icon(Icons.apple, color: Colors.white, size: 20),
                 enabled: _gdprChecked,
+                loading: authState.status == AuthStatus.loading,
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Будет доступно после подключения Apple Developer Account'),
-                    ),
-                  );
+                  ref.read(authProvider.notifier).signInWithApple();
                 },
               ),
               const SizedBox(height: 10),
