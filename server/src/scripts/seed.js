@@ -8,12 +8,12 @@
  * Что делает:
  * 1. Подключается к MongoDB (config.mongoUri)
  * 2. Очищает коллекции Book и Package (скрипт идемпотентный — можно гонять повторно)
- * 3. Читает reader-bot-catalog.json (42 книги + 6 пакетов)
- * 4. Вставляет 42 платных разбора + 3 бесплатных (Alice/EatPrayLove/Маленький принц)
+ * 3. Читает reader-bot-catalog.json (54 разбора + 10 пакетов)
+ * 4. Вставляет 54 платных разбора + 3 бесплатных (Alice/EatPrayLove/Маленький принц)
  *    — Маленький принц получает 6 частей с реальными аудиофайлами (задача 2.3)
- * 5. Вставляет 6 пакетов, сопоставляя bookSlugs → ObjectId уже вставленных книг
+ * 5. Вставляет 10 пакетов, сопоставляя bookSlugs → ObjectId уже вставленных книг
  *
- * Цены BYN → USD по Apple Price Tier (ближайший Tier вниз для юзер-френдли цены).
+ * Цены: priceUsd берётся из каталога (округлён под ценовые точки Apple .99); bynToUsd — фоллбек.
  * coverImageUrl указывает на Flutter-ассеты (app/assets/book-covers/{slug}.png).
  * audioFilename у большинства книг пустой — аудио пришлёт Анна позже.
  *
@@ -47,6 +47,10 @@ function bynToUsd(byn) {
 // --- Обложки пакетов: slug из JSON → имя файла в app/assets/book-covers/ ---
 
 const packageCoverFilenames = {
+  paket_woman: 'paket_woman',
+  paket_love_rel: 'paket_love_rel',
+  paket_goals_ach: 'paket_goals_ach',
+  paket_understand_yourself: 'paket_understand_yourself',
   facultativ_dostoevsky: 'facultativ_dostoevsky',
   facultativ_nabokov: 'facultativ_nabokov',
   facultativ_children: 'facultativ_children_classics',
@@ -132,7 +136,7 @@ function mapPaidBook(src) {
     categories: src.categories || [],
     tags: src.targetThemes || [],
 
-    priceUsd: bynToUsd(src.priceByn),
+    priceUsd: src.priceUsd != null ? src.priceUsd : bynToUsd(src.priceByn),
     priceRub: null,
     priceByn: src.priceByn,
     isFree: false,
@@ -215,7 +219,7 @@ async function mapPackage(src, bookSlugToId) {
     books: bookIds,
     bookSlugs: src.booksInPackage,
 
-    priceUsd: bynToUsd(src.priceByn),
+    priceUsd: src.priceUsd != null ? src.priceUsd : bynToUsd(src.priceByn),
     priceRub: src.priceRub || null,
     priceByn: src.priceByn,
 
