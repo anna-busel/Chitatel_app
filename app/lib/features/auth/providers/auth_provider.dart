@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../../../core/storage/secure_storage.dart';
 import '../services/auth_service.dart';
 
@@ -152,6 +153,69 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Apple Sign In (MASTER 6.1 #1, 7.4).
+  ///
+  /// Получаем у Apple identityToken + (при первой авторизации) имя, шлём на
+  /// бэкенд POST /api/auth/apple, который верифицирует токен через Apple JWKS.
+  /// Имя Apple отдаёт ТОЛЬКО один раз — собираем из givenName + familyName.
+  ///
+  /// Требует capability «Sign in with Apple» в Xcode (Runner → Signing &
+  /// Capabilities). Не работает в симуляторе — тест на реальном устройстве.
+  Future<void> signInWithApple() async {
+    state = state.copyWith(status: AuthStatus.loading);
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      final identityToken = credential.identityToken;
+      if (identityToken == null) {
+        state = state.copyWith(
+          status: AuthStatus.error,
+          errorMessage: 'Не удалось получить Apple token',
+        );
+        return;
+      }
+
+      // Имя приходит только при первой авторизации. Собираем полное имя из
+      // givenName + familyName; если оба пусты — fullName = null.
+      final nameParts = [credential.givenName, credential.familyName]
+          .where((p) => p != null && p.isNotEmpty)
+          .cast<String>()
+          .toList();
+      final fullName = nameParts.isEmpty ? null : nameParts.join(' ');
+
+      final data = await _authService.appleSignIn(
+        identityToken: identityToken,
+        fullName: fullName,
+      );
+      await _saveAuthData(data);
+      state = state.copyWith(
+        status: AuthStatus.authenticated,
+        user: data['user'],
+        isNewUser: data['isNewUser'] ?? false,
+      );
+    } on SignInWithAppleAuthorizationException catch (e) {
+      // Пользователь отменил вход — молча возвращаемся в гостевой режим.
+      if (e.code == AuthorizationErrorCode.canceled) {
+        state = state.copyWith(status: AuthStatus.guest);
+        return;
+      }
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: _parseError(e),
+      );
+    } catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: _parseError(e),
+      );
+    }
+  }
+
   /// Войти как гость (кнопка «Пропустить»)
   void enterAsGuest() {
     state = state.copyWith(status: AuthStatus.guest);
@@ -174,7 +238,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// Сохранить токены + флаг прохождения онбординга.
   ///
   /// onboarding_seen=true ставим при любой успешной авторизации (email/google/
-  /// register/гость), иначе router.redirect будет кидать обратно на /login,
+  /// apple/register/гость), иначе router.redirect будет кидать обратно на /login,
   /// даже если пользователь авторизован. См. app_router.dart → redirect.
   Future<void> _saveAuthData(Map<String, dynamic> data) async {
     await _storage.saveTokens(
