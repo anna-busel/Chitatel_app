@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'routes.dart';
 import '../../shared/widgets/app_bottom_bar.dart';
+import '../../shared/widgets/guest_gate.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/constants/app_spacing.dart';
@@ -102,16 +103,29 @@ final routerProvider = Provider<GoRouter>((ref) {
               child: CatalogScreen(),
             ),
           ),
+          // Клуб требует аккаунт (контент по подписке) — гостю показываем
+          // приглашение войти (GuestGate, задача 1.8). Авторизованному — клуб.
           GoRoute(
             path: Routes.club,
             pageBuilder: (context, state) => const NoTransitionPage(
-              child: ClubScreen(),
+              child: GuestGate(
+                title: 'Клуб',
+                message:
+                    'Войдите, чтобы присоединиться к клубу: разборы, чат и ответы Анны.',
+                child: ClubScreen(),
+              ),
             ),
           ),
+          // Профиль требует аккаунт — гостю приглашение войти (задача 1.8).
           GoRoute(
             path: Routes.profile,
             pageBuilder: (context, state) => const NoTransitionPage(
-              child: _Placeholder('Профиль'),
+              child: GuestGate(
+                title: 'Профиль',
+                message:
+                    'Войдите, чтобы открыть профиль, дневник и историю покупок.',
+                child: _Placeholder('Профиль'),
+              ),
             ),
           ),
         ],
