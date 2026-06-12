@@ -11,7 +11,7 @@ import '../providers/auth_provider.dart';
 /// Экран входа (MASTER 4.2).
 ///
 /// 3 кнопки: Apple (чёрная, первая), Google (белая), Email (серая).
-/// Чекбокс GDPR. Кнопка «Пропустить».
+/// Чекбокс GDPR. Кнопка «Продолжить без регистрации» (гостевой режим, 1.8).
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -190,7 +190,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
               const Spacer(),
 
-              // Пропустить
+              // Продолжить без регистрации (гостевой режим — Apple 5.1.1(v)).
+              // Заметная опция: бесплатные разборы и каталог доступны без аккаунта.
               GestureDetector(
                 onTap: () async {
                   ref.read(authProvider.notifier).enterAsGuest();
@@ -201,9 +202,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Text(
-                    'Пропустить',
+                    'Продолжить без регистрации',
                     style: AppTypography.body.copyWith(
-                      color: AppColors.textTertiary,
+                      color: AppColors.terracotta,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
