@@ -52,6 +52,27 @@ class AuthService {
     return response.data['data'];
   }
 
+  /// POST /api/auth/apple
+  /// {identityToken, fullName?} → {accessToken, refreshToken, user, isNewUser}
+  ///
+  /// Бэкенд (server/src/services/apple-auth.service.js) верифицирует
+  /// identityToken через Apple JWKS, извлекает sub→appleUserId и email
+  /// (email может отсутствовать — private relay). fullName передаём ТОЛЬКО
+  /// при первой авторизации (Apple отдаёт имя один раз; в самом токене его нет).
+  Future<Map<String, dynamic>> appleSignIn({
+    required String identityToken,
+    String? fullName,
+  }) async {
+    final response = await _apiClient.dio.post(
+      ApiEndpoints.apple,
+      data: {
+        'identityToken': identityToken,
+        if (fullName != null && fullName.isNotEmpty) 'fullName': fullName,
+      },
+    );
+    return response.data['data'];
+  }
+
   /// POST /api/auth/forgot-password
   /// {email} → {message}
   Future<void> forgotPassword({required String email}) async {
