@@ -13,6 +13,7 @@ const imageRoutes = require('./routes/images');
 const voiceRoutes = require('./routes/voice');
 const progressRoutes = require('./routes/progress');
 const clubRoutes = require('./routes/club');
+const purchaseRoutes = require('./routes/purchases');
 const adminRoutes = require('./routes/admin');
 
 const app = express();
@@ -44,6 +45,7 @@ app.use('/api/packages', packageRoutes);
 app.use('/api/home', homeRoutes);
 app.use('/api/progress', progressRoutes);
 app.use('/api/club', clubRoutes);
+app.use('/api/purchases', purchaseRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Audio streaming (на корне, не под /api — это стриминг файлов, не JSON API)
