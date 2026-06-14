@@ -9,26 +9,24 @@ const Package = require('../models/Package');
 const Purchase = require('../models/Purchase');
 
 /**
- * Сервис верификации покупок Apple (задача 3.3).
+ * Сервис верификации покупок Apple (задачи 3.3 + 3.4).
  *
- * Flutter после покупки через StoreKit 2 получает подписанную транзакцию (JWS)
- * и шлёт её на POST /api/purchases/verify. Здесь мы:
- *   1. Проверяем подпись Apple через @apple/app-store-server-library;
- *   2. Записываем/обновляем Purchase (идемпотентно по originalTransactionId);
- *   3. Обновляем права доступа в User (подписка / архив / разбор / пакет).
+ * verifyPurchase — для POST /api/purchases/verify (покупка из приложения).
+ * applyTransaction — общая логика (upsert Purchase + обновление прав User),
+ *   переиспользуется webhook-сервисом (S2S-уведомления Apple).
+ * getVerifier — общий SignedDataVerifier (тоже нужен webhook-сервису).
  *
  * Маппинг productId → право живёт в mapProduct() — единственное место, где
  * «знают» про конкретные тарифы. Смена состава тарифов меняет только его.
  *
  * ⚠️ Для реальной работы нужны (Фаза 7 / деплой): корневые сертификаты Apple
  * PKI (config.apple.rootCertsPath) и верный bundleId/environment. Без них
- * verifyPurchase бросает PURCHASE_VERIFICATION_UNAVAILABLE (503). Локально
- * проверяется только синтаксис; end-to-end — через sandbox.
+ * getVerifier бросает PURCHASE_VERIFICATION_UNAVAILABLE (503).
  */
 
 // @apple/app-store-server-library — CommonJS (main: dist/index.js), require ок.
-// Грузим лениво: если пакет ещё не установлен, сервер всё равно стартует —
-// ошибка прилетит только при первом вызове верификации.
+// Грузим лениво: сервер стартует даже без npm install — ошибка прилетит
+// только при первом вызове верификации.
 let appleLib = null;
 function getAppleLib() {
   if (!appleLib) {
@@ -114,32 +112,28 @@ function getVerifier() {
 }
 
 /**
- * Верифицирует подписанную транзакцию Apple (JWS) и обновляет права юзера.
- * @param {{ userId: string, signedTransaction: string }} args
- * @returns {Promise<object>} сводка по подписке/покупкам пользователя
+ * Применяет декодированную транзакцию Apple к пользователю:
+ * upsert Purchase + обновление прав. Используется и при покупке (verify),
+ * и при S2S-уведомлениях (webhook).
+ * @param {{ userId: string, decodedTransaction: object, statusOverride?: string|null }} args
+ *   statusOverride — форсит статус ('expired' | 'refunded' | 'cancelled') для webhook.
+ * @returns {Promise<object>} обновлённый документ User
  */
-async function verifyPurchase({ userId, signedTransaction }) {
-  const verifier = getVerifier();
-
-  let payload;
-  try {
-    payload = await verifier.verifyAndDecodeTransaction(signedTransaction);
-  } catch (err) {
-    logger.warn('Apple transaction verification failed', { message: err.message });
-    throw new AppError('PURCHASE_INVALID', 'Не удалось проверить покупку', 400);
-  }
-
-  const productId = payload.productId;
-  const originalTransactionId = payload.originalTransactionId || payload.transactionId;
+async function applyTransaction({ userId, decodedTransaction, statusOverride = null }) {
+  const tx = decodedTransaction;
+  const productId = tx.productId;
+  const originalTransactionId = tx.originalTransactionId || tx.transactionId;
   if (!productId || !originalTransactionId) {
     throw new AppError('PURCHASE_INVALID', 'Некорректные данные транзакции', 400);
   }
 
   const mapped = mapProduct(productId);
-  const expiresAt = payload.expiresDate ? new Date(payload.expiresDate) : null;
-  const isActive = expiresAt ? expiresAt.getTime() > Date.now() : true;
+  const expiresAt = tx.expiresDate ? new Date(tx.expiresDate) : null;
+  const activeByDate = expiresAt ? expiresAt.getTime() > Date.now() : true;
+  const status = statusOverride || (activeByDate ? 'active' : 'expired');
+  const revoked = status === 'refunded' || status === 'cancelled';
+  const active = status === 'active';
 
-  // 1. Запись/обновление Purchase (идемпотентно по originalTransactionId).
   await Purchase.findOneAndUpdate(
     { transactionId: originalTransactionId },
     {
@@ -150,23 +144,22 @@ async function verifyPurchase({ userId, signedTransaction }) {
         platform: 'apple',
         appleProductId: productId,
         expiresAt,
-        status: isActive ? 'active' : 'expired',
+        status,
       },
       $setOnInsert: {
-        purchasedAt: payload.purchaseDate ? new Date(payload.purchaseDate) : new Date(),
+        purchasedAt: tx.purchaseDate ? new Date(tx.purchaseDate) : new Date(),
       },
     },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
 
-  // 2. Обновление прав пользователя.
   const user = await User.findById(userId);
   if (!user) {
     throw new AppError('USER_NOT_FOUND', 'Пользователь не найден', 404);
   }
 
   if (mapped.itemType === 'subscription') {
-    user.subscriptionStatus = isActive
+    user.subscriptionStatus = active
       ? (SUBSCRIPTION_TIER_ENUM.includes(mapped.tier) ? mapped.tier : 'basic')
       : 'expired';
     user.subscriptionPlan = SUBSCRIPTION_PLAN_ENUM.includes(mapped.period)
@@ -175,20 +168,50 @@ async function verifyPurchase({ userId, signedTransaction }) {
     user.subscriptionExpiresAt = expiresAt;
     user.subscriptionOriginalTransactionId = originalTransactionId;
   } else if (mapped.itemType === 'archive') {
-    user.hasArchiveAccess = true;
+    user.hasArchiveAccess = !revoked;
   } else if (mapped.itemType === 'book') {
     const book = await Book.findOne({ bookSlug: mapped.itemId }).select('_id').lean();
-    if (book && !user.purchasedBooks.some((id) => id.equals(book._id))) {
-      user.purchasedBooks.push(book._id);
+    if (book) {
+      const has = user.purchasedBooks.some((id) => id.equals(book._id));
+      if (revoked && has) {
+        user.purchasedBooks = user.purchasedBooks.filter((id) => !id.equals(book._id));
+      } else if (!revoked && !has) {
+        user.purchasedBooks.push(book._id);
+      }
     }
   } else if (mapped.itemType === 'package') {
     const pkg = await Package.findOne({ packageSlug: mapped.itemId }).select('_id').lean();
-    if (pkg && !user.purchasedPackages.some((id) => id.equals(pkg._id))) {
-      user.purchasedPackages.push(pkg._id);
+    if (pkg) {
+      const has = user.purchasedPackages.some((id) => id.equals(pkg._id));
+      if (revoked && has) {
+        user.purchasedPackages = user.purchasedPackages.filter((id) => !id.equals(pkg._id));
+      } else if (!revoked && !has) {
+        user.purchasedPackages.push(pkg._id);
+      }
     }
   }
 
   await user.save();
+  return user;
+}
+
+/**
+ * Верифицирует подписанную транзакцию Apple (JWS) и обновляет права юзера.
+ * @param {{ userId: string, signedTransaction: string }} args
+ * @returns {Promise<object>} сводка по подписке/покупкам пользователя
+ */
+async function verifyPurchase({ userId, signedTransaction }) {
+  const verifier = getVerifier();
+
+  let tx;
+  try {
+    tx = await verifier.verifyAndDecodeTransaction(signedTransaction);
+  } catch (err) {
+    logger.warn('Apple transaction verification failed', { message: err.message });
+    throw new AppError('PURCHASE_INVALID', 'Не удалось проверить покупку', 400);
+  }
+
+  const user = await applyTransaction({ userId, decodedTransaction: tx });
 
   return {
     subscriptionStatus: user.subscriptionStatus,
@@ -200,4 +223,4 @@ async function verifyPurchase({ userId, signedTransaction }) {
   };
 }
 
-module.exports = { verifyPurchase, mapProduct };
+module.exports = { verifyPurchase, applyTransaction, getVerifier, mapProduct };
