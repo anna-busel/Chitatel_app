@@ -139,6 +139,13 @@ class ApiEndpoints {
   /// Body: { questionText } (5-500 символов)
   static String clubQa(String clubMonthId) => '/club/$clubMonthId/qa';
 
+  // — Платежи (задача 3.2 клиент / 3.3 сервер) —
+
+  /// POST /api/purchases/verify — верификация покупки Apple.
+  /// Body: { signedTransaction } (JWS из StoreKit 2).
+  /// Возвращает обновлённую сводку прав пользователя.
+  static const String purchasesVerify = '/purchases/verify';
+
   // — Health —
   static const String health = '/health';
 }
