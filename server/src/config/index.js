@@ -17,9 +17,29 @@ const config = {
 
   apple: {
     clientId: process.env.APPLE_CLIENT_ID || 'app.chitatel.ios',
+    // bundleId для верификации чеков (совпадает с App ID / clientId)
+    bundleId:
+      process.env.APPLE_BUNDLE_ID ||
+      process.env.APPLE_CLIENT_ID ||
+      'app.chitatel.ios',
     teamId: process.env.APPLE_TEAM_ID || '',
     keyId: process.env.APPLE_KEY_ID || '',
     privateKeyPath: process.env.APPLE_PRIVATE_KEY_PATH || '',
+
+    // Верификация покупок / App Store Server API (задача 3.3).
+    // issuerId/keyId/ключ — из App Store Connect → Users and Access →
+    // Integrations → In-App Purchase (роль Admin, заказывает Анна, Фаза 7).
+    issuerId: process.env.APPLE_ISSUER_ID || '',
+    // Числовой Apple ID приложения (App Store Connect → App Information).
+    // Обязателен для Production-верификации; в sandbox можно пусто.
+    appAppleId: process.env.APPLE_APP_APPLE_ID
+      ? parseInt(process.env.APPLE_APP_APPLE_ID, 10)
+      : null,
+    // 'sandbox' | 'production'
+    environment: process.env.APPLE_ENVIRONMENT || 'sandbox',
+    // Папка с корневыми сертификатами Apple PKI (.cer/.pem) для проверки подписи.
+    // Скачать: https://www.apple.com/certificateauthority/ (Apple Root CA).
+    rootCertsPath: process.env.APPLE_ROOT_CERTS_PATH || '',
   },
 
   google: {
