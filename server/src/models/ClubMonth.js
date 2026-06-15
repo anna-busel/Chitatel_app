@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
  * Клуб месяца — главная сущность Фазы 4.
  *
  * Один месяц = одна книга. Каждое 1-е число стартует новый клуб,
- * предыдущий уходит в архив. Доступ к архивному клубу — 21 день
+ * предыдущий уходит в архив. Доступ к архивному клубу — 31 день
  * после endsAt для пользователей чья подписка истекла (см. MASTER 4.37).
  *
  * Связь с Book:
@@ -55,7 +55,7 @@ const clubMonthSchema = new mongoose.Schema(
     // Расписание клуба
     startsAt: { type: Date, required: true },
     endsAt: { type: Date, required: true },
-    archiveUntilDate: { type: Date, required: true }, // endsAt + 21 день
+    archiveUntilDate: { type: Date, required: true }, // endsAt + 31 день
 
     // Расписание открытия частей (если пусто — все части доступны со старта)
     partSchedule: { type: [partScheduleSchema], default: [] },
