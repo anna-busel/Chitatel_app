@@ -36,7 +36,7 @@ dependencies:
   # app.chitatel.ios). Тест Apple Sign In — только на реальном устройстве
   # (в симуляторе не работает), Фаза 7 / TestFlight.
   sign_in_with_apple: ^6.1.4
-  url_launcher: ^6.2.6
+  url_launcher: ^6.3.1
   # — Аудиоплеер (задача 2.7) —
   # Версии зафиксированы: latest несовместим с Flutter 3.22.3
   # just_audio 0.10+ ломает API стримов; audio_service 0.19+ требует Flutter 3.27+
@@ -68,6 +68,7 @@ dependencies:
   # конфликта на 3.22.3. API записи отличается (класс Record(), см.
   # voice_recorder.dart) — учтено.
   record: ^4.4.4
+  in_app_purchase: ^3.2.0
 
 dev_dependencies:
   flutter_test:
