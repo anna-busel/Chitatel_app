@@ -19,12 +19,26 @@ class LoginScreen extends ConsumerStatefulWidget {
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
+/// Какой способ входа сейчас выполняется — чтобы спиннер крутился только
+/// на нажатой кнопке, а не на всех сразу (статус loading в auth общий).
+enum _PendingMethod { none, apple, google }
+
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _gdprChecked = false;
+  _PendingMethod _pending = _PendingMethod.none;
 
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
+
+    // Когда auth перестал грузиться (успех/ошибка/гость) — сбрасываем,
+    // чтобы спиннер не завис на кнопке.
+    if (authState.status != AuthStatus.loading &&
+        _pending != _PendingMethod.none) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _pending = _PendingMethod.none);
+      });
+    }
 
     ref.listen<AuthState>(authProvider, (prev, next) {
       if (next.status == AuthStatus.authenticated) {
@@ -43,6 +57,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
       }
     });
+
+    final isLoading = authState.status == AuthStatus.loading;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -79,8 +95,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 textColor: Colors.white,
                 icon: const Icon(Icons.apple, color: Colors.white, size: 20),
                 enabled: _gdprChecked,
-                loading: authState.status == AuthStatus.loading,
+                loading: isLoading && _pending == _PendingMethod.apple,
                 onPressed: () {
+                  setState(() => _pending = _PendingMethod.apple);
                   ref.read(authProvider.notifier).signInWithApple();
                 },
               ),
@@ -103,8 +120,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                 ),
                 enabled: _gdprChecked,
-                loading: authState.status == AuthStatus.loading,
+                loading: isLoading && _pending == _PendingMethod.google,
                 onPressed: () {
+                  setState(() => _pending = _PendingMethod.google);
                   ref.read(authProvider.notifier).signInWithGoogle();
                 },
               ),
