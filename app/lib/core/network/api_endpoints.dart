@@ -1,16 +1,25 @@
 /// Все URL эндпоинтов API.
 /// Источник: MASTER.md секция 7.4
 ///
-/// Базовый URL меняется при деплое на VPS.
-/// Для локальной разработки: http://localhost:3000/api
+/// Базовый хост берётся из переменной сборки API_BASE.
+/// По умолчанию — прод (https://api.chitatel.app).
+/// Для локальной разработки против сервера на маке:
+///   flutter run --dart-define=API_BASE=http://localhost:3000
 class ApiEndpoints {
   ApiEndpoints._();
 
-  // Базовый URL — пока localhost, позже https://api.chitatel.app
-  static const String baseUrl = 'http://localhost:3000/api';
+  // Базовый хост сервера. По умолчанию — прод. Переопределяется при сборке:
+  //   flutter run --dart-define=API_BASE=http://localhost:3000
+  static const String _host = String.fromEnvironment(
+    'API_BASE',
+    defaultValue: 'https://api.chitatel.app',
+  );
+
+  // Базовый URL с /api — для REST-запросов.
+  static const String baseUrl = '$_host/api';
 
   // Базовый URL без /api — для Socket.io (он подключается к корню).
-  static const String socketBaseUrl = 'http://localhost:3000';
+  static const String socketBaseUrl = _host;
 
   // — Auth —
   static const String register = '/auth/register';
