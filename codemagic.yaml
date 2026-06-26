@@ -7,7 +7,8 @@ workflows:
       flutter: 3.22.3
       xcode: latest
       cocoapods: default
-      groups: []
+      groups:
+        - appstore_credentials
       vars:
         APP_STORE_APPLE_ID: 6779357856
         BUNDLE_ID: app.chitatel.ios
