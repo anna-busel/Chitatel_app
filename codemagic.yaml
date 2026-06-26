@@ -7,12 +7,10 @@ workflows:
       flutter: 3.22.3
       xcode: latest
       cocoapods: default
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: app.chitatel.ios
       groups: []
       vars:
         APP_STORE_APPLE_ID: 6779357856
+        BUNDLE_ID: app.chitatel.ios
     integrations:
       app_store_connect: chitatel-key
     scripts:
@@ -24,6 +22,19 @@ workflows:
         working_directory: app
         script: |
           find . -name "Podfile" -execdir pod install \;
+      - name: Fetch signing files
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+      - name: Set up signing certificate
+        script: |
+          keychain initialize
+          app-store-connect certificates list \
+            --type IOS_DISTRIBUTION \
+            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            --save || keychain add-certificates
+          keychain add-certificates
       - name: Set up code signing settings on Xcode project
         working_directory: app
         script: |
