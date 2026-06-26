@@ -19,6 +19,7 @@ import '../../features/book/screens/book_screen.dart';
 import '../../features/search/screens/search_screen.dart';
 import '../../features/player/screens/player_screen.dart';
 import '../../features/player/widgets/mini_player.dart';
+import '../../features/payments/screens/paywall_screen.dart';
 
 // — Key для ShellRoute navigator —
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -171,7 +172,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.paywall,
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _Placeholder('Тарифы'),
+        builder: (context, state) => const PaywallScreen(),
       ),
       GoRoute(
         path: Routes.notifications,
