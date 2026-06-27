@@ -87,6 +87,11 @@ Widget buildMentionText(
 /// - «Удалить» (своим)
 /// - «Закрепить»/«Открепить» (только админ — Анна, 4.10)
 /// - «Пожаловаться» (чужим)
+///
+/// Клавиатура (как в Telegram): при долгом тапе клавиатура закрывается ДО
+/// показа меню (иначе при последующем диалоге «Удалить?» клавиатура дёргано
+/// анимируется на фоне). Если действие — «Ответить», после закрытия меню
+/// фокус возвращается в поле ввода (продолжаешь печатать ответ).
 class ChatMessageBubble extends StatelessWidget {
   const ChatMessageBubble({
     super.key,
@@ -364,15 +369,35 @@ class ChatMessageBubble extends StatelessWidget {
   }
 
   /// Long-press меню в стиле Telegram: всплывает по центру с анимацией
-  /// увеличения (scale + fade), фон затемняется и размывается. Ряд из 6
-  /// эмодзи-реакций сверху (крупные), ниже — действия. Не выезжает снизу
-  /// (showModalBottomSheet), а появляется как контекстное меню.
-  void _showActionMenu(BuildContext context, bool isMine) {
+  /// увеличения (scale + fade), фон затемняется. Ряд из 6 эмодзи-реакций
+  /// сверху (крупные), ниже — действия.
+  ///
+  /// Клавиатура: если она была открыта — закрываем ДО показа меню (иначе при
+  /// последующем диалоге «Удалить?» клавиатура дёргано анимируется на фоне).
+  /// Запоминаем факт «была открыта» в wasKeyboardOpen. После закрытия меню,
+  /// если выбрано «Ответить» (replyChosen) и клавиатура была открыта —
+  /// возвращаем фокус в поле ввода (продолжаешь печатать ответ, как в Telegram).
+  Future<void> _showActionMenu(BuildContext context, bool isMine) async {
     final canEdit = isMine &&
         onEdit != null &&
         message.type != ChatMessageType.voice;
 
-    showGeneralDialog<void>(
+    // Была ли открыта клавиатура (есть активный фокус с виртуальной клавой).
+    final wasKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+    final primaryFocus = FocusManager.instance.primaryFocus;
+
+    // Закрываем клавиатуру до показа меню — убирает дёрганье на фоне диалогов.
+    if (wasKeyboardOpen) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      // Ждём, пока клавиатура уедет, чтобы меню всплывало на спокойном фоне.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    }
+    if (!context.mounted) return;
+
+    // Флаг: выбрали «Ответить» — тогда после меню вернём фокус (клавиатуру).
+    var replyChosen = false;
+
+    await showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Меню сообщения',
@@ -386,7 +411,10 @@ class ChatMessageBubble extends StatelessWidget {
           isAdmin: isAdmin,
           canEdit: canEdit,
           onReactionTap: onReactionTap,
-          onReply: onReply,
+          onReply: () {
+            replyChosen = true;
+            onReply?.call();
+          },
           onEdit: onEdit,
           onDelete: onDelete,
           onReport: onReport,
@@ -405,6 +433,12 @@ class ChatMessageBubble extends StatelessWidget {
         );
       },
     );
+
+    // После закрытия меню: если выбрали «Ответить» и клавиатура была открыта —
+    // возвращаем фокус (клавиатура снова появляется, продолжаешь печатать).
+    if (replyChosen && wasKeyboardOpen && primaryFocus != null) {
+      primaryFocus.requestFocus();
+    }
   }
 }
 
