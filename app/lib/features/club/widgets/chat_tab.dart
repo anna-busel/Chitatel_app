@@ -27,6 +27,11 @@ import 'pinned_message_banner.dart';
 /// Real-time через Socket.io (singleton-провайдер; виджет не рвёт сокет в
 /// dispose — урок #16).
 ///
+/// Отправка (как в Telegram): своё сообщение вставляется в ленту СРАЗУ из
+/// ответа POST (sendTextMessage возвращает готовое сообщение с реальным id),
+/// лента прокручивается вниз. WS-эхо с тем же id отсекается дедупликацией
+/// по id в _onSocketEvent. Так нет «резкого появления» с задержкой.
+///
 /// 4.9 mentions: при @ в инпуте — автокомплит mentionable (Анна). Упомянутые
 /// userId уходят на бэк, в bubble @имя подсвечено. 4.10 закреп: у админа в
 /// меню «Закрепить»/«Открепить». 4.11 read: видимые сообщения батчем в markRead.
@@ -107,6 +112,28 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   /// родителя остаётся «Сообщение удалено» — это отдельный снапшот.
   Iterable<ChatMessage> _notDeleted(Iterable<ChatMessage> src) =>
       src.where((m) => !m.isDeleted);
+
+  /// Вставить своё только что отправленное сообщение в начало ленты (index 0 =
+  /// низ при reverse:true) и прокрутить вниз. Если такое id уже есть (WS успел
+  /// прийти раньше ответа POST) — не дублируем. Как в Telegram: сообщение
+  /// появляется мгновенно, без ожидания WS-эха.
+  void _insertOwnMessage(ChatMessage message) {
+    if (_messages.any((m) => m.id == message.id)) return;
+    setState(() {
+      _messages.insert(0, message);
+    });
+    // Прокрутка к низу (свежее сообщение), плавно.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+    _scheduleMarkRead();
+  }
 
   Future<void> _bootstrap() async {
     try {
@@ -438,18 +465,22 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   }
 
   /// Отправка текста. mentions — userId упомянутых через @ (из chat_input).
+  /// Оптимистично: вставляем результат POST сразу (sendTextMessage возвращает
+  /// готовое сообщение с реальным id), WS-эхо отсечётся дедупликацией по id.
   Future<void> _sendMessage(String text, List<String> mentions) async {
     if (text.trim().isEmpty) return;
     final replyId = _replyingTo?.id;
+    if (mounted) _cancelReply();
     try {
       final api = ref.read(clubApiServiceProvider);
-      await api.sendTextMessage(
+      final sent = await api.sendTextMessage(
         clubMonthId: widget.club.id,
         text: text.trim(),
         replyToId: replyId,
         mentions: mentions,
       );
-      if (mounted) _cancelReply();
+      if (!mounted) return;
+      _insertOwnMessage(sent);
     } on DioException catch (e) {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
@@ -482,14 +513,17 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     final replyId = _replyingTo?.id;
     try {
       final api = ref.read(clubApiServiceProvider);
-      await api.sendVoiceMessage(
+      final sent = await api.sendVoiceMessage(
         clubMonthId: widget.club.id,
         filePath: filePath,
         durationSec: durationSec,
         waveform: waveform,
         replyToId: replyId,
       );
-      if (mounted) _cancelReply();
+      if (mounted) {
+        _cancelReply();
+        _insertOwnMessage(sent);
+      }
     } on DioException catch (e) {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
@@ -860,13 +894,16 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     final replyId = _replyingTo?.id;
     try {
       final api = ref.read(clubApiServiceProvider);
-      await api.sendImageMessage(
+      final sent = await api.sendImageMessage(
         clubMonthId: widget.club.id,
         filePath: filePath,
         caption: caption,
         replyToId: replyId,
       );
-      if (mounted) _cancelReply();
+      if (mounted) {
+        _cancelReply();
+        _insertOwnMessage(sent);
+      }
     } on DioException catch (e) {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
@@ -1010,64 +1047,73 @@ class _ChatTabState extends ConsumerState<ChatTab> {
           Expanded(
             child: Stack(
               children: [
-                _messages.isEmpty
-                    ? _EmptyChat()
-                    : ListView.builder(
-                        controller: _scrollController,
-                        reverse: true,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        itemCount:
-                            _messages.length + (_isLoadingMore ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          if (_isLoadingMore && index == _messages.length) {
-                            return const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 16),
-                              child: Center(
-                                child: SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.terracotta,
+                // Тап по области списка закрывает клавиатуру (как в Telegram).
+                // translucent — чтобы тапы по сообщениям/кнопкам тоже работали.
+                GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => FocusScope.of(context).unfocus(),
+                  child: _messages.isEmpty
+                      ? _EmptyChat()
+                      : ListView.builder(
+                          controller: _scrollController,
+                          reverse: true,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          itemCount:
+                              _messages.length + (_isLoadingMore ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (_isLoadingMore &&
+                                index == _messages.length) {
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 16),
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppColors.terracotta,
+                                    ),
                                   ),
                                 ),
+                              );
+                            }
+                            final m = _messages[index];
+                            final isMine = m.isMine(_currentUserId);
+                            return KeyedSubtree(
+                              key: _keyForMessage(m.id),
+                              child: ChatMessageBubble(
+                                message: m,
+                                currentUserId: _currentUserId,
+                                isHighlighted:
+                                    _highlightedMessageId == m.id,
+                                isAdmin: _isAdmin,
+                                onReactionTap: (emoji) =>
+                                    _toggleReaction(m.id, emoji),
+                                onReply: () => _startReply(m),
+                                onEdit:
+                                    isMine ? () => _editMessage(m) : null,
+                                onDelete: isMine
+                                    ? () => _deleteMessage(m.id)
+                                    : null,
+                                onReplyTap: m.hasReply
+                                    ? () => _jumpToMessage(m.replyToId)
+                                    : null,
+                                onReport: isMine
+                                    ? null
+                                    : () => _reportMessage(m.id),
+                                onPinToggle: _isAdmin
+                                    ? (pin) => _togglePin(m.id, pin)
+                                    : null,
                               ),
                             );
-                          }
-                          final m = _messages[index];
-                          final isMine = m.isMine(_currentUserId);
-                          return KeyedSubtree(
-                            key: _keyForMessage(m.id),
-                            child: ChatMessageBubble(
-                              message: m,
-                              currentUserId: _currentUserId,
-                              isHighlighted:
-                                  _highlightedMessageId == m.id,
-                              isAdmin: _isAdmin,
-                              onReactionTap: (emoji) =>
-                                  _toggleReaction(m.id, emoji),
-                              onReply: () => _startReply(m),
-                              onEdit:
-                                  isMine ? () => _editMessage(m) : null,
-                              onDelete: isMine
-                                  ? () => _deleteMessage(m.id)
-                                  : null,
-                              onReplyTap: m.hasReply
-                                  ? () => _jumpToMessage(m.replyToId)
-                                  : null,
-                              onReport: isMine
-                                  ? null
-                                  : () => _reportMessage(m.id),
-                              onPinToggle: _isAdmin
-                                  ? (pin) => _togglePin(m.id, pin)
-                                  : null,
-                            ),
-                          );
-                        },
-                      ),
+                          },
+                        ),
+                ),
 
                 if (_isJumping)
                   const Positioned.fill(
