@@ -19,6 +19,15 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 
+// Доверяем ОДНОМУ обратному прокси (nginx перед приложением). Без этого
+// express-rate-limit видит заголовок X-Forwarded-For и падает с ошибкой
+// ERR_ERL_UNEXPECTED_X_FORWARDED_FOR — из-за чего запросы на /api/auth
+// (вход, refresh-токена) отбивались 500. Это ломало обновление токена при
+// перезаходе: refresh падал → токен не обновлялся → экран клуба висел на
+// «вечной загрузке». trust proxy=1 — корректное определение реального IP
+// клиента из X-Forwarded-For, выставленного nginx.
+app.set('trust proxy', 1);
+
 // Security
 app.use(helmet());
 
