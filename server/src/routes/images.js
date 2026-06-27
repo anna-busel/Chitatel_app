@@ -87,9 +87,11 @@ router.get(/^\/(.+)$/, async (req, res, next) => {
     res.set({
       'Content-Type': contentType,
       'Content-Length': stat.size,
-      // Картинки иммутабельны (uuid в имени) — можно кешировать надолго,
-      // но signed URL живёт 1 час, поэтому private + max-age в пределах TTL.
-      'Cache-Control': 'private, max-age=3600',
+      // Картинка иммутабельна (uuid в имени, содержимое не меняется) и signed
+      // URL теперь долгоживущий (10 лет, см. image.service.js) → можно
+      // кешировать агрессивно на год + immutable. Клиент (и любой кэш по пути)
+      // не перезапрашивает картинку — показывает мгновенно из кэша.
+      'Cache-Control': 'public, max-age=31536000, immutable',
     });
     return fs.createReadStream(fullPath).pipe(res);
   } catch (err) {
