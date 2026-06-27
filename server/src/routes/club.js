@@ -59,6 +59,26 @@ function assertNoLinkForNonAdmin(text, isAdmin) {
   }
 }
 
+// Базовый фильтр сообщений чата для ОТДАЧИ истории (GET /chat, /context).
+// Исключает:
+// - isHidden (скрытые модератором)
+// - deletedAt (удалённые — soft delete)
+//
+// КРИТИЧНО фильтровать deletedAt именно ЗДЕСЬ (на сервере, в запросе), а не
+// на клиенте. Раньше удалённые отсеивались только на клиенте (_notDeleted),
+// а лимит .limit(20) применялся к запросу ВКЛЮЧАЯ удалённые → сервер брал 20
+// новейших СТРОК, среди которых были удалённые, клиент их выбрасывал, и в
+// ленте оставалось непредсказуемо мало живых (то 3, то 5, то 6 — сколько
+// удалённых попало в окно из 20). Из-за этого после перезахода часть живых
+// сообщений «пропадала» (их вытеснили удалённые из лимита). Фильтруя
+// deletedAt в запросе, лимит применяется к ЖИВЫМ сообщениям — клиент получает
+// ровно столько живых, сколько просил.
+const liveMessagesFilter = (clubMonthId) => ({
+  clubMonthId,
+  isHidden: { $ne: true },
+  deletedAt: null,
+});
+
 // Populate-спека для reply: подтягиваем РОДИТЕЛЬСКОЕ сообщение со снапшотом
 // автора. Это устраняет баг «ответы без пользователя»: раньше клиент сам
 // искал родителя среди загруженных сообщений (первые 20) — если родитель
@@ -321,6 +341,12 @@ router.get(
  * GET /api/club/:clubMonthId/chat
  * История сообщений чата клуба. Пагинация курсором (before).
  *
+ * Удалённые (deletedAt) и скрытые (isHidden) НЕ отдаются — фильтруются в
+ * запросе (liveMessagesFilter), поэтому лимит применяется к ЖИВЫМ сообщениям.
+ * Это важно: раньше удалённые отсеивались только на клиенте, а лимит брал 20
+ * строк включая удалённые → после перезахода живых оставалось непредсказуемо
+ * мало (часть «пропадала»).
+ *
  * Дополнительно (если это ПЕРВАЯ страница, т.е. before не задан) возвращает
  * pinnedMessage — закреплённое сообщение клуба (populated). Это нужно, чтобы
  * баннер закрепа был виден СРАЗУ при входе в чат, даже если само закреплённое
@@ -344,10 +370,7 @@ router.get(
   async (req, res, next) => {
     try {
       const { limit, before } = req.query;
-      const filter = {
-        clubMonthId: req.club._id,
-        isHidden: { $ne: true },
-      };
+      const filter = liveMessagesFilter(req.club._id);
       if (before) {
         filter.createdAt = { $lt: before };
       }
@@ -396,6 +419,8 @@ router.get(
  * _messages — иначе молча ничего. Теперь клиент при таком тапе запрашивает
  * этот эндпоинт, перестраивает ленту вокруг цели и подсвечивает её.
  *
+ * Удалённые/скрытые соседи не отдаются (liveMessagesFilter) — как и в /chat.
+ *
  * Query: radius (сколько сообщений до и после, 1-30, default 15).
  *
  * Ответ:
@@ -428,6 +453,7 @@ router.get(
       if (
         !target ||
         target.isHidden ||
+        target.deletedAt ||
         !target.clubMonthId.equals(req.club._id)
       ) {
         throw new AppError(
@@ -437,10 +463,7 @@ router.get(
         );
       }
 
-      const baseFilter = {
-        clubMonthId: req.club._id,
-        isHidden: { $ne: true },
-      };
+      const baseFilter = liveMessagesFilter(req.club._id);
 
       // Соседи СТАРШЕ целевого (createdAt < target) — DESC, берём radius штук.
       const older = await ChatMessage.find({
