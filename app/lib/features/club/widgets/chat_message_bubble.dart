@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
@@ -74,6 +75,9 @@ Widget buildMentionText(
 ///   углы, без padding), подпись снизу на цветном фоне с padding.
 /// Время/edited/pin для картинок — поверх картинки на полупрозрачной подложке
 /// (если нет подписи) либо в строке подписи (если есть).
+/// Картинки кэшируются на диск (CachedNetworkImage) — после первого показа
+/// берутся локально, мгновенно, без сети (как в Telegram). signed URL картинок
+/// долгоживущий (стабильный), поэтому кэш по URL работает между заходами.
 ///
 /// Long-press на bubble → контекстное меню (как в Telegram): всплывает по
 /// центру с анимацией увеличения (showGeneralDialog + ScaleTransition), а не
@@ -815,12 +819,12 @@ class _Avatar extends StatelessWidget {
     }
 
     return ClipOval(
-      child: Image.network(
-        avatarUrl!,
+      child: CachedNetworkImage(
+        imageUrl: avatarUrl!,
         width: _size,
         height: _size,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => fallback,
+        errorWidget: (_, __, ___) => fallback,
       ),
     );
   }
@@ -873,6 +877,11 @@ class _MessageContent extends StatelessWidget {
 /// fullWidth=true — картинка тянется на всю ширину bubble (режим «с подписью»).
 /// fullWidth=false — ограничена констрейнтами (режим «без подписи»),
 /// скруглена по [borderRadius] (= радиус bubble).
+///
+/// Кэшируется на диск (CachedNetworkImage): после первого скачивания картинка
+/// берётся локально, мгновенно, без сети — даже после перезахода в приложение
+/// (как в Telegram). Работает благодаря стабильному (долгоживущему) signed URL
+/// картинок: URL один и тот же → кэш по нему попадает.
 class _ChatImage extends StatelessWidget {
   const _ChatImage({
     required this.imageUrl,
@@ -903,27 +912,26 @@ class _ChatImage extends StatelessWidget {
       );
     }
 
-    final img = Image.network(
-      imageUrl,
+    final img = CachedNetworkImage(
+      imageUrl: imageUrl,
       fit: BoxFit.cover,
-      loadingBuilder: (context, child, progress) {
-        if (progress == null) return child;
-        return Container(
-          width: 220,
-          height: 160,
-          alignment: Alignment.center,
-          color: AppColors.surfaceMedium,
-          child: const SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: AppColors.terracotta,
-            ),
+      // fadeIn — плавное появление картинки (мягче, чем резкое возникновение).
+      fadeInDuration: const Duration(milliseconds: 200),
+      placeholder: (context, url) => Container(
+        width: 220,
+        height: 160,
+        alignment: Alignment.center,
+        color: AppColors.surfaceMedium,
+        child: const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: AppColors.terracotta,
           ),
-        );
-      },
-      errorBuilder: (_, __, ___) => Container(
+        ),
+      ),
+      errorWidget: (_, __, ___) => Container(
         width: 220,
         height: 160,
         alignment: Alignment.center,
@@ -997,10 +1005,10 @@ class _FullscreenImage extends StatelessWidget {
                 child: InteractiveViewer(
                   minScale: 1,
                   maxScale: 4,
-                  child: Image.network(
-                    imageUrl,
+                  child: CachedNetworkImage(
+                    imageUrl: imageUrl,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Icon(
+                    errorWidget: (_, __, ___) => const Icon(
                       Icons.broken_image_outlined,
                       color: Colors.white54,
                       size: 48,
