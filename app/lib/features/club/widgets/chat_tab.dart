@@ -36,6 +36,12 @@ import 'pinned_message_banner.dart';
 /// userId уходят на бэк, в bubble @имя подсвечено. 4.10 закреп: у админа в
 /// меню «Закрепить»/«Открепить». 4.11 read: видимые сообщения батчем в markRead.
 /// 4.12 voice: у Анны-admin кнопка записи в инпуте → _sendVoice.
+///
+/// Закреп (баннер) виден СРАЗУ при входе: закреплённое сообщение приходит
+/// отдельным полем history.pinnedMessage и хранится в _pinnedMessage. Баннер
+/// рисуется из него независимо от того, попало ли закреплённое сообщение в
+/// загруженное окно (как в Telegram). Раньше баннер искал закреп среди
+/// _messages → при входе его не было, пока не доскроллишь.
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -51,6 +57,12 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
   String? _currentUserId;
   String? _pinnedMessageId;
+
+  /// Само закреплённое сообщение (для баннера). Приходит отдельным полем
+  /// history.pinnedMessage — баннер виден сразу, даже если сообщение не в
+  /// загруженном окне. null — закрепа нет / удалён / откреплён.
+  ChatMessage? _pinnedMessage;
+
   ChatMessage? _replyingTo;
 
   /// Кого можно упомянуть через @ (4.9). Обычно одна Анна.
@@ -158,6 +170,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
           ..addAll(_notDeleted(history.messages));
         _hasMoreBefore = history.hasMore;
         _hasMoreAfter = false;
+        // Закреплённое сообщение (для баннера) — из ответа истории.
+        _pinnedMessage = history.pinnedMessage;
+        _pinnedMessageId = history.pinnedMessage?.id ?? _pinnedMessageId;
         _mentionable = mentionable;
         _isAdmin = _currentUserId != null &&
             mentionable.any((m) => m.id == _currentUserId && m.isAdmin);
@@ -190,9 +205,32 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     } else if (event is ChatMessageHiddenEvent) {
       setState(() {
         _messages.removeWhere((m) => m.id == event.messageId);
+        // Если скрыли закреплённое — снимаем баннер.
+        if (_pinnedMessageId == event.messageId) {
+          _pinnedMessageId = null;
+          _pinnedMessage = null;
+        }
       });
     } else if (event is ChatPinChangedEvent) {
-      setState(() => _pinnedMessageId = event.pinnedMessageId);
+      setState(() {
+        _pinnedMessageId = event.pinnedMessageId;
+        if (event.pinnedMessageId == null) {
+          // Открепили — снимаем баннер.
+          _pinnedMessage = null;
+        } else {
+          // Закрепили другое — ищем его в ленте (если есть). Чаще всего
+          // закрепляют видимое сообщение, так что оно в _messages. Если нет —
+          // баннер подтянется при следующей загрузке истории.
+          ChatMessage? found;
+          for (final m in _messages) {
+            if (m.id == event.pinnedMessageId) {
+              found = m;
+              break;
+            }
+          }
+          if (found != null) _pinnedMessage = found;
+        }
+      });
     } else if (event is ChatReactionUpdatedEvent) {
       final idx = _messages.indexWhere((m) => m.id == event.messageId);
       if (idx != -1) {
@@ -206,6 +244,10 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       if (idx != -1) {
         setState(() => _messages[idx] = event.message);
       }
+      // Если отредактировали закреплённое — обновляем баннер.
+      if (_pinnedMessageId == event.message.id) {
+        setState(() => _pinnedMessage = event.message);
+      }
     } else if (event is ChatMessageDeletedEvent) {
       // Вариант А: удалённое сообщение убираем из ленты полностью
       // (а не оставляем плашкой). Если это был закреп — снимаем баннер.
@@ -213,6 +255,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         _messages.removeWhere((m) => m.id == event.messageId);
         if (_pinnedMessageId == event.messageId) {
           _pinnedMessageId = null;
+          _pinnedMessage = null;
         }
       });
     }
@@ -306,6 +349,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         _hasMoreAfter = false;
         _isLoadingAfter = false;
         _showJumpDown = false;
+        // Обновляем закреп из свежего ответа (первая страница).
+        _pinnedMessage = history.pinnedMessage;
+        _pinnedMessageId = history.pinnedMessage?.id ?? _pinnedMessageId;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
@@ -655,7 +701,10 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     // не «висит» до прихода события — вариант А.
     setState(() {
       _messages.removeWhere((m) => m.id == messageId);
-      if (_pinnedMessageId == messageId) _pinnedMessageId = null;
+      if (_pinnedMessageId == messageId) {
+        _pinnedMessageId = null;
+        _pinnedMessage = null;
+      }
     });
 
     try {
@@ -686,7 +735,22 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       );
       // Локально сразу (WS придёт и подтвердит/синхронизирует).
       if (mounted) {
-        setState(() => _pinnedMessageId = pin ? messageId : null);
+        setState(() {
+          _pinnedMessageId = pin ? messageId : null;
+          if (pin) {
+            // Берём само сообщение из ленты для баннера.
+            ChatMessage? found;
+            for (final m in _messages) {
+              if (m.id == messageId) {
+                found = m;
+                break;
+              }
+            }
+            _pinnedMessage = found;
+          } else {
+            _pinnedMessage = null;
+          }
+        });
       }
     } on DioException catch (e) {
       if (!mounted) return;
@@ -1025,8 +1089,12 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       );
     }
 
-    ChatMessage? pinned;
-    if (_pinnedMessageId != null) {
+    // Баннер закрепа — из отдельного поля _pinnedMessage (приходит с сервера
+    // отдельно), чтобы быть видимым сразу при входе, даже если закреплённое
+    // сообщение не в загруженном окне. Если _pinnedMessage пуст, но закреп
+    // есть в ленте — подстрахуемся поиском в _messages.
+    ChatMessage? pinned = _pinnedMessage;
+    if (pinned == null && _pinnedMessageId != null) {
       for (final m in _messages) {
         if (m.id == _pinnedMessageId) {
           pinned = m;
