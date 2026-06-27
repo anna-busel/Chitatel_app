@@ -320,6 +320,13 @@ router.get(
 /**
  * GET /api/club/:clubMonthId/chat
  * История сообщений чата клуба. Пагинация курсором (before).
+ *
+ * Дополнительно (если это ПЕРВАЯ страница, т.е. before не задан) возвращает
+ * pinnedMessage — закреплённое сообщение клуба (populated). Это нужно, чтобы
+ * баннер закрепа был виден СРАЗУ при входе в чат, даже если само закреплённое
+ * сообщение далеко в истории и не попало в первые 20 загруженных (как в
+ * Telegram — закреп всегда виден сверху). Раньше клиент искал закреп только
+ * среди загруженных сообщений → при входе баннера не было, пока не доскроллишь.
  */
 const chatListSchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -355,9 +362,22 @@ router.get(
       // Перевыпускаем свежие signed URL медиа (фикс протухших картинок/голосовых).
       messages.forEach(withFreshMedia);
 
+      // Закреплённое сообщение — отдаём отдельно ТОЛЬКО на первой странице
+      // (before не задан), чтобы баннер закрепа был виден сразу при входе.
+      // На страницах пагинации (before задан) не нужно — баннер уже показан.
+      let pinnedMessage = null;
+      if (!before && req.club.pinnedMessageId) {
+        const pinned = await findMessagePopulated(req.club.pinnedMessageId);
+        // Не отдаём если удалено/скрыто (баннер должен исчезнуть).
+        if (pinned && !pinned.deletedAt && !pinned.isHidden) {
+          pinnedMessage = pinned;
+        }
+      }
+
       return success(res, {
         messages,
         hasMore: messages.length === limit,
+        pinnedMessage,
       });
     } catch (err) {
       return next(err);
@@ -1059,6 +1079,12 @@ router.delete('/chat/:messageId', async (req, res, next) => {
 
     message.deletedAt = new Date();
     await message.save();
+
+    // Если удалили закреплённое — снимаем закреп с клуба (баннер исчезнет).
+    await ClubMonth.updateOne(
+      { _id: message.clubMonthId, pinnedMessageId: message._id },
+      { $set: { pinnedMessageId: null } }
+    );
 
     const io = req.app.get('io');
     emitToClub(io, message.clubMonthId, 'chat:message_deleted', {
