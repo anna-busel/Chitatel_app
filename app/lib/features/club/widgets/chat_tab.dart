@@ -101,6 +101,13 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     super.dispose();
   }
 
+  /// Отфильтровать удалённые (deletedAt != null). Удалённые сообщения
+  /// исчезают из ленты полностью (решение: вариант А, как в Telegram —
+  /// не висят плашкой «сообщение удалено»). Reply-превью на удалённого
+  /// родителя остаётся «Сообщение удалено» — это отдельный снапшот.
+  Iterable<ChatMessage> _notDeleted(Iterable<ChatMessage> src) =>
+      src.where((m) => !m.isDeleted);
+
   Future<void> _bootstrap() async {
     try {
       final storage = ref.read(secureStorageProvider);
@@ -121,7 +128,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       setState(() {
         _messages
           ..clear()
-          ..addAll(history.messages);
+          ..addAll(_notDeleted(history.messages));
         _hasMoreBefore = history.hasMore;
         _hasMoreAfter = false;
         _mentionable = mentionable;
@@ -173,13 +180,14 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         setState(() => _messages[idx] = event.message);
       }
     } else if (event is ChatMessageDeletedEvent) {
-      final idx = _messages.indexWhere((m) => m.id == event.messageId);
-      if (idx != -1) {
-        setState(() {
-          _messages[idx] =
-              _messages[idx].copyWith(deletedAt: DateTime.now());
-        });
-      }
+      // Вариант А: удалённое сообщение убираем из ленты полностью
+      // (а не оставляем плашкой). Если это был закреп — снимаем баннер.
+      setState(() {
+        _messages.removeWhere((m) => m.id == event.messageId);
+        if (_pinnedMessageId == event.messageId) {
+          _pinnedMessageId = null;
+        }
+      });
     }
   }
 
@@ -204,9 +212,17 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
 
-    final notAtBottom = pos.pixels > 300 || _hasMoreAfter;
-    if (notAtBottom != _showJumpDown) {
-      setState(() => _showJumpDown = notAtBottom);
+    // Гистерезис: показываем кнопку «вниз» когда отъехали > 300px,
+    // прячем когда вернулись < 120px. Между порогами состояние не
+    // дёргается на каждый кадр прокрутки (баг визуального дёрганья).
+    final bool nextShow;
+    if (_showJumpDown) {
+      nextShow = pos.pixels > 120 || _hasMoreAfter;
+    } else {
+      nextShow = pos.pixels > 300 || _hasMoreAfter;
+    }
+    if (nextShow != _showJumpDown) {
+      setState(() => _showJumpDown = nextShow);
     }
 
     if (!_isLoadingMore &&
@@ -234,7 +250,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       setState(() {
         final existing = _messages.map((m) => m.id).toSet();
         _messages.addAll(
-          history.messages.where((m) => !existing.contains(m.id)),
+          _notDeleted(history.messages).where((m) => !existing.contains(m.id)),
         );
         _hasMoreBefore = history.hasMore;
         _isLoadingMore = false;
@@ -258,7 +274,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       setState(() {
         _messages
           ..clear()
-          ..addAll(history.messages);
+          ..addAll(_notDeleted(history.messages));
         _hasMoreBefore = history.hasMore;
         _hasMoreAfter = false;
         _isLoadingAfter = false;
@@ -294,6 +310,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   Future<void> _jumpToMessage(String? id) async {
     if (id == null || id.isEmpty || _isJumping) return;
 
+    // 1) Сообщение отрисовано прямо сейчас — сразу ensureVisible.
     final ctx = _messageKeys[id]?.currentContext;
     if (ctx != null) {
       await Scrollable.ensureVisible(
@@ -306,6 +323,38 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       return;
     }
 
+    // 2) Сообщение есть в загруженной ленте, но его виджет не построен
+    // (ListView.builder рисует только видимые). Прокручиваем к его позиции
+    // по индексу, ждём кадр, затем ensureVisible. Раньше тут зря грузился
+    // контекст с сервера, и переход к закрепу/reply «не срабатывал».
+    final localIndex = _messages.indexWhere((m) => m.id == id);
+    if (localIndex != -1) {
+      // reverse:true → индекс 0 внизу. Грубо прокручиваем к нужному месту,
+      // чтобы виджет успел построиться, потом точная доводка ensureVisible.
+      if (_scrollController.hasClients) {
+        final max = _scrollController.position.maxScrollExtent;
+        final frac = _messages.length <= 1
+            ? 0.0
+            : localIndex / (_messages.length - 1);
+        final target = (max * frac).clamp(0.0, max);
+        _scrollController.jumpTo(target);
+      }
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      final c = _messageKeys[id]?.currentContext;
+      if (c != null) {
+        await Scrollable.ensureVisible(
+          c,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          alignment: 0.3,
+        );
+      }
+      _highlight(id);
+      return;
+    }
+
+    // 3) Сообщения нет в ленте — грузим окно контекста с сервера.
     setState(() => _isJumping = true);
     try {
       final api = ref.read(clubApiServiceProvider);
@@ -319,18 +368,30 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       setState(() {
         _messages
           ..clear()
-          ..addAll(ctxResult.messages);
+          ..addAll(_notDeleted(ctxResult.messages));
         _hasMoreBefore = ctxResult.hasMoreBefore;
         _hasMoreAfter = ctxResult.hasMoreAfter;
         _isJumping = false;
       });
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        // Сначала грубо прокручиваем к индексу (виджет может быть не построен),
+        // ждём кадр, потом точная доводка.
+        final idx = _messages.indexWhere((m) => m.id == id);
+        if (idx != -1 && _scrollController.hasClients) {
+          final max = _scrollController.position.maxScrollExtent;
+          final frac = _messages.length <= 1
+              ? 0.0
+              : idx / (_messages.length - 1);
+          _scrollController.jumpTo((max * frac).clamp(0.0, max));
+          await WidgetsBinding.instance.endOfFrame;
+        }
+        if (!mounted) return;
         final c = _messageKeys[id]?.currentContext;
         if (c != null) {
           Scrollable.ensureVisible(
             c,
-            duration: const Duration(milliseconds: 400),
+            duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
             alignment: 0.3,
           );
@@ -555,6 +616,13 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     );
 
     if (confirmed != true || !mounted) return;
+
+    // Оптимистично убираем сразу (WS-событие подтвердит). Так сообщение
+    // не «висит» до прихода события — вариант А.
+    setState(() {
+      _messages.removeWhere((m) => m.id == messageId);
+      if (_pinnedMessageId == messageId) _pinnedMessageId = null;
+    });
 
     try {
       final api = ref.read(clubApiServiceProvider);
