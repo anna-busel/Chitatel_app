@@ -75,8 +75,9 @@ Widget buildMentionText(
 /// Время/edited/pin для картинок — поверх картинки на полупрозрачной подложке
 /// (если нет подписи) либо в строке подписи (если есть).
 ///
-/// Long-press на bubble → меню (как в Telegram, единое для всех действий):
-/// - ряд 6 эмодзи-реакций
+/// Long-press на bubble → контекстное меню (как в Telegram): всплывает по
+/// центру с анимацией увеличения (showGeneralDialog + ScaleTransition), а не
+/// выезжает снизу. Ряд 6 эмодзи-реакций сверху, ниже действия:
 /// - «Ответить» (всем)
 /// - «Изменить» (своим, не voice)
 /// - «Удалить» (своим)
@@ -358,122 +359,234 @@ class ChatMessageBubble extends StatelessWidget {
     );
   }
 
-  /// Long-press меню: реакции (6 эмодзи) + Ответить + (свои: Изменить/Удалить)
-  /// + (админ: Закрепить/Открепить) + (чужие: Пожаловаться).
+  /// Long-press меню в стиле Telegram: всплывает по центру с анимацией
+  /// увеличения (scale + fade), фон затемняется и размывается. Ряд из 6
+  /// эмодзи-реакций сверху (крупные), ниже — действия. Не выезжает снизу
+  /// (showModalBottomSheet), а появляется как контекстное меню.
   void _showActionMenu(BuildContext context, bool isMine) {
     final canEdit = isMine &&
         onEdit != null &&
         message.type != ChatMessageType.voice;
 
-    showModalBottomSheet<void>(
+    showGeneralDialog<void>(
       context: context,
-      backgroundColor: AppColors.cardBackground,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: kAllowedReactions.map((emoji) {
-                  final mine = message.reactions.any((r) =>
-                      r.emoji == emoji &&
-                      currentUserId != null &&
-                      r.containsUser(currentUserId!));
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.of(ctx).pop();
-                      onReactionTap?.call(emoji);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: mine
-                            ? AppColors.terracotta.withOpacity(0.15)
-                            : Colors.transparent,
-                        shape: BoxShape.circle,
+      barrierDismissible: true,
+      barrierLabel: 'Меню сообщения',
+      barrierColor: Colors.black.withOpacity(0.45),
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (ctx, _, __) {
+        return _ActionMenuContent(
+          message: message,
+          currentUserId: currentUserId,
+          isMine: isMine,
+          isAdmin: isAdmin,
+          canEdit: canEdit,
+          onReactionTap: onReactionTap,
+          onReply: onReply,
+          onEdit: onEdit,
+          onDelete: onDelete,
+          onReport: onReport,
+          onPinToggle: onPinToggle,
+        );
+      },
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved =
+            CurvedAnimation(parent: anim, curve: Curves.easeOutBack);
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Содержимое контекстного меню (выносим отдельно — чтобы анимация scale/fade
+/// применялась ко всей карточке). Ряд эмодзи + список действий.
+class _ActionMenuContent extends StatelessWidget {
+  const _ActionMenuContent({
+    required this.message,
+    required this.currentUserId,
+    required this.isMine,
+    required this.isAdmin,
+    required this.canEdit,
+    this.onReactionTap,
+    this.onReply,
+    this.onEdit,
+    this.onDelete,
+    this.onReport,
+    this.onPinToggle,
+  });
+
+  final ChatMessage message;
+  final String? currentUserId;
+  final bool isMine;
+  final bool isAdmin;
+  final bool canEdit;
+  final void Function(String emoji)? onReactionTap;
+  final VoidCallback? onReply;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+  final VoidCallback? onReport;
+  final void Function(bool pin)? onPinToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Material(
+          color: Colors.transparent,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // — Ряд эмодзи-реакций (крупные) — отдельная «пилюля» сверху.
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.cardBackground,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: AppColors.cardShadow,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: kAllowedReactions.map((emoji) {
+                    final mine = message.reactions.any((r) =>
+                        r.emoji == emoji &&
+                        currentUserId != null &&
+                        r.containsUser(currentUserId!));
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        onReactionTap?.call(emoji);
+                      },
+                      child: Container(
+                        margin:
+                            const EdgeInsets.symmetric(horizontal: 2),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: mine
+                              ? AppColors.terracotta.withOpacity(0.15)
+                              : Colors.transparent,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          emoji,
+                          style: const TextStyle(fontSize: 30),
+                        ),
                       ),
-                      child: Text(emoji, style: const TextStyle(fontSize: 28)),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Divider(height: 1),
-            if (onReply != null)
-              ListTile(
-                leading: const Icon(Icons.reply,
-                    color: AppColors.textSecondary),
-                title: Text('Ответить', style: AppTypography.body),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  onReply?.call();
-                },
-              ),
-            // Закрепить/Открепить — только админ (Анна), 4.10.
-            if (isAdmin && onPinToggle != null)
-              ListTile(
-                leading: Icon(
-                  message.isPinned
-                      ? Icons.push_pin_outlined
-                      : Icons.push_pin,
-                  color: AppColors.terracotta,
+                    );
+                  }).toList(),
                 ),
-                title: Text(
-                  message.isPinned ? 'Открепить' : 'Закрепить',
-                  style: AppTypography.body,
+              ),
+              const SizedBox(height: 10),
+              // — Карточка действий —
+              Container(
+                width: 240,
+                decoration: BoxDecoration(
+                  color: AppColors.cardBackground,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: AppColors.cardShadow,
                 ),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  onPinToggle?.call(!message.isPinned);
-                },
-              ),
-            if (canEdit)
-              ListTile(
-                leading: const Icon(Icons.edit_outlined,
-                    color: AppColors.textSecondary),
-                title: Text('Изменить', style: AppTypography.body),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  onEdit?.call();
-                },
-              ),
-            if (isMine && onDelete != null)
-              ListTile(
-                leading: const Icon(Icons.delete_outline,
-                    color: AppColors.error),
-                title: Text(
-                  'Удалить',
-                  style: AppTypography.body.copyWith(color: AppColors.error),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (onReply != null)
+                      _ActionTile(
+                        icon: Icons.reply,
+                        label: 'Ответить',
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          onReply?.call();
+                        },
+                      ),
+                    if (isAdmin && onPinToggle != null)
+                      _ActionTile(
+                        icon: message.isPinned
+                            ? Icons.push_pin_outlined
+                            : Icons.push_pin,
+                        label: message.isPinned ? 'Открепить' : 'Закрепить',
+                        iconColor: AppColors.terracotta,
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          onPinToggle?.call(!message.isPinned);
+                        },
+                      ),
+                    if (canEdit)
+                      _ActionTile(
+                        icon: Icons.edit_outlined,
+                        label: 'Изменить',
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          onEdit?.call();
+                        },
+                      ),
+                    if (isMine && onDelete != null)
+                      _ActionTile(
+                        icon: Icons.delete_outline,
+                        label: 'Удалить',
+                        iconColor: AppColors.error,
+                        labelColor: AppColors.error,
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          onDelete?.call();
+                        },
+                      ),
+                    if (!isMine && onReport != null)
+                      _ActionTile(
+                        icon: Icons.flag_outlined,
+                        label: 'Пожаловаться',
+                        iconColor: AppColors.error,
+                        labelColor: AppColors.error,
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          onReport?.call();
+                        },
+                      ),
+                  ],
                 ),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  onDelete?.call();
-                },
               ),
-            if (!isMine && onReport != null)
-              ListTile(
-                leading: const Icon(Icons.flag_outlined,
-                    color: AppColors.error),
-                title: Text(
-                  'Пожаловаться',
-                  style: AppTypography.body.copyWith(color: AppColors.error),
-                ),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  onReport?.call();
-                },
-              ),
-            ListTile(
-              leading: const Icon(Icons.close, color: AppColors.textTertiary),
-              title: Text('Отмена', style: AppTypography.body),
-              onTap: () => Navigator.of(ctx).pop(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Строка действия в контекстном меню (иконка + подпись).
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.iconColor,
+    this.labelColor,
+  });
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color? iconColor;
+  final Color? labelColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: Row(
+          children: [
+            Icon(icon, size: 21, color: iconColor ?? AppColors.textSecondary),
+            const SizedBox(width: 14),
+            Text(
+              label,
+              style: AppTypography.body.copyWith(color: labelColor),
             ),
           ],
         ),
@@ -585,7 +698,7 @@ String _formatTime(DateTime dt) {
 
 /// Ряд чипов реакций под bubble. Каждый чип: эмодзи + счётчик.
 /// Свои реакции (где есть currentUserId) подсвечены terracotta-обводкой.
-/// Тап по чипу — toggle этой реакции.
+/// Тап по чипу — toggle этой реакции. Эмодзи крупные (как в Telegram).
 class _ReactionsRow extends StatelessWidget {
   const _ReactionsRow({
     required this.reactions,
@@ -607,12 +720,12 @@ class _ReactionsRow extends StatelessWidget {
         return GestureDetector(
           onTap: () => onTap?.call(r.emoji),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
               color: mine
                   ? AppColors.terracotta.withOpacity(0.12)
                   : AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: mine ? AppColors.terracotta : AppColors.border,
                 width: mine ? 1.2 : 1,
@@ -621,11 +734,11 @@ class _ReactionsRow extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(r.emoji, style: const TextStyle(fontSize: 14)),
-                const SizedBox(width: 4),
+                Text(r.emoji, style: const TextStyle(fontSize: 18)),
+                const SizedBox(width: 5),
                 Text(
                   '${r.count}',
-                  style: AppTypography.micro.copyWith(
+                  style: AppTypography.small.copyWith(
                     color: mine
                         ? AppColors.terracotta
                         : AppColors.textSecondary,
