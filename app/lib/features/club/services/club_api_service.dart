@@ -56,11 +56,21 @@ class ClubListResult {
 
 /// Результат пагинированной загрузки чата.
 class ChatHistoryResult {
-  const ChatHistoryResult({required this.messages, required this.hasMore});
+  const ChatHistoryResult({
+    required this.messages,
+    required this.hasMore,
+    this.pinnedMessage,
+  });
 
   /// DESC по createdAt — новые сверху (как возвращает сервер).
   final List<ChatMessage> messages;
   final bool hasMore;
+
+  /// Закреплённое сообщение клуба (populated). Приходит ТОЛЬКО на первой
+  /// странице (before == null), чтобы баннер закрепа был виден сразу при
+  /// входе в чат, даже если само сообщение далеко в истории и не попало в
+  /// загруженное окно (как в Telegram). null — закрепа нет либо удалён/скрыт.
+  final ChatMessage? pinnedMessage;
 }
 
 /// Результат загрузки контекста вокруг сообщения (переход к закрепу/reply).
@@ -191,6 +201,9 @@ class ClubApiService {
 
   /// История чата с пагинацией. `before` — для подгрузки старых при скролле вверх.
   /// limit ограничен 50 на бэке.
+  ///
+  /// На первой странице (before == null) ответ содержит также pinnedMessage —
+  /// закреплённое сообщение клуба, чтобы баннер закрепа был виден сразу.
   Future<ChatHistoryResult> fetchChatHistory({
     required String clubMonthId,
     int limit = 20,
@@ -216,9 +229,17 @@ class ClubApiService {
             .toList(growable: false)
         : const <ChatMessage>[];
 
+    // Закреплённое сообщение (только на первой странице).
+    ChatMessage? pinned;
+    final pinnedRaw = data['pinnedMessage'];
+    if (pinnedRaw is Map<String, dynamic>) {
+      pinned = ChatMessage.fromJson(pinnedRaw);
+    }
+
     return ChatHistoryResult(
       messages: messages,
       hasMore: data['hasMore'] == true,
+      pinnedMessage: pinned,
     );
   }
 
