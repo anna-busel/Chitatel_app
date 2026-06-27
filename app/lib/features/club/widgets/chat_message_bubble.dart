@@ -77,7 +77,7 @@ Widget buildMentionText(
 /// (если нет подписи) либо в строке подписи (если есть).
 /// Картинки кэшируются на диск (CachedNetworkImage) — после первого показа
 /// берутся локально, мгновенно, без сети (как в Telegram). signed URL картинок
-/// долгоживущий (стабильный), поэтому кэш по URL работает между заходами.
+/// фиксированный (стабильный), поэтому кэш по URL работает между заходами.
 ///
 /// Long-press на bubble → контекстное меню (как в Telegram): всплывает по
 /// центру с анимацией увеличения (showGeneralDialog + ScaleTransition), а не
@@ -914,8 +914,13 @@ class _MessageContent extends StatelessWidget {
 ///
 /// Кэшируется на диск (CachedNetworkImage): после первого скачивания картинка
 /// берётся локально, мгновенно, без сети — даже после перезахода в приложение
-/// (как в Telegram). Работает благодаря стабильному (долгоживущему) signed URL
+/// (как в Telegram). Работает благодаря фиксированному (стабильному) signed URL
 /// картинок: URL один и тот же → кэш по нему попадает.
+///
+/// Скачок размера (placeholder → картинка) убран: загрузка показывается через
+/// progressIndicatorBuilder ПОВЕРХ области картинки в тех же констрейнтах, а не
+/// отдельным контейнером другого размера. Поэтому блок сразу занимает место и
+/// не «прыгает» с маленького окна на большое.
 class _ChatImage extends StatelessWidget {
   const _ChatImage({
     required this.imageUrl,
@@ -951,11 +956,13 @@ class _ChatImage extends StatelessWidget {
       fit: BoxFit.cover,
       // fadeIn — плавное появление картинки (мягче, чем резкое возникновение).
       fadeInDuration: const Duration(milliseconds: 200),
-      placeholder: (context, url) => Container(
-        width: 220,
-        height: 160,
-        alignment: Alignment.center,
+      // progressIndicatorBuilder вместо placeholder: индикатор рисуется ПОВЕРХ
+      // области картинки в её констрейнтах (не отдельным контейнером другого
+      // размера), поэтому нет скачка «маленькое окно → большое». На время
+      // загрузки место занимает нейтральный фон с маленьким спиннером по центру.
+      progressIndicatorBuilder: (context, url, progress) => Container(
         color: AppColors.surfaceMedium,
+        alignment: Alignment.center,
         child: const SizedBox(
           width: 24,
           height: 24,
@@ -966,10 +973,8 @@ class _ChatImage extends StatelessWidget {
         ),
       ),
       errorWidget: (_, __, ___) => Container(
-        width: 220,
-        height: 160,
-        alignment: Alignment.center,
         color: AppColors.surfaceMedium,
+        alignment: Alignment.center,
         child: const Icon(
           Icons.broken_image_outlined,
           color: AppColors.textTertiary,
@@ -987,7 +992,10 @@ class _ChatImage extends StatelessWidget {
               ? SizedBox(
                   width: double.infinity,
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 320),
+                    constraints: const BoxConstraints(
+                      maxHeight: 320,
+                      minHeight: 160,
+                    ),
                     child: img,
                   ),
                 )
@@ -995,8 +1003,8 @@ class _ChatImage extends StatelessWidget {
                   constraints: const BoxConstraints(
                     maxWidth: 260,
                     maxHeight: 320,
-                    minWidth: 140,
-                    minHeight: 90,
+                    minWidth: 200,
+                    minHeight: 150,
                   ),
                   child: img,
                 ),
