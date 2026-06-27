@@ -67,16 +67,51 @@ function assertNoLinkForNonAdmin(text, isAdmin) {
 // с вложенным userId).
 const REPLY_POPULATE = {
   path: 'replyToId',
-  select: 'type text imageUrl voiceUrl deletedAt userId createdAt',
+  select: 'type text imageUrl imageStoragePath voiceUrl voiceStoragePath deletedAt userId createdAt',
   populate: { path: 'userId', select: 'name avatarUrl' },
 };
 
-// Хелпер: загрузить сообщение по id с полным populate (автор + reply-снапшот).
-function findMessagePopulated(id) {
-  return ChatMessage.findById(id)
+// Перевыпустить свежий signed URL для медиа сообщения.
+//
+// БАГ который чиним: imageUrl/voiceUrl сохраняются в БД при загрузке как
+// signed URL с TTL 1 час. При отдаче истории отдавался этот сохранённый URL —
+// через час подпись истекала, и после перезахода картинка/голосовое не
+// грузились (пустая картинка). Решение: на КАЖДОЙ отдаче перевыпускаем URL
+// из imageStoragePath/voiceStoragePath (относительный путь, хранится в БД
+// именно для этого). Так ссылка всегда свежая.
+//
+// Работает с lean-объектами (из .lean()). Мутирует и возвращает тот же объект.
+// Рекурсивно обновляет вложенный reply-снапшот (replyToId populated-объект).
+function withFreshMedia(message) {
+  if (!message || typeof message !== 'object') return message;
+
+  if (message.imageStoragePath) {
+    message.imageUrl = imageService.generateImageSignedUrl(
+      message.imageStoragePath
+    );
+  }
+  if (message.voiceStoragePath) {
+    message.voiceUrl = voiceService.generateVoiceSignedUrl(
+      message.voiceStoragePath
+    );
+  }
+
+  // Reply-снапшот (populated объект) — тоже может быть картинкой/голосовым.
+  if (message.replyToId && typeof message.replyToId === 'object') {
+    withFreshMedia(message.replyToId);
+  }
+
+  return message;
+}
+
+// Хелпер: загрузить сообщение по id с полным populate (автор + reply-снапшот)
+// и свежими signed URL медиа.
+async function findMessagePopulated(id) {
+  const message = await ChatMessage.findById(id)
     .populate('userId', 'name avatarUrl')
     .populate(REPLY_POPULATE)
     .lean();
+  return withFreshMedia(message);
 }
 
 const router = Router();
@@ -317,6 +352,9 @@ router.get(
         .populate(REPLY_POPULATE)
         .lean();
 
+      // Перевыпускаем свежие signed URL медиа (фикс протухших картинок/голосовых).
+      messages.forEach(withFreshMedia);
+
       return success(res, {
         messages,
         hasMore: messages.length === limit,
@@ -414,6 +452,10 @@ router.get(
       // клиент с reverse=true): [newer DESC] + [target] + [older DESC].
       const newerDesc = newerAsc.slice().reverse();
       const messages = [...newerDesc, targetPopulated, ...older];
+
+      // Перевыпускаем свежие signed URL медиа для всех (target уже обновлён
+      // в findMessagePopulated, но older/newer — нет; повторный вызов идемпотентен).
+      messages.forEach(withFreshMedia);
 
       // Есть ли ещё сообщения за пределами этого окна — для догрузки.
       const hasMoreAfter = newerAsc.length === radius;
