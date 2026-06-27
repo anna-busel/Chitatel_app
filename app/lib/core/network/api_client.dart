@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api_endpoints.dart';
 import '../storage/secure_storage.dart';
@@ -38,6 +39,34 @@ class ApiClient {
         onError: _onError,
       ),
     );
+
+    // ВРЕМЕННОЕ диагностическое логирование (только debug): печатает каждый
+    // запрос/ответ/ошибку в консоль flutter run. Нужно для отладки «вечной
+    // загрузки клуба» — увидеть, какой запрос уходит, возвращается ли ответ,
+    // или висит/падает. Убрать после диагностики.
+    if (kDebugMode) {
+      _dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            debugPrint('[HTTP →] ${options.method} ${options.uri}');
+            handler.next(options);
+          },
+          onResponse: (response, handler) {
+            debugPrint(
+              '[HTTP ←] ${response.statusCode} ${response.requestOptions.uri}',
+            );
+            handler.next(response);
+          },
+          onError: (e, handler) {
+            debugPrint(
+              '[HTTP ✗] ${e.response?.statusCode ?? '---'} '
+              '${e.requestOptions.uri} :: ${e.type} :: ${e.message}',
+            );
+            handler.next(e);
+          },
+        ),
+      );
+    }
   }
 
   final Ref _ref;
@@ -138,6 +167,10 @@ class ApiClient {
     final storage = _ref.read(secureStorageProvider);
     final refreshToken = await storage.getRefreshToken();
 
+    if (kDebugMode) {
+      debugPrint('[AUTH] refresh start, hasRefreshToken=${refreshToken != null}');
+    }
+
     if (refreshToken == null) {
       await _logout();
       return null;
@@ -157,12 +190,21 @@ class ApiClient {
           accessToken: data['accessToken'],
           refreshToken: data['refreshToken'],
         );
+        if (kDebugMode) {
+          debugPrint('[AUTH] refresh OK');
+        }
         return data['accessToken'] as String;
       }
 
+      if (kDebugMode) {
+        debugPrint('[AUTH] refresh failed: status=${response.statusCode}');
+      }
       await _logout();
       return null;
-    } catch (_) {
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AUTH] refresh exception: $e');
+      }
       await _logout();
       return null;
     }
