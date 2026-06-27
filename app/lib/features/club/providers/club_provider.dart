@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/club_api_service.dart';
 
@@ -35,24 +34,10 @@ final selectedClubIdProvider = StateProvider<String?>((_) => null);
 ///
 /// AsyncValue.when обрабатывает loading/error/data в UI.
 final currentClubProvider = FutureProvider<CurrentClubResult>((ref) async {
-  if (kDebugMode) {
-    debugPrint('[CLUB] currentClubProvider START');
-  }
   final selectedId = ref.watch(selectedClubIdProvider);
   final api = ref.read(clubApiServiceProvider);
-  if (kDebugMode) {
-    debugPrint('[CLUB] selectedId=$selectedId, calling fetch...');
-  }
   if (selectedId == null) {
-    final r = await api.fetchCurrentClub();
-    if (kDebugMode) {
-      debugPrint('[CLUB] fetchCurrentClub DONE');
-    }
-    return r;
+    return api.fetchCurrentClub();
   }
-  final r = await api.fetchClubById(selectedId);
-  if (kDebugMode) {
-    debugPrint('[CLUB] fetchClubById DONE');
-  }
-  return r;
+  return api.fetchClubById(selectedId);
 });

@@ -31,6 +31,20 @@ const ALLOWED_MIME = new Map([
 // чата 8 достаточно; экономит диск VPS).
 const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
 
+// Срок жизни signed URL картинки — 10 лет (фактически «вечный»).
+//
+// Почему НЕ 1 час как у аудио: картинка чата иммутабельна (uuid в имени,
+// содержимое не меняется) и НЕ является платным контентом, который надо
+// защищать от шеринга по времени (как аудиоразборы). Защиту даёт ПОДПИСЬ
+// (sig) — без неё URL невалиден, чужой не откроет. Срок тут лишний и вреден:
+// при коротком TTL URL приходилось перевыпускать на каждой отдаче истории,
+// из-за чего ссылка постоянно менялась → клиент не мог кэшировать картинку →
+// она каждый раз грузилась заново (видна «подгрузка» при входе в чат).
+// Со стабильным долгим URL ссылка одна и та же → клиент кэширует → картинка
+// показывается мгновенно. Аудио (audio.service) остаётся с TTL 1 час — там
+// защита от шеринга платного контента нужна.
+const IMAGE_URL_TTL_SECONDS = 10 * 365 * 24 * 60 * 60; // ~10 лет
+
 /**
  * Подпапка относительно AUDIO_BASE_PATH где лежат картинки чата.
  * Полный путь: <AUDIO_BASE_PATH>/club-images/<clubMonthId>/<file>
@@ -64,9 +78,12 @@ function generateImageFileName(ext) {
  * generateSignedUrl даёт .../audio/<filename>?... — нам нужен .../images/...
  * Подпись считается по filename и не зависит от префикса пути, поэтому
  * простая замена префикса безопасна (verifySignedUrl проверяет filename, exp, sig).
+ *
+ * TTL — IMAGE_URL_TTL_SECONDS (10 лет) → URL стабильный → клиент кэширует
+ * картинку, она показывается мгновенно (а не грузится при каждом входе в чат).
  */
 function generateImageSignedUrl(filename) {
-  const audioUrl = generateSignedUrl(filename);
+  const audioUrl = generateSignedUrl(filename, IMAGE_URL_TTL_SECONDS);
   return audioUrl.replace(
     `${config.publicBaseUrl}/audio/`,
     `${config.publicBaseUrl}/images/`
@@ -76,6 +93,7 @@ function generateImageSignedUrl(filename) {
 module.exports = {
   ALLOWED_MIME,
   MAX_FILE_SIZE_BYTES,
+  IMAGE_URL_TTL_SECONDS,
   clubImagesDir,
   relativeImagePath,
   generateImageFileName,
