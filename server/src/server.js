@@ -39,15 +39,21 @@ const start = async () => {
   }
 };
 
-// Graceful shutdown
+// Graceful shutdown.
+// Mongoose 8 убрал callback у connection.close() — теперь это промис.
+// Раньше передавался callback → unhandledRejection при остановке сервера.
+// Используем async/await + await на закрытие HTTP-сервера.
 const shutdown = async (signal) => {
   logger.info(`${signal} received. Shutting down...`);
-  server.close(() => {
-    mongoose.connection.close(false, () => {
-      logger.info('Server closed');
-      process.exit(0);
-    });
-  });
+  try {
+    await new Promise((resolve) => server.close(resolve));
+    await mongoose.connection.close(false);
+    logger.info('Server closed');
+    process.exit(0);
+  } catch (err) {
+    logger.error('Error during shutdown:', err);
+    process.exit(1);
+  }
 };
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
