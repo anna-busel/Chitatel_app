@@ -79,6 +79,11 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   /// Вычисляем: _currentUserId есть в списке mentionable (там только админы).
   bool _isAdmin = false;
 
+  /// ID всех админов клуба (Анна). Собираем из mentionable (там только админы).
+  /// Нужен, чтобы у чужих сообщений Анны показывать бейдж «АВТОР КЛУБА» и
+  /// полоску слева (редизайн чата 28.06).
+  final Set<String> _adminIds = {};
+
   /// Уже отправленные в markRead id — чтобы не слать повторно (4.11).
   final Set<String> _readSent = {};
   Timer? _readDebounce;
@@ -204,8 +209,11 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         _pinnedMessage = history.pinnedMessage;
         _pinnedMessageId = history.pinnedMessage?.id ?? _pinnedMessageId;
         _mentionable = mentionable;
-        _isAdmin = _currentUserId != null &&
-            mentionable.any((m) => m.id == _currentUserId && m.isAdmin);
+        _adminIds
+          ..clear()
+          ..addAll(mentionable.where((m) => m.isAdmin).map((m) => m.id));
+        _isAdmin =
+            _currentUserId != null && _adminIds.contains(_currentUserId);
         _isLoading = false;
       });
 
@@ -1165,6 +1173,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     );
   }
 
+  /// Автор сообщения — админ (Анна)? Для бейджа «АВТОР КЛУБА» и полоски слева.
+  bool _authorIsAdmin(ChatMessage m) => _adminIds.contains(m.author.id);
+
   GlobalKey _keyForMessage(String id) {
     return _messageKeys.putIfAbsent(id, () => GlobalKey());
   }
@@ -1267,6 +1278,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                                 isHighlighted:
                                     _highlightedMessageId == m.id,
                                 isAdmin: _isAdmin,
+                                authorIsAdmin: _authorIsAdmin(m),
                                 onReactionTap: (emoji) =>
                                     _toggleReaction(m.id, emoji),
                                 onReply: () => _startReply(m),
