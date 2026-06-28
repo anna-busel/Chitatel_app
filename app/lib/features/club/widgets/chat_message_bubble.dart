@@ -68,6 +68,10 @@ Widget buildMentionText(
 /// - isHighlighted — временная подсветка (после перехода к закрепу/reply),
 ///   снимается таймером в chat_tab. Жёлтая обводка поверх обычного bubble.
 ///
+/// Скругления пузырей — 18px (редизайн чата 28.06, мягче) с асимметричным
+/// «хвостиком»: свой пузырь острый снизу-справа (4px), чужой — снизу-слева,
+/// чтобы визуально «указывал» на отправителя (как в Telegram/iMessage).
+///
 /// Картинки (4.6, как в Telegram):
 /// - БЕЗ подписи → bubble = сама картинка, без цветного фона и padding,
 ///   скруглена. Никакой «оранжевой рамки».
@@ -161,11 +165,13 @@ class ChatMessageBubble extends StatelessWidget {
 
     final snapshot = message.replySnapshot;
 
+    // Скругления 18px (мягче прежних 16) с асимметричным хвостиком:
+    // свой — острый снизу-справа, чужой — снизу-слева.
     final borderRadius = BorderRadius.only(
-      topLeft: const Radius.circular(16),
-      topRight: const Radius.circular(16),
-      bottomLeft: Radius.circular(isMine ? 16 : 4),
-      bottomRight: Radius.circular(isMine ? 4 : 16),
+      topLeft: const Radius.circular(18),
+      topRight: const Radius.circular(18),
+      bottomLeft: Radius.circular(isMine ? 18 : 4),
+      bottomRight: Radius.circular(isMine ? 4 : 18),
     );
 
     // — Внутренность bubble —
@@ -758,7 +764,7 @@ class _ReactionsRow extends StatelessWidget {
         return GestureDetector(
           onTap: () => onTap?.call(r.emoji),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
             decoration: BoxDecoration(
               color: mine
                   ? AppColors.terracotta.withOpacity(0.12)
@@ -766,13 +772,13 @@ class _ReactionsRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: mine ? AppColors.terracotta : AppColors.border,
-                width: mine ? 1.2 : 1,
+                width: mine ? 1.4 : 1,
               ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(r.emoji, style: const TextStyle(fontSize: 18)),
+                Text(r.emoji, style: const TextStyle(fontSize: 16)),
                 const SizedBox(width: 5),
                 Text(
                   '${r.count}',
