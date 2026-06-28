@@ -18,6 +18,12 @@ import 'chat_message_bubble.dart';
 import 'chat_input.dart';
 import 'pinned_message_banner.dart';
 
+/// Яркость точек бумажной фактуры фона чата (редизайн 28.06). В прототипе
+/// 0.045 — на экране телефона почти не видно, поэтому поднято до 0.08, чтобы
+/// фактура читалась. Это единственная ручка яркости: меньше — бледнее,
+/// больше — заметнее. Узор рисует [_PaperTexturePainter] внизу файла.
+const double _paperDotOpacity = 0.08;
+
 /// Таб «Чат» клуба.
 ///
 /// Navigation к закрепу/reply (как в Telegram): тап по баннеру закрепа или
@@ -1233,6 +1239,17 @@ class _ChatTabState extends ConsumerState<ChatTab> {
           Expanded(
             child: Stack(
               children: [
+                // Бумажная фактура фона ленты (редизайн чата 28.06): едва
+                // заметная сетка точек, как в прототипе. База #FAFAF7 даётся
+                // внешним Container, здесь рисуем только точки. Один раз +
+                // RepaintBoundary — прокрутка фон не перерисовывает.
+                const Positioned.fill(
+                  child: RepaintBoundary(
+                    child: CustomPaint(
+                      painter: _PaperTexturePainter(),
+                    ),
+                  ),
+                ),
                 // Тап по области списка закрывает клавиатуру (как в Telegram).
                 // translucent — чтобы тапы по сообщениям/кнопкам тоже работали.
                 GestureDetector(
@@ -1478,4 +1495,31 @@ class _EmptyChat extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Бумажная фактура фона ленты чата (редизайн 28.06). Едва заметная сетка
+/// точек, как в прототипе (точки ~1px с шагом 3px). База #FAFAF7 даётся
+/// внешним Container — здесь рисуем только точки цвета rgb(150,130,100).
+/// Прозрачность — в [_paperDotOpacity] наверху файла (единственная ручка).
+/// Рисуется один раз (shouldRepaint=false) и обёрнут в RepaintBoundary, так
+/// что прокрутка ленты фон не перерисовывает.
+class _PaperTexturePainter extends CustomPainter {
+  const _PaperTexturePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const spacing = 3.0;
+    const radius = 0.6;
+    final paint = Paint()
+      ..color = const Color.fromRGBO(150, 130, 100, _paperDotOpacity)
+      ..style = PaintingStyle.fill;
+    for (double y = 0; y < size.height; y += spacing) {
+      for (double x = 0; x < size.width; x += spacing) {
+        canvas.drawCircle(Offset(x, y), radius, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PaperTexturePainter oldDelegate) => false;
 }
