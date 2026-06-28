@@ -103,6 +103,7 @@ class ChatMessageBubble extends StatelessWidget {
     required this.currentUserId,
     this.isHighlighted = false,
     this.isAdmin = false,
+    this.authorIsAdmin = false,
     this.onReactionTap,
     this.onReport,
     this.onReply,
@@ -121,6 +122,11 @@ class ChatMessageBubble extends StatelessWidget {
 
   /// Текущий юзер — админ (Анна). Только тогда в меню есть «Закрепить» (4.10).
   final bool isAdmin;
+
+  /// Автор ЭТОГО сообщения — админ (Анна). Тогда у чужого сообщения рисуем
+  /// бейдж «АВТОР КЛУБА» рядом с именем и терракотовую полоску слева (редизайн
+  /// чата 28.06). Вычисляется в chat_tab по списку админов (_adminIds).
+  final bool authorIsAdmin;
 
   /// Тап по эмодзи (тап по чипу реакции или выбор в меню).
   final void Function(String emoji)? onReactionTap;
@@ -174,6 +180,15 @@ class ChatMessageBubble extends StatelessWidget {
       bottomRight: Radius.circular(isMine ? 4 : 18),
     );
 
+    // Бейдж «АВТОР КЛУБА» + полоска слева — только у чужих сообщений Анны
+    // (автор-админ). У своих и у обычных участниц не показываем.
+    final showAuthorBadge = authorIsAdmin && !isMine;
+    final adminBorder = showAuthorBadge
+        ? const Border(
+            left: BorderSide(color: AppColors.terracotta, width: 2.5),
+          )
+        : null;
+
     // — Внутренность bubble —
     Widget inner;
     if (bareImage) {
@@ -204,6 +219,7 @@ class ChatMessageBubble extends StatelessWidget {
           color: bubbleColor,
           borderRadius: borderRadius,
           boxShadow: isMine ? null : AppColors.cardShadow,
+          border: adminBorder,
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -213,11 +229,24 @@ class ChatMessageBubble extends StatelessWidget {
             if (!isMine)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                child: Text(
-                  message.author.name,
-                  style: AppTypography.smallMedium.copyWith(
-                    color: AppColors.terracotta,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        message.author.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.smallMedium.copyWith(
+                          color: AppColors.terracotta,
+                        ),
+                      ),
+                    ),
+                    if (showAuthorBadge) ...[
+                      const SizedBox(width: 6),
+                      const _AuthorBadge(),
+                    ],
+                  ],
                 ),
               ),
             if (snapshot != null)
@@ -264,16 +293,30 @@ class ChatMessageBubble extends StatelessWidget {
           color: bubbleColor,
           borderRadius: borderRadius,
           boxShadow: isMine ? null : AppColors.cardShadow,
+          border: adminBorder,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (!isMine) ...[
-              Text(
-                message.author.name,
-                style: AppTypography.smallMedium.copyWith(
-                  color: AppColors.terracotta,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      message.author.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.smallMedium.copyWith(
+                        color: AppColors.terracotta,
+                      ),
+                    ),
+                  ),
+                  if (showAuthorBadge) ...[
+                    const SizedBox(width: 6),
+                    const _AuthorBadge(),
+                  ],
+                ],
               ),
               const SizedBox(height: 4),
             ],
@@ -1170,6 +1213,33 @@ class _DeletedBubble extends StatelessWidget {
             fontStyle: FontStyle.italic,
             color: AppColors.textTertiary,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Бейдж «АВТОР КЛУБА» рядом с именем Анны (автор-админ) в чужом сообщении.
+/// Терракотовый текст на бледно-терракотовой подложке — выделяет ведущую
+/// клуба, не перетягивая внимание (редизайн чата 28.06).
+class _AuthorBadge extends StatelessWidget {
+  const _AuthorBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: AppColors.terracotta.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        'АВТОР КЛУБА',
+        style: AppTypography.micro.copyWith(
+          color: AppColors.terracotta,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.3,
+          fontSize: 9,
         ),
       ),
     );
