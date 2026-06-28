@@ -104,6 +104,7 @@ class ChatMessageBubble extends StatelessWidget {
     this.isHighlighted = false,
     this.isAdmin = false,
     this.authorIsAdmin = false,
+    this.showAvatar = true,
     this.onReactionTap,
     this.onReport,
     this.onReply,
@@ -127,6 +128,12 @@ class ChatMessageBubble extends StatelessWidget {
   /// бейдж «АВТОР КЛУБА» рядом с именем и терракотовую полоску слева (редизайн
   /// чата 28.06). Вычисляется в chat_tab по списку админов (_adminIds).
   final bool authorIsAdmin;
+
+  /// Показывать аватар слева (у чужих сообщений). false — для сообщения в
+  /// середине серии того же автора: аватар скрыт, слева пустой отступ 32px,
+  /// чтобы пузырь не «прыгал» по горизонтали (редизайн чата 28.06, как в
+  /// Telegram). Вычисляется в chat_tab по соседнему сообщению.
+  final bool showAvatar;
 
   /// Тап по эмодзи (тап по чипу реакции или выбор в меню).
   final void Function(String emoji)? onReactionTap;
@@ -403,10 +410,12 @@ class ChatMessageBubble extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _Avatar(
-                name: message.author.name,
-                avatarUrl: message.author.avatarUrl,
-              ),
+              showAvatar
+                  ? _Avatar(
+                      name: message.author.name,
+                      avatarUrl: message.author.avatarUrl,
+                    )
+                  : const SizedBox(width: 32),
               const SizedBox(width: 8),
               Flexible(child: bubble),
             ],
@@ -492,7 +501,7 @@ class ChatMessageBubble extends StatelessWidget {
 }
 
 /// Содержимое контекстного меню (выносим отдельно — чтобы анимация scale/fade
-/// применялась ко всей карточке). Ряд эмодзи + список действий.
+/// применялall к всей карточке). Ряд эмодзи + список действий.
 class _ActionMenuContent extends StatelessWidget {
   const _ActionMenuContent({
     required this.message,

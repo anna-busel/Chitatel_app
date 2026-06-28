@@ -24,6 +24,34 @@ import 'pinned_message_banner.dart';
 /// больше — заметнее. Узор рисует [_PaperTexturePainter] внизу файла.
 const double _paperDotOpacity = 0.08;
 
+/// Подпись разделителя даты в ленте чата: «Сегодня» / «Вчера» / «5 июня»
+/// (день + месяц в родительном падеже). Для прошлых лет добавляется год.
+/// Сравнение по локальному времени (редизайн чата 28.06).
+String _formatDateLabel(DateTime dt) {
+  final d = dt.toLocal();
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final that = DateTime(d.year, d.month, d.day);
+  final diff = today.difference(that).inDays;
+  if (diff == 0) return 'Сегодня';
+  if (diff == 1) return 'Вчера';
+  const months = [
+    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+  ];
+  final label = '${d.day} ${months[d.month - 1]}';
+  if (d.year != now.year) return '$label ${d.year}';
+  return label;
+}
+
+/// Два момента — один календарный день (по локальному времени)? Нужно для
+/// разделителей дат и группировки аватаров в серии (редизайн чата 28.06).
+bool _sameDay(DateTime a, DateTime b) {
+  final la = a.toLocal();
+  final lb = b.toLocal();
+  return la.year == lb.year && la.month == lb.month && la.day == lb.day;
+}
+
 /// Таб «Чат» клуба.
 ///
 /// Navigation к закрепу/reply (как в Telegram): тап по баннеру закрепа или
@@ -1287,7 +1315,27 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                             }
                             final m = _messages[index];
                             final isMine = m.isMine(_currentUserId);
-                            return KeyedSubtree(
+                            // Разделитель даты + аватар-серия (редизайн 28.06).
+                            // Лента reverse:true → верх = старые сообщения,
+                            // сосед сверху (старше) = index + 1.
+                            final bool isOldest =
+                                index == _messages.length - 1;
+                            // Заголовок даты — над самым старым сообщением
+                            // своего дня (когда день сменился или это самый
+                            // старый загруженный).
+                            final bool showDateHeader = isOldest ||
+                                !_sameDay(m.createdAt,
+                                    _messages[index + 1].createdAt);
+                            // Сосед сверху — тот же автор и тот же день?
+                            final bool prevSameAuthor = !isOldest &&
+                                !showDateHeader &&
+                                _messages[index + 1].author.id ==
+                                    m.author.id;
+                            // Аватар показываем только у первого сообщения в
+                            // серии (после смены автора/дня либо у самого
+                            // старого). У остальных — пустой отступ 32px.
+                            final bool showAvatar = !prevSameAuthor;
+                            final bubble = KeyedSubtree(
                               key: _keyForMessage(m.id),
                               child: ChatMessageBubble(
                                 message: m,
@@ -1296,6 +1344,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                                     _highlightedMessageId == m.id,
                                 isAdmin: _isAdmin,
                                 authorIsAdmin: _authorIsAdmin(m),
+                                showAvatar: showAvatar,
                                 onReactionTap: (emoji) =>
                                     _toggleReaction(m.id, emoji),
                                 onReply: () => _startReply(m),
@@ -1314,6 +1363,17 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                                     ? (pin) => _togglePin(m.id, pin)
                                     : null,
                               ),
+                            );
+                            if (!showDateHeader) return bubble;
+                            return Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.stretch,
+                              children: [
+                                _DateSeparator(
+                                  label: _formatDateLabel(m.createdAt),
+                                ),
+                                bubble,
+                              ],
                             );
                           },
                         ),
@@ -1491,6 +1551,37 @@ class _EmptyChat extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Разделитель даты по центру ленты («Сегодня / Вчера / 5 июня»). Плашка-
+/// пилюля на фоне surfaceMedium, текст textTertiary (редизайн чата 28.06,
+/// как в прототипе).
+class _DateSeparator extends StatelessWidget {
+  const _DateSeparator({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceMedium,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            label,
+            style: AppTypography.small.copyWith(
+              color: AppColors.textTertiary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ),
       ),
     );
