@@ -12,13 +12,15 @@
 
 ## ТЕКУЩИЙ СТАТУС (на 28.06.2026)
 
-**✅ ПРИЛОЖЕНИЕ В TESTFLIGHT И НА ФИЗ.АЙФОНЕ (26.06).** Первый билд Codemagic, Apple Sign In в проде.
+**✅ ПРИЛОЖЕНИЕ В TESTFLIGHT И НА ФИЗ.АЙФОНЕ (26.06).** Первый билд Codemagic, Apple Sign In в проде. Анна уже установила TestFlight (приглашение в Internal Testing ещё НЕ отправлено — добавить через ASC → TestFlight → Internal Testing; Анна = Account Holder, есть в Users and Access).
 
 **✅ ДЕПЛОЙ СЕРВЕРА (26.06).** `https://api.chitatel.app` HTTPS, своя MongoDB, каталог+клуб залиты.
 
 **✅ ПОЛИРОВКА ЧАТА + БАГ БЕЛОГО ЭКРАНА КЛУБА (27.06).**
 
-**✅ ВТОРАЯ ОТЛАДКА ЧАТА + РЕДИЗАЙН ЧАСТИЧНО ПРИМЕНЁН (27-28.06).** 3 серьёзных бага чата устранены (исчезающие = soft-delete+limit; кэш картинок = плавающий exp; дёрганье клавиатуры = AlertDialog). Закреп-связка завершена. **Юзер подтвердил, баги ушли на билде.** Редизайн: закреп кофейный + скругления/реакции ПРИМЕНЕНЫ; остальное осталось (см. блок РЕДИЗАЙН).
+**✅ ВТОРАЯ ОТЛАДКА ЧАТА (27-28.06).** 3 серьёзных бага чата устранены (исчезающие = soft-delete+limit; кэш картинок = плавающий exp; дёрганье клавиатуры = AlertDialog). Закреп-связка завершена. **Юзер подтвердил, баги ушли на билде.**
+
+**✅ РЕДИЗАЙН ЧАТА ПОЛНОСТЬЮ ПРИМЕНЁН В КОД (28.06).** Все 6 пунктов запушены (см. блок РЕДИЗАЙН). Ждёт проверки на билде. Косметика, только чат.
 
 **Фаза 3 (Платежи) — КОД ГОТОВ + КАБИНЕТ + РУЧНЫЕ ШАГИ 3.2 СДЕЛАНЫ.** `.env` неполон (пусты APPLE_*_IAP, GOOGLE_CLIENT_ID, OPENAI_API_KEY, APNS_*). Sandbox-тестировщики и webhook URL — не настроены.
 
@@ -26,112 +28,132 @@
 
 ---
 
-## ✅ СЕССИЯ 27-28.06.2026 — ВТОРАЯ ОТЛАДКА ЧАТА + РЕДИЗАЙН
+## 🚨 ТЕХДОЛГ К ФАЗЕ 6 (ПОЛИРОВКА) — НАЙДЕНО ПРИ АУДИТЕ 28.06
 
-Юзер тестировал на билде, нашёл 3 бага. Все исправлены и запушены. Роль ассистента: исполнитель, читает код а не гадает, СПРАШИВАЕТ перед правками/откатами (юзер резко против действий без спроса).
+> Всплыло при разборе вопроса Анны про жалобы. Доделать ДО сабмита в App Store. Не косметика — это требования/недоделки плана.
 
-### 🔴 БАГ A: ИСЧЕЗАЮЩИЕ СООБЩЕНИЯ (серверный, главное) — РЕШЁН `ea18610`
-**Симптом:** «то 3, то 5, то 6 из 9» после перезахода. Юзер сам нащупал связь с УДАЛЕНИЕМ.
-**Причина:** в `GET /chat` фильтр без `deletedAt`, `.limit(20)` к строкам ВКЛЮЧАЯ удалённые (soft-delete) → клиент `_notDeleted` их выбрасывал → непредсказуемо мало живых.
-**Фикс:** `server/src/routes/club.js` — хелпер `liveMessagesFilter = (clubMonthId) => ({clubMonthId, isHidden:{$ne:true}, deletedAt:null})` в `GET /chat` и `/context`. В /context целевое проверяется на `deletedAt` (404). **БЕЗ РЕБИЛДА — только `git pull` + `pm2 restart`.**
+### 🔴 БЛОКИРОВКА ПОЛЬЗОВАТЕЛЯ — НЕ РЕАЛИЗОВАНА (MVP + Apple Guideline 1.2, БЛОКЕР РЕВЬЮ)
+**Статус:** жалоба («Пожаловаться») работает и шлёт `Report` (pending) на сервер. А вот **самостоятельной блокировки пользователя участником НЕТ** — ни на сервере, ни в приложении. Подтверждено чтением кода 28.06:
+- `server/src/models/User.js` — поля `blockedUsers[]` НЕТ (есть только `isBanned`/`mutedUntil` — это инструменты модератора-Анны, не self-service).
+- `server/src/routes/club.js` — эндпоинтов `POST/DELETE /api/users/:id/block` НЕТ. Socket.io НЕ фильтрует заблокированных.
+- Шторка жалобы во Flutter (`report_sheet`/`chat_tab`) — toggle «Заблокировать пользователя», скорее всего, отсутствует (проверить при реализации).
 
-### 🔴 БАГ B: КАРТИНКИ НЕ КЭШИРУЮТСЯ + СКАЧОК РАЗМЕРА — РЕШЁН (сервер `dfd19f9` + клиент `d0df5f3`)
-**Причина кэша:** `audio.service.js generateSignedUrl`: `exp = Date.now()/1000 + ttl` — плавает при каждом вызове → sig/URL меняются → кэш мимо. **Длинный TTL НЕ помогает — важна СТАБИЛЬНОСТЬ ТОЧКИ ОТСЧЁТА exp.**
-**Фикс сервера** (`dfd19f9`, `image.service.js`): `IMAGE_URL_FIXED_EXP = Math.floor(Date.UTC(2099,0,1)/1000)` + локальный signPayload + `generateImageSignedUrl` с фикс. exp. Аудио НЕ тронуто (TTL 1ч). Защита на подписи, картинка иммутабельна (uuid).
-**Фикс клиента** (`d0df5f3`, `chat_message_bubble.dart _ChatImage`): `placeholder` → `progressIndicatorBuilder` (поверх в тех же констрейнтах) + minWidth/minHeight. Нет скачка. **Требует РЕБИЛД.** Проверять на НОВОЙ картинке после рестарта.
+**Это НЕ «забытая придумка», а недоделанный пункт плана.** Заложено в:
+- `STEP-BY-STEP.md` Задача 4.2: `POST /api/users/:id/block` → `blockedUsers[]` + фильтрация; `DELETE .../block`.
+- `STEP-BY-STEP.md` Задача 4.3: Socket.io «не отправлять сообщения от заблокированных».
+- `STEP-BY-STEP.md` Задача 4.5: шторка жалобы (4.36) = «6 причин + toggle Заблокировать»; чеклист «Report + Block → сообщения скрыты».
+- `MASTER.md` 4.35/4.36 (кнопка «Заблокировать пользователя»), 7.4 (эндпоинты block), 6.1 п.8 (UGC: Report + Block — статус ✅ ОШИБОЧНО, block не сделан), секция 8 (MVP: «Жалобы и блокировки»).
 
-### 🔴 БАГ C: ДЁРГАНЬЕ КЛАВИАТУРЫ ПРИ УДАЛЕНИИ — РЕШЁН `d3a8f23`
-**Симптом:** при открытой клавиатуре при удалении AlertDialog подтверждения → контент прыгает на высоту клавиатуры. Только при удалении.
-**Причина:** AlertDialog — второй overlay поверх ещё-живой клавиатуры; при удалении она лишняя, но на миг возвращается и гасится диалогом → layout прыгает. Ключ дал юзер: «при других действиях клавиатура нужна, при удалении нет».
-**Решение (путь А):** УБРАТЬ AlertDialog. `_deleteMessage` (`chat_tab.dart`): оптимистично `removeAt` сразу + SnackBar «Сообщение удалено · Отменить» (floating, тёмный textPrimary, кнопка терракота, 3800мс). Запрос через `Timer(4 сек)` → `_commitPendingDelete`. «Отменить» → `_undoPendingDelete` (вернуть на `_pendingDeleteIndex`). Поля `_deleteTimer/_pendingDeleteMessage/_pendingDeleteIndex/_pendingDeleteWasPinned`. `_flushPendingDelete` при новом удалении. В `dispose` дослать pending. **Требует РЕБИЛД. ✅ Юзер подтвердил: дёрганья нет.**
+**Почему важно:** Apple 1.2 для UGC требует 4 вещи — фильтр контента (есть: запрет ссылок), **репорт** (есть), **блокировка обидчика пользователем** (НЕТ), реакция модератора ≤24ч (через админку, Фаза 6.6 — админки ещё нет). Отсутствие self-service блокировки — частая причина reject по 1.2.
 
-### ✅ СВЯЗКА ЗАКРЕПА (виден сразу при входе)
-Сервер `12714b3` (`GET /chat` отдаёт `pinnedMessage` отдельным полем) + сервис `5c826fe` (`ChatHistoryResult.pinnedMessage`) + клиент `7966ccc` (поле `_pinnedMessage`, баннер из него). **Подтверждено юзером.**
+**Объём (НЕ начинать без согласования + чтения MASTER, оформить как задачу):**
+- Сервер (нужен `git pull`+`pm2 restart`): `blockedUsers[]` в User; `POST/DELETE /api/users/:id/block`; фильтрация в выдаче истории чата (`liveMessagesFilter`/выдача) и в Socket.io эмите.
+- Клиент (ребилд): toggle/кнопка «Заблокировать» в шторке жалобы; локально прятать сообщения заблокированных.
+- Док: галочку в MASTER 6.1 п.8 не считать закрытой, пока не сделано.
 
-### Прочее (НЕ делать)
-- **Q&A ответы Анны из приложения** — НЕ делать. В `qa_tab.dart` ответить нельзя никому. На сервере поля под ответ есть, эндпоинта POST нет. По плану ответы — через АДМИНКУ (Фаза 6.6). Не блокер.
-- «Моргание» при переходе к ДАЛЁКОМУ закрепу — характер ветки 3 `_jumpToMessage`, НЕ баг.
+**Решение юзера (28.06):** добавить блок в техдолг, доделать В КОНЦЕ на Фазе полировки (не сейчас).
 
-### ⏭️ Применить фиксы
-- **Сервер** (`ea18610`, `dfd19f9`): `git checkout -- server/package-lock.json` → `git pull origin main` → `pm2 restart chitatel-api`. Исчезающие чинятся БЕЗ ребилда.
-- **Приложение** (`d0df5f3`, `d3a8f23`, `7966ccc` + редизайн): новый билд Codemagic. Всё клиентское ВСЛЕПУЮ (Claude не компилирует Flutter) — при падении прислать лог.
+### 🟡 ТЁМНАЯ ТЕМА — Post-MVP, НЕ блокер
+Спрашивал юзер. Проверено: `MASTER.md` 6.2 («Dark Mode — Post-MVP») и секция 8 (в списке «НЕ входит в MVP»). **Apple НЕ требует** тёмную тему для ревью (это «рекомендуется», не «обязательно»). К запуску не нужна, риска отказа нет. Оставляем на потом, в техдолг можно НЕ тащить как блокер.
+
+### Прочее из техдолга (уже было в плане, не потерять):
+- **Account deletion** — реальное удаление данных ≤24ч (Apple 5.1.1(v), БЛОКЕР). Экран есть, серверный flow проверить/доделать (Фаза 6).
+- **Privacy + Terms + Support URL** на chitatel.app — сейчас заглушки (БЛОКЕР ревью).
+- **Админка Анны (Фаза 6.6)** — разбор жалоб (hide/warn/mute/ban), ответы Q&A. Без неё «реакция ≤24ч» формально не закрыта.
+- Убрать заглушки `_Placeholder` перед сабмитом.
 
 ---
 
-## 🎨 РЕДИЗАЙН ЧАТА — ЧАСТИЧНО ПРИМЕНЁН (статус на 28.06)
+## ✅ СЕССИЯ 28.06.2026 — РЕДИЗАЙН ЧАТА ДОВЕДЁН ДО КОНЦА
 
-Прототипы через visualize:show_widget (HTML в реальной палитре). **Только чат, остальное НЕ трогаем** (оно цельное). КОСМЕТИКА поверх рабочей логики. **Палитра строго из `app_colors.dart`** (terracotta `#C73E28`, фон `#FAFAF7`, surfaceLight `#F5F3EF`, surfaceMedium `#F0EDE8`, lightCoffee `#3A2018`, coral `#E8734A`).
+Все оставшиеся пункты редизайна применены и запушены. Косметика поверх рабочей логики, только чат. Палитра строго из `app_colors.dart`. Claude не компилирует Flutter (урок #44) → ждёт проверки на билде.
 
-### ✅ УЖЕ ПРИМЕНЕНО В КОД (требует ребилда, юзер ещё не смотрел на билде):
-1. **Закреп — кофейная плашка** — `b3d4c4e`, `pinned_message_banner.dart`. Фон `lightCoffee #3A2018` (тёмный, макс. контраст — главный недостаток «сливался» решён), терракотовый квадрат-пин 30×30 (`#C73E28`, радиус 8, белая иконка push_pin), подпись «Закреплено · Имя» — `coral`, текст белый, chevron-right `white.opacity(0.55)`. Логика (preview image/voice/deleted, onTap) не тронута. ⚠️ coral подписи проверить на устройстве (не слишком ли ярко).
-2. **Скругления пузырей 18px** (было 16) + асимметричные хвостики (свой острый снизу-справа 4px, чужой снизу-слева) + **реакции компактнее** (padding 9/4, эмодзи fontSize 16, обводка своей 1.4px) — `9d9d04c`, `chat_message_bubble.dart`.
+### Что добавлено в этой сессии:
+3. **Бейдж «АВТОР КЛУБА» + полоска слева** у сообщений Анны (автор-админ) — коммиты `34f1824` (`chat_message_bubble.dart`: параметр `authorIsAdmin`, флаг `showAuthorBadge=authorIsAdmin && !isMine`, виджет `_AuthorBadge` terracotta на `terracotta.withOpacity(0.10)` fontSize 9 w700, `adminBorder` левая полоска terracotta 2.5px в обеих ветках inner) + `b0eca94` (`chat_tab.dart`: `Set<String> _adminIds` из `_mentionable.where(isAdmin)` в `_bootstrap`, `_authorIsAdmin(m)`, проброс `authorIsAdmin`).
+4. **Текстура бумаги на фоне** — `649d32a`. ⚠️ РЕАЛИЗОВАНО НЕ PNG (план с PNG-тайлом ОТМЕН�ён): прототип-HTML показал, что «бумага» = чистый CSS-паттерн из точек (radial-gradient 1px точки, шаг 3px, rgba(150,130,100,0.045)). В Dart сделано `_PaperTexturePainter` (CustomPainter, `canvas.drawCircle` r=0.6, шаг 3.0) внутри `Positioned.fill > RepaintBoundary > CustomPaint` ПОД списком. База фона `#FAFAF7` НЕ менялась. Прозрачность вынесена в ЕДИНУЮ top-level const `_paperDotOpacity = 0.08` вверху `chat_tab.dart` (поднята с прототипных 0.045 — юзер одобрил превышение, чтобы читалось на телефоне). ⚠️ Крутить эту одну цифру если на устройстве слабо/сильно.
+5. **Разделители дат** — пилюля по центру «Сегодня/Вчера/5 июня», фон `surfaceMedium #F0EDE8`, текст `textTertiary` w500, радиус 12. Коммит `1215f7e9` (`chat_tab.dart`). Хелперы top-level `_formatDateLabel(dt)` (Сегодня/Вчера/«D месяц» родит. падеж, +год для прошлых лет, сравнение toLocal) и `_sameDay(a,b)`. В `itemBuilder` (reverse:true → сосед сверху/старше = index+1): `showDateHeader` над самым старым сообщением дня; виджет `_DateSeparator`.
+6. **Аватар без дублей в серии** — коммит `1215f7e9` (тот же, `chat_tab.dart` + `chat_message_bubble.dart`). У чужих сообщений аватар только у первого в серии того же автора (после смены автора/дня/у самого старого); у остальных пустой `SizedBox(width:32)` для выравнивания. Флаг `showAvatar=!prevSameAuthor` считается в `chat_tab`, новый параметр `showAvatar` в `ChatMessageBubble` (default true; имя НЕ дедуплицируется — только аватар, по плану).
 
-### ⏳ ОСТАЛОСЬ ПРИМЕНИТЬ (порядок):
-3. **Бейдж «АВТОР КЛУБА»** у Анны — ⚠️ БЫЛ НАЧАТ, PUSH ПРЕРВАЛСЯ, НЕ ЗАКОММИЧЕН. Делать заново. План (БЕЗ серверных изменений): у `ChatAuthor` ЕСТЬ поле `id` (проверено, модель `chat_message.dart`). В `chat_tab.dart`: собрать `Set<String> _adminIds` из `_mentionable.where((m)=>m.isAdmin).map((m)=>m.id)` в `_bootstrap` (там же `_isAdmin = _adminIds.contains(_currentUserId)`); метод `_authorIsAdmin(m) => _adminIds.contains(m.author.id)`; передать в бубл новый параметр `authorIsAdmin: _authorIsAdmin(m)`. В `chat_message_bubble.dart`: параметр `final bool authorIsAdmin`, флаг `showAuthorBadge = authorIsAdmin && !isMine`. Виджет `_AuthorBadge` (текст «АВТОР КЛУБА», fontSize 9, w700, letterSpacing 0.3, цвет terracotta на `terracotta.withOpacity(0.10)`, padding 6/1, радиус 8). Показывать рядом с именем — обернуть имя в Row(mainAxisSize.min) с Flexible(Text overflow ellipsis) + если showAuthorBadge: SizedBox(width 6) + _AuthorBadge (в обеих ветках inner: caption-картинка и текстовый пузырь). Полоска слева: `adminBorder = showAuthorBadge ? Border(left: BorderSide(terracotta, 2.5)) : null`, добавить в `decoration` обоих Container'ов inner (image+caption и текстовый). Юзер выбрал текст «Автор клуба» (из Ведущая/Куратор/Автор). Тестовый аккаунт Анны → потом реальный, код не меняется.
-4. **Текстура бумаги на фоне** — фон остаётся СВЕТЛЫМ `#FAFAF7` (НЕ менять цвет!) + очень слабая зернистость (Вариант A). PNG-тайлом 64×64 (НЕ кодом). **Нужен ассет бумаги (PNG seamless, очень бледный).** В `chat_tab.dart` фон Container списка: `DecorationImage(image: AssetImage(...), repeat: ImageRepeat.repeat)`. ПОСЛЕДНЕЙ, отключаемой, проверять на устройстве (легко переборщить → дёшево). Юзер согласен что для книжного чата фишка, ПРИ условии что еле заметна.
-5. **Разделители дат** — пилюля по центру «Сегодня/Вчера/5 июня», фон `surfaceMedium #F0EDE8`, текст `textTertiary`. В `chat_tab.dart` `itemBuilder` (reverse:true → сравнивать день m с днём следующего более старого index+1; заголовок когда день меняется или самый старый). ⚠️ `chat_tab.dart` критичный файл (там удаление) — осторожно.
-6. **Аватар без дублей в серии** — несколько подряд от одного автора → аватар у одного, у остальных пустой отступ 32px. В `chat_tab.dart`. У всех остальных аватар как сейчас.
+⚠️ Мелочь: в коммите `1215f7e9` в ОДНОМ `///`-комментарии `chat_message_bubble.dart` (~стр. 504, доккоммент `_ActionMenuContent`) опечатка при ручном кодировании кириллицы — «применялall к всей» вместо «применялась ко всей». На компиляцию/работу НЕ влияет (комментарий). Поправить при следующей правке этого файла.
 
-### ❌ ОТМЕНЕНО / НЕ делаем:
-- ❌ **Галочки прочтения** — РЕШЕНО НЕ ДЕЛАТЬ (групповой чат, «✓✓» неоднозначны; readBy оставлен для будущей статистики Анны).
-- ❌ кофейный/коричневый в ПУЗЫРЯХ (только в закрепе). Один акцент в ленте — терракота.
-- ❌ книжный паттерн ИКОНКАМИ (криво, удешевляет).
-- ❌ менять базовый цвет фона (держать `#FAFAF7`).
-- ❌ трогать остальное приложение. ❌ градиенты пузырей. ❌ звуки. ❌ анимация перехода к далёкому закрепу.
+### Итог редизайна (все 6 пунктов в коде, ждут билда):
+1. ✅ Закреп кофейный `b3d4c4e`. 2. ✅ Скругления 18px + хвостики + компактные реакции `9d9d04c`. 3. ✅ Бейдж «Автор клуба» + полоска `34f1824`+`b0eca94`. 4. ✅ Текстура (CSS-точки CustomPainter, НЕ PNG) `649d32a`. 5. ✅ Разделители дат `1215f7e9`. 6. ✅ Аватар-серия `1215f7e9`.
+**ОТМЕНЕНО:** галочки прочтения; кофейный/коричневый в пузырях (только закреп); книжный паттерн иконками; смена базового фона.
 
-### Процесс: переносить ПО ОДНОМУ, юзер проверяет на билде (Claude не компилирует Flutter — урок #44).
+### Состояние файлов чата в репо (sha на 28.06, после редизайна):
+- `pinned_message_banner.dart` — кофейная плашка (`b3d4c4e`).
+- `chat_message_bubble.dart` — HEAD после `1215f7e9` (скругления+реакции+бейдж+showAvatar). До этого `34f1824`.
+- `chat_tab.dart` — HEAD после `1215f7e9` (удаление SnackBar, закреп, _adminIds/бейдж, текстура `_PaperTexturePainter`+`_paperDotOpacity`, даты `_DateSeparator`, аватар-серия). До этого `649d32a`.
+- `chat_message.dart` (модель) — `cb9e5318`, у `ChatAuthor` есть `id`/`name`/`avatarUrl`, `MessageReaction.containsUser`, `message.isMine`.
+- `app_colors.dart` — `744f38803`.
 
-### Состояние файлов чата в репо (sha на 28.06):
-- `pinned_message_banner.dart` — кофейная плашка применена (коммит `b3d4c4e`).
-- `chat_message_bubble.dart` — sha `f77d6cd2` (скругления 18 + реакции; бейджа НЕТ).
-- `chat_tab.dart` — sha `e79b53c8` (удаление SnackBar, закреп; БЕЗ authorIsAdmin/дат/аватар-серии).
-- `chat_message.dart` (модель) — sha `cb9e5318`, у `ChatAuthor` есть `id`, `MessageReaction.containsUser`, `message.isMine`.
-- `app_colors.dart` — sha `744f38803`.
+---
+
+## ✅ СЕССИЯ 27-28.06.2026 — ВТОРАЯ ОТЛАДКА ЧАТА
+
+Роль ассистента: исполнитель, читает код а не гадает, СПРАШИВАЕТ перед правками/откатами (юзер резко против действий без спроса).
+
+### 🔴 БАГ A: ИСЧЕЗАЮЩИЕ СООБЩЕНИЯ (серверный) — РЕШЁН `ea18610`
+**Симптом:** «то 3, то 5, то 6 из 9» после перезахода. Юзер сам нащупал связь с УДАЛЕНИЕМ.
+**Причина:** в `GET /chat` фильтр без `deletedAt`, `.limit(20)` к строкам ВКЛЮЧАЯ удалённые (soft-delete) → клиент `_notDeleted` их выбрасывал → непредсказуемо мало живых.
+**Фикс:** `server/src/routes/club.js` — `liveMessagesFilter = (clubMonthId) => ({clubMonthId, isHidden:{$ne:true}, deletedAt:null})` в `GET /chat` и `/context`. **БЕЗ РЕБИЛДА — `git pull` + `pm2 restart`.**
+
+### 🔴 БАГ B: КАРТИНКИ НЕ КЭШИРУЮТСЯ + СКАЧОК — РЕШЁН (сервер `dfd19f9` + клиент `d0df5f3`)
+**Причина кэша:** `audio.service.js`: `exp = Date.now()/1000 + ttl` — плавает → URL меняется → кэш мимо.
+**Фикс сервера** (`dfd19f9`, `image.service.js`): `IMAGE_URL_FIXED_EXP = Math.floor(Date.UTC(2099,0,1)/1000)` + `generateImageSignedUrl` с фикс. exp. Аудио НЕ тронуто (TTL 1ч).
+**Фикс клиента** (`d0df5f3`, `_ChatImage`): `progressIndicatorBuilder` + minWidth/minHeight. **Ребилд.** Проверять на НОВОЙ картинке после рестарта.
+
+### 🔴 БАГ C: ДЁРГАНЬЕ КЛАВИАТУРЫ ПРИ УДАЛЕНИИ — РЕШЁН `d3a8f23`
+**Причина:** AlertDialog — overlay поверх ещё-живой клавиатуры → layout прыгает.
+**Решение (путь А):** убрать AlertDialog. `_deleteMessage`: оптимистичный `removeAt` + SnackBar «Сообщение удалено · Отменить» (floating, textPrimary, терракота, 3800мс). Запрос через `Timer(4 сек)` → `_commitPendingDelete`. «Отменить» → `_undoPendingDelete`. Поля `_deleteTimer/_pendingDelete*`. В `dispose` дослать pending. **Ребилд. ✅ Юзер подтвердил.**
+
+### ✅ СВЯЗКА ЗАКРЕПА
+Сервер `12714b3` + сервис `5c826fe` + клиент `7966ccc`. **Подтверждено юзером.**
+
+### ⏭️ Применить фиксы
+- **Сервер** (`ea18610`, `dfd19f9`): `git checkout -- server/package-lock.json` → `git pull` → `pm2 restart chitatel-api`. Исчезающие чинятся БЕЗ ребилда.
+- **Приложение:** новый билд Codemagic. Всё клиентское ВСЛЕПУЮ — при падении прислать лог.
 
 ---
 
 ## ✅ СЕССИЯ 27.06.2026 — ПОЛИРОВКА ЧАТА + БАГ БЕЛОГО ЭКРАНА КЛУБА
 
 ### 🔴 ГЛАВНЫЙ БАГ: белый экран клуба после перезахода (`60f3f4a`)
-**Причина:** маршрут клуба в `GuestGate` (крутилка на initial/loading); `authProvider` стартует `initial`, в `authenticated` только через `checkAuth()`; **`main.dart` НЕ вызывал `checkAuth()` при старте** → после перезахода статус навсегда `initial` → GuestGate вечно крутит → ClubScreen не строится. Свежий логин работал (signIn ставит authenticated). Каталог работал (не в GuestGate). Диагностика: debug-логи HTTP показали что запрос клуба НЕ уходит.
+**Причина:** `main.dart` НЕ вызывал `checkAuth()` при старте → authProvider навсегда `initial` → GuestGate вечно крутит → ClubScreen не строится. Каталог работал (не в GuestGate).
 **Фикс:** `await checkAuth()` в `main()` до runApp. **✅ Проверено юзером.**
 
-### Баги чата (все исправлены)
-1. Удалённые исчезают (`f25c7a3`) — `removeWhere` + фильтр `_notDeleted`. 2. Перемотка к закрепу/reply (`f25c7a3`) — jumpTo по индексу → endOfFrame → ensureVisible. 3. Дёрганье скролла (`f25c7a3`) — гистерезис кнопки «вниз» (300/120px). 4. Оптимистичная отправка (`3c235a3`) — `_insertOwnMessage(sent)` из ответа POST + дедуп по id. 5. Клавиатура закрывается (`3c235a3`) — GestureDetector(translucent)+unfocus + onDrag. 6. Телеграм-меню long-press (`644f487`) — `showGeneralDialog` + Scale/Fade (по центру), `_ActionMenuContent`/`_ActionTile`. 7. Эмодзи крупнее (`644f487`). 8. Фото после перезахода (`bc2fdeb`, СЕРВЕРНОЕ) — `withFreshMedia()` перевыпускает signed URL из `*StoragePath` на КАЖДОЙ отдаче. **Требует pm2 restart.**
+### Баги чата (исправлены)
+1. Удалённые исчезают (`f25c7a3`). 2. Перемотка к закрепу/reply (`f25c7a3`). 3. Дёрганье скролла — гистерезис 300/120px (`f25c7a3`). 4. Оптимистичная отправка (`3c235a3`). 5. Клавиатура закрывается (`3c235a3`). 6. Телеграм-меню long-press `showGeneralDialog`+Scale/Fade (`644f487`). 7. Эмодзи крупнее (`644f487`). 8. Фото после перезахода — `withFreshMedia()` (`bc2fdeb`, СЕРВЕРНОЕ, pm2 restart).
 
-### Серверные фиксы (по pm2 logs)
-- `trust proxy` (`7b8228f`) — `app.set('trust proxy', 1)`. express-rate-limit за nginx падал ERR_ERL_UNEXPECTED_X_FORWARDED_FOR. **pm2 restart.**
-- Graceful shutdown (`742e676`) — Mongoose 8 убрал callback → async/await. **pm2 restart.**
-- Клиент: очередь параллельных 401 (`d13370`) — один refresh на всех. Debug-логи убраны (`171af17`,`d13370`).
-
-### Осталось по чату (не блокеры): звуки — НЕ делать. Индикатор «печатает...» — по желанию.
+### Серверные фиксы
+- `trust proxy` (`7b8228f`). Graceful shutdown async/await (`742e676`). Очередь 401 → один refresh (`d13370`). Debug убраны (`171af17`,`d13370`).
 
 ---
 
 ## ✅ CODEMAGIC + TESTFLIGHT (26.06)
 
-⚠️ **Аккаунт Анны Individual** → локальная Xcode-подпись приглашённым недостижима (юзер `g.akhmeteli89@gmail.com` Admin в ASC, в Xcode видит только Personal Team `669ZY8S56N`, команда Анны `3GS6F87RKZ` не появляется). Путь — Codemagic + ASC API key.
-- **ASC API key:** Team Keys, Key ID `UN4ZB8T93H`, имя в Codemagic `chitatel-key`. ⚠️ Для верификации покупок возможно нужен ОТДЕЛЬНЫЙ ключ «Встроенная покупка».
-- **Codemagic:** план Individual, GitHub App в `anna-busel`. `codemagic.yaml` в КОРНЕ (`working_directory: app`, коммит `79fa03d`). workflow `ios-testflight`: mac_mini_m2, Flutter 3.22.3, fetch-signing-files --create → build ipa. submit=false. groups `appstore_credentials`.
-- ⚠️ **CERTIFICATE_PRIVATE_KEY** RSA в env (иначе подпись падает). НЕ в репо.
-- Грабли (решены): No matching profiles → --create; Cannot save certs → CERTIFICATE_PRIVATE_KEY; код 90474 iPad-ориентации → `TARGETED_DEVICE_FAMILY "1,2"→"1"` (`a1e4c6e`).
-- TestFlight: билд 1.0.0(1), Export Compliance exempt. Группа Internal Testing, добавлен ТОЛЬКО юзер. **Анну добавить ПОЗЖЕ.** На айфоне работает. ✅
+⚠️ **Аккаунт Анны Individual** → локальная Xcode-подпись приглашённым недостижима (команда Анны `3GS6F87RKZ` не появляется в Xcode у `g.akhmeteli89@gmail.com`). Путь — Codemagic + ASC API key.
+- **ASC API key:** Team Keys, Key ID `UN4ZB8T93H`, в Codemagic `chitatel-key`. ⚠️ Для верификации покупок возможно нужен ОТДЕЛЬНЫЙ ключ.
+- **Codemagic:** Individual, GitHub App в `anna-busel`. `codemagic.yaml` в КОРНЕ (`working_directory: app`, `79fa03d`). workflow `ios-testflight`: mac_mini_m2, Flutter 3.22.3, fetch-signing-files --create → build ipa. submit=false. groups `appstore_credentials`.
+- ⚠️ **CERTIFICATE_PRIVATE_KEY** RSA в env. НЕ в репо.
+- Грабли (решены): No matching profiles → --create; Cannot save certs → CERTIFICATE_PRIVATE_KEY; 90474 iPad-ориентации → `TARGETED_DEVICE_FAMILY "1,2"→"1"` (`a1e4c6e`).
+- TestFlight: билд 1.0.0(1), Export Compliance exempt. Группа Internal Testing, добавлен ТОЛЬКО юзер. **Анна установила TestFlight, но в Internal Testing ещё НЕ добавлена — приглашение отправить (ASC → TestFlight → Internal Testing → группа → добавить Анну; нужна обработанная сборка). После добавления Анне придёт письмо-приглашение (разово), дальше сборки прилетают в TestFlight без писем.**
 - Пересобрать: Codemagic → Start new build → `ios-testflight`, main.
 
 ---
 
 ## ✅ ПОДКЛЮЧЕНИЕ К БОЕВОМУ СЕРВЕРУ (26.06)
-- `api_endpoints.dart` (`b79eb68`): baseUrl через `String.fromEnvironment('API_BASE', defaultValue: 'https://api.chitatel.app')`. Локально `--dart-define=API_BASE=http://localhost:3000`.
+- `api_endpoints.dart` (`b79eb68`): baseUrl через `String.fromEnvironment('API_BASE', defaultValue:'https://api.chitatel.app')`. Локально `--dart-define=API_BASE=http://localhost:3000`.
 - Ручные шаги 3.2: `flutter pub add in_app_purchase url_launcher`+pod install; роутер `367fe48`; Xcode capabilities IAP+Sign in, `Runner.entitlements` (`03086a6`); DEVELOPMENT_TEAM Personal `669ZY8S56N`; bundle `app.chitatel.ios`. Push с мака — PAT (`g1orgi89`).
-- ⚠️ **TODO .gitignore:** добавить `audio-storage/`, `.env*`; удалить мусор `app/-H app/-d`. На сервере перед pull `git checkout -- server/package-lock.json`.
+- ⚠️ **TODO .gitignore:** `audio-storage/`, `.env*`; удалить мусор `app/-H app/-d`. На сервере перед pull `git checkout -- server/package-lock.json`.
 
 ---
 
 ## ✅ ДЕПЛОЙ СЕРВЕРА (26.06)
 VPS Contabo (общий с reader-bot), **строго изолированно**. SSH `deploy@161.97.102.73` (с мака по паролю). ⚠️ Чужие сайты/Node18/глобальный PM2 не трогать.
-- Домен `chitatel.app` (Namecheap), A-записи api+@+www → 161.97.102.73. Node 20.20.2 nvm. Mongo Docker `chitatel-mongodb` mongo:8.0 `127.0.0.1:27018` root `chitatel_admin`. Бэкенд `/home/deploy/chitatel/Chitatel_app` (`npm audit fix --force` НЕ запускать). `.env` 600: есть PORT/MONGO_URI/секреты/APPLE_TEAM_ID=3GS6F87RKZ/BUNDLE=app.chitatel.ios; пусто APPLE_*_IAP/GOOGLE/OPENAI/APNS. AUDIO_BASE_PATH `/var/audio/chitatel`. PM2 `ecosystem.config.js` interpreter nvm node20, процесс `chitatel-api` (interpreter-правка только на сервере). nginx `api.chitatel.app` proxy→3000, WebSocket, client_max_body_size 12M. certbot до 24.09.2026. seed+seed:club прошли.
+- Домен `chitatel.app` (Namecheap), A-записи api+@+www → 161.97.102.73. Node 20.20.2 nvm. Mongo Docker `chitatel-mongodb` mongo:8.0 `127.0.0.1:27018` root `chitatel_admin`. Бэкенд `/home/deploy/chitatel/Chitatel_app` (`npm audit fix --force` НЕ запускать). `.env` 600: есть PORT/MONGO_URI/секреты/APPLE_TEAM_ID=3GS6F87RKZ/BUNDLE=app.chitatel.ios; пусто APPLE_*_IAP/GOOGLE/OPENAI/APNS. AUDIO_BASE_PATH `/var/audio/chitatel`. PM2 `ecosystem.config.js` interpreter nvm node20, процесс `chitatel-api`. nginx `api.chitatel.app` proxy→3000, WebSocket, client_max_body_size 12M. certbot до 24.09.2026. seed+seed:club прошли.
 - **Тест-аккаунты прод:** anna@chitatel.app/anna123456 (admin), test-premium@chitatel.app/test123456 (premium), test-basic, test-expired (test123456).
-- ХВОСТЫ: Mongo-пароль в логах seed (по желанию); заглушка «Нет описания» 3 книги; факультативы 7 разборов+обложка отсутствуют; seed-club +21→+31 не менять.
+- ХВОСТЫ: Mongo-пароль в логах seed; заглушка «Нет описания» 3 книги; факультативы 7 разборов+обложка отсутствуют; seed-club +21→+31 не менять.
 ```bash
 ssh deploy@161.97.102.73
 cd /home/deploy/chitatel/Chitatel_app
@@ -142,6 +164,7 @@ pm2 restart chitatel-api   # ТОЛЬКО если менялся server/
 pm2 logs chitatel-api
 curl -s https://api.chitatel.app/api/health
 ```
+⚠️ **Редизайн чата СЕРВЕР НЕ ТРОГАЛ** — для редизайна `git pull`/`pm2 restart` НЕ нужны. Серверный pull нужен только для фиксов `ea18610`/`dfd19f9` (если ещё не применены) и будущей блокировки.
 
 ---
 
@@ -149,9 +172,9 @@ curl -s https://api.chitatel.app/api/health
 
 ## ✅ ЗАДАЧА 3.1 ASC (16.06) — Hanna Busel ИП Тбилиси, Paid Apps/W-8BEN/банк активны. SBP (15%) подана. Приложение «Читатель: книжный клуб» Apple ID 6779357856, bundle app.chitatel.ios. Продукты (group 22166930): club.basic.monthly (6781739637, $27.99), club.basic.season (3мес ~$54.99). 64 разбора non-consumable — позже скриптом.
 
-## 🔑 МОДЕЛЬ ПОДПИСОК (15.06): беспл+IAP, в iOS только Apple. Месяц club.basic.monthly ~$28, Сезон 3мес club.basic.season ~$54 (ОДИН продукт автопродление). Сезонный тариф на paywall только в начале сезона. Доступ активного = скользящее окно «текущий+предыдущий месяц» (предыдущий=архив 31 день). Деньги по дате Apple/контент по календарю.
+## 🔑 МОДЕЛЬ ПОДПИСОК (15.06): беспл+IAP, в iOS только Apple. Месяц club.basic.monthly ~$28, Сезон 3мес club.basic.season ~$54 (ОДИН продукт автопродление). Сезонный тариф на paywall только в начале сезона. Доступ активного = скользящее окно «текущий+предыдущий месяц». Деньги по дате Apple/контент по календарю.
 
-## 🧩 КОДЫ АКТИВАЦИИ (РФ/РБ) — ПРИОРИТЕТ ВЫСОКИЙ, КАНАЛ №1. Оплата на сайте→код→нейтральное поле в приложении→сервер открывает доступ. ⚠️ Apple: только нейтральное поле, БЕЗ рекламы внешней покупки (Kindle/Spotify). Модель `ActivationCode`.
+## 🧩 КОДЫ АКТИВАЦИИ (РФ/РБ) — ПРИОРИТЕТ ВЫСОКИЙ, КАНАЛ №1. Оплата на сайте→код→нейтральное поле в приложении→сервер открывает доступ. ⚠️ Apple: только нейтральное поле, БЕЗ рекламы внешней покупки. Модель `ActivationCode`.
 
 ## ЗАДАЧИ 3.3/3.4/3.2 ✅ ГОТОВО: верификация Purchase.js/purchases.js/purchase.service.js (+@apple/app-store-server-library 3.1.0), ⚠️subscriptionPlan enum без 'season', APPLE_*_IAP пусто. webhook `/api/webhooks/apple`. paywall purchase_service/provider/success/paywall screens. Terms/Privacy заглушки.
 
@@ -161,48 +184,42 @@ curl -s https://api.chitatel.app/api/health
 ```
 ✅ Сервер, приложение против прода, Codemagic+TestFlight+Apple Sign In
 ✅ Полировка чата + баг белого экрана (checkAuth) [27.06]
-✅ Вторая отладка чата (исчезающие/картинки/клавиатура) [27-28.06], юзер подтвердил баги ушли
-🔄 Редизайн чата В ПРОЦЕССЕ: ✅ закреп кофейный (b3d4c4e)+скругления/реакции (9d9d04c); ⏳ осталось бейдж «Автор клуба» (push прервался — делать заново) → текстура бумаги (PNG-тайл) → разделители дат → аватар-серия. Галочки ОТМЕНЕНЫ. Только чат.
+✅ Вторая отладка чата (исчезающие/картинки/клавиатура) [27-28.06], юзер подтвердил
+✅ Редизайн чата ПОЛНОСТЬЮ применён в код [28.06]: закреп кофейный b3d4c4e, скругления/реакции 9d9d04c, бейдж Автор клуба 34f1824+b0eca94, текстура (CSS-точки CustomPainter) 649d32a, разделители дат 1215f7e9, аватар-серия 1215f7e9. Галочки отменены. Только чат.
 СЛЕДУЮЩЕЕ:
   1. Серверные фиксы (ea18610, dfd19f9): pull+pm2 restart [возможно уже сделано].
-  2. Пересобрать билд Codemagic → проверить редизайн (закреп кофейный, скругления, реакции).
-  3. Доделать редизайн по одному (бейдж→текстура→даты→аватар-серия).
-  4. Анну в Internal Testing → удалённый тест.
-  5. ТЕСТ ПОКУПОК: ASC ключ верификации → APPLE_*_IAP в .env (+root certs, +APPLE_APP_APPLE_ID=6779357856, +APPLE_ENVIRONMENT=sandbox). Свериться с purchase.service.js. Webhook в ASC + sandbox-аккаунты. pm2 restart.
+  2. Пересобрать билд Codemagic → проверить ВЕСЬ редизайн на устройстве (закреп, скругления, реакции, бейдж, текстура — крутить _paperDotOpacity если надо, даты, аватары).
+  3. Анну в Internal Testing → удалённый тест.
+  4. 🚨 ТЕХДОЛГ Фазы 6: БЛОКИРОВКА пользователя (MVP/Apple 1.2 — блокер ревью; см. блок ТЕХДОЛГ вверху). + account deletion, Privacy/Terms/Support, админка.
+  5. ТЕСТ ПОКУПОК: ASC ключ верификации → APPLE_*_IAP в .env (+root certs, +APPLE_APP_APPLE_ID=6779357856, +APPLE_ENVIRONMENT=sandbox). Webhook в ASC + sandbox-аккаунты. pm2 restart.
   6. Privacy+Terms+Support на chitatel.app (ревью Apple).
   7. Логика доступа к клубу (скользящее окно+31 день+сезоны+окна продаж).
   8. Коды активации (РФ/РБ — КАНАЛ №1).
   9. Продукты-разборы в Apple (64 non-consumable).
-  10. Фаза 5 (ИИ-дневник), Фаза 6 (профиль 6.2+админка 6.6+пуши 6.1+онбординг 6.3+accessibility+error states+account deletion), Фаза 7 (публикация).
-ХВОСТЫ: .gitignore (audio-storage/, .env*, удалить app/-H app/-d); Info.plist ITSAppUsesNonExemptEncryption=false; seed.js пароль; subscriptionPlan enum +'season'; индикатор печатает (по желанию).
+  10. Фаза 5 (ИИ-дневник), Фаза 6 (профиль+админка+пуши+онбординг+accessibility+error states+account deletion+БЛОКИРОВКА), Фаза 7 (публикация).
+ХВОСТЫ: .gitignore (audio-storage/, .env*, удалить app/-H app/-d); Info.plist ITSAppUsesNonExemptEncryption=false; seed.js пароль; subscriptionPlan enum +'season'; опечатка в комментарии chat_message_bubble.dart стр.~504 (применялall→применялась, при следующей правке файла); индикатор печатает (по желанию). Тёмная тема — Post-MVP, НЕ блокер.
 ```
-**БЛОКЕРЫ РЕВЬЮ APPLE:** account deletion (reject 5.1.1(v)), Privacy+Support URL, UGC-модерация (блокировка+EULA), убрать заглушки `_Placeholder`.
+**БЛОКЕРЫ РЕВЬЮ APPLE:** account deletion (5.1.1(v)); Privacy+Support URL; UGC-модерация = **БЛОКИРОВКА пользователя (НЕ сделана!)** + EULA + реакция ≤24ч (админка); убрать заглушки `_Placeholder`.
 **От Анны:** ASC-ключ верификации (тип); $28 цена клиента или доход; наполнение Базовый/Премиум; реальные описания/обложки.
-⚠️ Сделаны Фазы 0-4 (код)+инфра+TestFlight. НЕ начато: Фаза 5 (ИИ), бóльшая часть Фазы 6 (профиль+7 подэкранов, админка React ~20ч включая ОТВЕТЫ Q&A, пуши, онбординг, accessibility, error states, account deletion), вся Фаза 7. + вне плана (коды активации, лендинг, логика клуба, продукты-разборы, редизайн чата). «✅ по коду» ≠ протестировано вживую.
+⚠️ Сделаны Фазы 0-4 (код)+инфра+TestFlight+редизайн чата. НЕ начато: Фаза 5 (ИИ), бóльшая часть Фазы 6 (профиль+7 подэкранов, админка React ~20ч включая ответы Q&A, пуши, онбординг, accessibility, error states, account deletion, **блокировка**), вся Фаза 7. + вне плана (коды активации, лендинг, логика клуба, продукты-разборы). «✅ по коду» ≠ протестировано вживую.
 
 ---
 
 ## УРОКИ (#28+; #1-27 в AC/AC-2)
-**#28** формат пакета по registry. **#29** Apple-подписка старт=покупка, предпродажа невозможна. **#30** активация извне легальна (Kindle/Spotify) только нейтральное поле. **#31 ⚠️** Apple-оплата НЕ в РФ/РБ → сайт+коды №1. **#32** ценообразование Apple (Proceeds, база США). **#33** продукты-разборы через ASC API капризны, сначала 1-2. **#34 ⚠️** AI-CONTEXT обновлять ПОЛНЫМ файлом (перезаписывается). **#35 ⚠️** общий сервер — изоляция (nvm/своя Mongo/свой PM2/nginx). **#36 ⚠️** секреты в логах маскировать. **#37 ⚠️** Apple Individual — локальная подпись приглашённым недостижима → Codemagic+ASC key. **#38 ⚠️** Codemagic автоподпись — нужен CERTIFICATE_PRIVATE_KEY, codemagic.yaml в КОРНЕ. **#39 ⚠️** .ipa iPad-ориентации (90474) → TARGETED_DEVICE_FAMILY="1", Export Compliance exempt, ITSAppUsesNonExemptEncryption=false.
+**#28** формат пакета по registry. **#29** Apple-подписка старт=покупка. **#30** активация извне легальна только нейтральное поле. **#31 ⚠️** Apple-оплата НЕ в РФ/РБ → сайт+коды №1. **#32** ценообразование Apple. **#33** продукты-разборы через ASC API капризны. **#34 ⚠️** AI-CONTEXT обновлять ПОЛНЫМ файлом. **#35 ⚠️** общий сервер — изоляция. **#36 ⚠️** секреты в логах маскировать. **#37 ⚠️** Apple Individual — локальная подпись недостижима → Codemagic+ASC key. **#38 ⚠️** Codemagic автоподпись — CERTIFICATE_PRIVATE_KEY, yaml в КОРНЕ. **#39 ⚠️** .ipa iPad-ориентации (90474) → TARGETED_DEVICE_FAMILY="1".
 
-**#40 ⚠️ ЛОГИ ВАЖНЕЕ ДОГАДОК (27.06).** Баг белого экрана искали догадками (refresh-токен, сокет — мимо). Прорыв — debug-print HTTP показал что запроса клуба НЕТ → ClubScreen не строится. Сначала инструментировать.
+**#40 ⚠️ ЛОГИ ВАЖНЕЕ ДОГАДОК (27.06).** Прорыв по белому экрану — debug-print HTTP. Сначала инструментировать.
+**#41 ⚠️ checkAuth() ПРИ СТАРТЕ (27.06).** main.dart не вызывал → GuestGate вечно крутил.
+**#42 ⚠️ trust proxy (27.06).** express-rate-limit за nginx без `app.set('trust proxy', 1)` падает.
+**#43 ⚠️ ПЕРЕВЫПУСК SIGNED URL ПРИ ОТДАЧЕ (27.06).** Хранить `*StoragePath`, перевыпускать на КАЖДОЙ отдаче (`withFreshMedia`), рекурсивно для reply.
+**#44 (процесс) FLUTTER ВСЛЕПУЮ (27.06).** Claude не компилирует Flutter → малые коммиты, юзер проверяет билд.
+**#45 ⚠️⚠️ SOFT-DELETE + LIMIT (28.06).** Фильтровать `deletedAt:null` В ЗАПРОСЕ (ДО лимита), во ВСЕХ эндпоинтах. При «данные пропадают непредсказуемо» сразу спросить про удаление. Без ребилда.
+**#46 ⚠️⚠️ СТАБИЛЬНОСТЬ SIGNED URL = СТАБИЛЬНОСТЬ exp, НЕ ДЛИНА TTL (28.06).** Иммутабельный контент — exp ФИКС. КОНСТАНТОЙ (2099). Аудио TTL 1ч.
+**#47 ⚠️ ДЁРГАНЬЕ LAYOUT ОТ OVERLAY НА КЛАВИАТУРЕ (28.06).** AlertDialog поверх живой клавиатуры → прыжок. Убрать диалог (оптимистично + SnackBar «Отменить»).
+**#48 (процесс) ДИЗАЙН ЧЕРЕЗ ПРОТОТИПЫ (28.06).** Прототипы через visualize до кода. НЕ рисовать иконки/паттерны кодом. Дизайн по одному элементу с проверкой на билде. Минимум цветов. Не менять базовый фон. СПРАШИВАТЬ перед правкой/откатом.
 
-**#41 ⚠️ checkAuth() ПРИ СТАРТЕ (27.06).** authProvider стартует initial, в authenticated только через checkAuth/логин. main.dart не вызывал → GuestGate вечно крутил. Фикс: await checkAuth() в main() до runApp.
-
-**#42 ⚠️ trust proxy (27.06).** express-rate-limit за nginx падает ERR_ERL_UNEXPECTED_X_FORWARDED_FOR без `app.set('trust proxy', 1)`.
-
-**#43 ⚠️ ПЕРЕВЫПУСК SIGNED URL ПРИ ОТДАЧЕ (27.06).** signed URL с TTL в БД протухает → хранить относительный путь (`*StoragePath`), перевыпускать на КАЖДОЙ отдаче (`withFreshMedia`), рекурсивно для reply.
-
-**#44 (процесс) FLUTTER ВСЛЕПУЮ (27.06).** Claude не компилирует Flutter → малые коммиты, юзер проверяет билд. Атомарные коммиты, предупреждать о риске компиляции.
-
-**#45 ⚠️⚠️ SOFT-DELETE + LIMIT (28.06).** Удалённые фильтруются ТОЛЬКО на клиенте + `.limit(N)` к строкам ВКЛЮЧАЯ удалённые → непредсказуемо мало живых, «пропадают». Фильтровать `deletedAt:null` В ЗАПРОСЕ (на сервере, ДО лимита), консистентно во ВСЕХ эндпоинтах. При «данные пропадают непредсказуемо» сразу спросить про удаление. Чинится без ребилда.
-
-**#46 ⚠️⚠️ СТАБИЛЬНОСТЬ SIGNED URL = СТАБИЛЬНОСТЬ ТОЧКИ ОТСЧЁТА exp, НЕ ДЛИНА TTL (28.06).** `exp=Date.now()+TTL` → URL меняется каждую генерацию → кэш мимо. Иммутабельный контент — exp ФИКСИРОВАННОЙ КОНСТАНТОЙ (2099). Аудио оставить TTL 1ч.
-
-**#47 ⚠️ ДЁРГАНЬЕ LAYOUT ОТ OVERLAY НА КЛАВИАТУРЕ (28.06).** AlertDialog поверх ещё-живой клавиатуры → пересчёт viewInsets → прыжок. Проявляется когда действие не требует ввода (удаление). Решение: убрать диалог (телеграм: оптимистично + SnackBar «Отменить»). Ключ дал юзер.
-
-**#48 (процесс) ДИЗАЙН ЧЕРЕЗ ПРОТОТИПЫ (28.06).** Прототипы через visualize:show_widget (HTML в реальной палитре) до правки кода. НЕ рисовать иконки/паттерны кодом (криво). Текстуры — PNG-тайлом. Дизайн ПОСЛЕ стабилизации, по одному элементу с проверкой на билде. Минимум цветов (1 акцент терракота; кофейный только в служебном закрепе). Не менять базовый фон. СПРАШИВАТЬ перед правкой/откатом.
+**#49 ⚠️ АУДИТ ПЛАНА ПРОТИВ КОДА — ВСПЛЫВАЮТ НЕДОДЕЛКИ (28.06).** Вопрос Анны «куда идёт жалоба» вскрыл: «Пожаловаться» есть, а **блокировка пользователя (MVP + Apple 1.2) НЕ реализована** — хотя в STEP-BY-STEP 4.2/4.3/4.5 и MASTER 4.36/7.4/6.1 заложена (галочка в MASTER 6.1 п.8 стояла ОШИБОЧНО). Вывод: статус-галочки в доках ≠ факт в коде; периодически сверять «обязательные требования Apple» со СБОРКОЙ, особенно UGC (report+block+24ч+EULA), account deletion, Privacy/Support URL. Тёмная тема — наоборот, честно Post-MVP, не блокер. При вопросе юзера про требования — проверять по коду (get_file_contents), а не по памяти.
 
 ---
 
-*Обновлён 28.06.2026. **✅ TESTFLIGHT+ФИЗ.АЙФОН+APPLE SIGN IN. ✅ ЧАТ: 3 БАГА ИСПРАВЛЕНЫ (исчезающие=soft-delete+limit ea18610; кэш картинок=фикс.exp dfd19f9/d0df5f3; дёрганье клавиатуры=AlertDialog→SnackBar d3a8f23), юзер подтвердил. ✅ ЗАКРЕП-СВЯЗКА 7966ccc. 🔄 РЕДИЗАЙН В ПРОЦЕССЕ: закреп кофейный b3d4c4e + скругления/реакции 9d9d04c ПРИМЕНЕНЫ; осталось бейдж Автор клуба (push прервался, делать заново)+текстура бумаги PNG+разделители дат+аватар-серия; галочки отменены.** Сервер api.chitatel.app (Node20/nvm, Mongo Docker 27018, PM2, nginx+certbot). Codemagic iOS (yaml в корне, Flutter 3.22.3, ASC key+CERTIFICATE_PRIVATE_KEY). device-family=1. ⏭️ Пересобрать билд → проверить редизайн → доделать по одному → Анна в TestFlight → тест покупок → Terms/Privacy → логика клуба → коды активации. Уроки #45-48. Прогресс фиксировать далее ТОЛЬКО здесь.*
+*Обновлён 28.06.2026. **✅ TESTFLIGHT+ФИЗ.АЙФОН+APPLE SIGN IN. ✅ ЧАТ: 3 БАГА ИСПРАВЛЕНЫ (soft-delete+limit ea18610; фикс.exp dfd19f9/d0df5f3; AlertDialog→SnackBar d3a8f23), юзер подтвердил. ✅ ЗАКРЕП-СВЯЗКА 7966ccc. ✅ РЕДИЗАЙН ЧАТА ПОЛНОСТЬЮ В КОДЕ (6/6): закреп b3d4c4e, скругления/реакции 9d9d04c, бейдж Автор клуба 34f1824+b0eca94, текстура CSS-точки 649d32a, даты 1215f7e9, аватар-серия 1215f7e9 — ждёт билда.** 🚨 ТЕХДОЛГ Фазы 6: БЛОКИРОВКА пользователя НЕ реализована (MVP/Apple 1.2 блокер) + account deletion + Privacy/Terms/Support + админка. Тёмная тема = Post-MVP (не блокер). Сервер api.chitatel.app (Node20/nvm, Mongo Docker 27018, PM2, nginx+certbot) — редизайн его НЕ трогал. Codemagic iOS (yaml в корне, Flutter 3.22.3). ⏭️ Пересобрать билд → проверить редизайн → Анна в TestFlight → ТЕХДОЛГ блокировки → тест покупок → Terms/Privacy → логика клуба → коды активации. Уроки #45-49. Прогресс фиксировать далее ТОЛЬКО здесь.*
