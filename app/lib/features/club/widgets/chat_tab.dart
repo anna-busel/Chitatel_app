@@ -42,6 +42,13 @@ import 'pinned_message_banner.dart';
 /// рисуется из него независимо от того, попало ли закреплённое сообщение в
 /// загруженное окно (как в Telegram). Раньше баннер искал закреп среди
 /// _messages → при входе его не было, пока не доскроллишь.
+///
+/// Удаление (как в Telegram): без диалога подтверждения. Жмёшь «Удалить» →
+/// сообщение СРАЗУ исчезает из ленты, внизу всплывает SnackBar «Сообщение
+/// удалено · Отменить» (~4 сек). Запрос на сервер уходит ТОЛЬКО по истечении
+/// этого окна — если успел нажать «Отменить», сообщение возвращается на место
+/// и запрос не отправляется. Так нет второго overlay (диалога) поверх
+/// клавиатуры → нет дёрганья layout, которое было с AlertDialog.
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -75,6 +82,15 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   /// Уже отправленные в markRead id — чтобы не слать повторно (4.11).
   final Set<String> _readSent = {};
   Timer? _readDebounce;
+
+  /// Отложенное удаление (вариант Telegram): сообщение убрано из ленты, но
+  /// запрос на сервер ещё не отправлен — ждём окно «Отменить». Храним сам
+  /// объект и его индекс, чтобы вернуть на место при отмене. Таймер шлёт
+  /// запрос по истечении окна.
+  Timer? _deleteTimer;
+  ChatMessage? _pendingDeleteMessage;
+  int _pendingDeleteIndex = -1;
+  bool _pendingDeleteWasPinned = false;
 
   String? _highlightedMessageId;
   Timer? _highlightTimer;
@@ -112,6 +128,20 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   void dispose() {
     _highlightTimer?.cancel();
     _readDebounce?.cancel();
+    // Если уходим с экрана с неотправленным отложенным удалением — отправляем
+    // запрос немедленно (окно «Отменить» завершилось уходом). Так удаление не
+    // потеряется, если юзер сразу закрыл чат.
+    if (_deleteTimer != null && _deleteTimer!.isActive) {
+      _deleteTimer!.cancel();
+      final pending = _pendingDeleteMessage;
+      if (pending != null) {
+        // fire-and-forget: виджет уже уходит, ответ не важен.
+        ref
+            .read(clubApiServiceProvider)
+            .deleteMessage(pending.id)
+            .catchError((_) => false);
+      }
+    }
     // НЕ рвём сокет (singleton, управляется провайдером). Урок #16.
     _socketSub?.cancel();
     _scrollController.dispose();
@@ -664,54 +694,131 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  Future<void> _deleteMessage(String messageId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.background,
-        title: Text('Удалить сообщение?', style: AppTypography.sectionHeader),
-        content: Text(
-          'Сообщение будет удалено для всех участников. Это действие нельзя отменить.',
-          style: AppTypography.body,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(
-              'Отмена',
-              style: AppTypography.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.error,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Удалить'),
-          ),
-        ],
-      ),
-    );
+  /// Удаление сообщения (как в Telegram, без диалога подтверждения).
+  ///
+  /// Жмёшь «Удалить» → сообщение СРАЗУ исчезает из ленты, внизу SnackBar
+  /// «Сообщение удалено · Отменить». Запрос на сервер отправляется ТОЛЬКО по
+  /// истечении окна (~4 сек). Нажал «Отменить» в это окно → сообщение
+  /// возвращается на место, запрос не уходит.
+  ///
+  /// Почему без AlertDialog: диалог поверх клавиатуры дёргал layout (контент
+  /// прыгал на высоту клавиатуры и обратно). SnackBar этого не вызывает —
+  /// он не перехватывает фокус и не пересчитывает inset.
+  ///
+  /// Если уже идёт отложенное удаление другого сообщения — сначала фиксируем
+  /// его (шлём запрос немедленно), потом начинаем новое.
+  void _deleteMessage(String messageId) {
+    // Если есть незавершённое отложенное удаление — завершаем его сразу
+    // (отправляем запрос), чтобы не потерять и не путать состояние.
+    _flushPendingDelete();
 
-    if (confirmed != true || !mounted) return;
+    final idx = _messages.indexWhere((m) => m.id == messageId);
+    if (idx == -1) return;
+    final message = _messages[idx];
 
-    // Оптимистично убираем сразу (WS-событие подтвердит). Так сообщение
-    // не «висит» до прихода события — вариант А.
+    // Запоминаем для возможного отката.
+    _pendingDeleteMessage = message;
+    _pendingDeleteIndex = idx;
+    _pendingDeleteWasPinned = _pinnedMessageId == messageId;
+
+    // Оптимистично убираем из ленты + снимаем баннер закрепа, если это он.
     setState(() {
-      _messages.removeWhere((m) => m.id == messageId);
-      if (_pinnedMessageId == messageId) {
+      _messages.removeAt(idx);
+      if (_pendingDeleteWasPinned) {
         _pinnedMessageId = null;
         _pinnedMessage = null;
       }
     });
 
+    // Запускаем окно «Отменить»: через 4 сек шлём запрос на сервер.
+    _deleteTimer?.cancel();
+    _deleteTimer = Timer(const Duration(seconds: 4), () {
+      _commitPendingDelete();
+    });
+
+    // SnackBar с «Отменить». Длительность чуть меньше окна таймера, чтобы
+    // не было рассинхрона (исчез — значит окно закрылось).
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('Сообщение удалено'),
+          duration: const Duration(milliseconds: 3800),
+          backgroundColor: AppColors.textPrimary,
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'Отменить',
+            textColor: AppColors.terracotta,
+            onPressed: _undoPendingDelete,
+          ),
+        ),
+      );
+  }
+
+  /// Вернуть отложенно-удалённое сообщение на место (нажали «Отменить»).
+  void _undoPendingDelete() {
+    _deleteTimer?.cancel();
+    _deleteTimer = null;
+    final message = _pendingDeleteMessage;
+    if (message == null) return;
+
+    setState(() {
+      final insertAt =
+          _pendingDeleteIndex.clamp(0, _messages.length);
+      _messages.insert(insertAt, message);
+      if (_pendingDeleteWasPinned) {
+        _pinnedMessageId = message.id;
+        _pinnedMessage = message;
+      }
+    });
+
+    _pendingDeleteMessage = null;
+    _pendingDeleteIndex = -1;
+    _pendingDeleteWasPinned = false;
+  }
+
+  /// Окно «Отменить» истекло — отправляем запрос на сервер.
+  void _commitPendingDelete() {
+    final message = _pendingDeleteMessage;
+    _pendingDeleteMessage = null;
+    _pendingDeleteIndex = -1;
+    _pendingDeleteWasPinned = false;
+    _deleteTimer = null;
+    if (message == null) return;
+    _sendDeleteRequest(message);
+  }
+
+  /// Принудительно завершить текущее отложенное удаление (если есть) — шлём
+  /// запрос немедленно. Используется когда начинается новое удаление.
+  void _flushPendingDelete() {
+    if (_deleteTimer != null && _deleteTimer!.isActive) {
+      _deleteTimer!.cancel();
+    }
+    _deleteTimer = null;
+    final message = _pendingDeleteMessage;
+    _pendingDeleteMessage = null;
+    _pendingDeleteIndex = -1;
+    _pendingDeleteWasPinned = false;
+    if (message != null) {
+      _sendDeleteRequest(message);
+    }
+  }
+
+  /// Реальный сетевой запрос удаления. При ошибке — возвращаем сообщение и
+  /// показываем причину (сервер фильтрует deletedAt, WS подтвердит остальным).
+  Future<void> _sendDeleteRequest(ChatMessage message) async {
     try {
       final api = ref.read(clubApiServiceProvider);
-      await api.deleteMessage(messageId);
+      await api.deleteMessage(message.id);
     } on DioException catch (e) {
       if (!mounted) return;
+      // Не удалось — возвращаем сообщение в ленту (в начало, порядок
+      // восстановится при следующей загрузке истории).
+      setState(() {
+        if (!_messages.any((m) => m.id == message.id)) {
+          _messages.insert(0, message);
+        }
+      });
       final code = ClubApiService.errorCodeFromException(e);
       final msg = code == 'FORBIDDEN'
           ? 'Это сообщение нельзя удалить'
