@@ -15,9 +15,12 @@ const userSchema = new mongoose.Schema(
       enum: ['free', 'basic', 'premium', 'expired'],
       default: 'free',
     },
+    // Период подписки. 'season' — сезонный тариф 3 мес (club.basic.season,
+    // модель подписок 15.06.2026). Добавлен фиксом B4 аудита 07.07.2026:
+    // раньше enum его не знал, и purchase.service писал null.
     subscriptionPlan: {
       type: String,
-      enum: ['monthly', 'semiannual', 'annual', null],
+      enum: ['monthly', 'season', 'semiannual', 'annual', null],
       default: null,
     },
     subscriptionExpiresAt: Date,
