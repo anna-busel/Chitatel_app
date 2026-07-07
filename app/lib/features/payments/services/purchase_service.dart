@@ -29,6 +29,35 @@ class PurchaseService {
   static const String seasonId = 'club.basic.season';
   static const Set<String> clubProductIds = {monthlyId, seasonId};
 
+  /// appAccountToken из userId (фикс B2 аудита 07.07.2026).
+  ///
+  /// Зачем: Apple прикрепляет этот UUID к транзакции и присылает его в каждом
+  /// S2S-уведомлении (продление, refund). Сервер (webhook.service) находит по
+  /// нему юзера, даже если записи Purchase ещё нет — например, участница
+  /// переустановила приложение и автопродление пришло ДО restore. Без токена
+  /// такое продление молча терялось и подписка в БД не продлевалась.
+  ///
+  /// Формат: Mongo ObjectId — 24 hex-символа (12 байт), UUID требует 32 hex
+  /// (16 байт). Дополняем ObjectId восемью нулями справа и форматируем как
+  /// канонический UUID 8-4-4-4-12. Преобразование детерминированное и
+  /// обратимое — сервер снимает дефисы, проверяет нулевой хвост и берёт
+  /// первые 24 hex (webhook.service.userIdFromAppAccountToken).
+  ///
+  /// Возвращает null, если userId отсутствует или не похож на ObjectId —
+  /// тогда покупка идёт без токена (как раньше, verify по JWT всё равно
+  /// привяжет её к юзеру).
+  static String? appAccountTokenFromUserId(String? userId) {
+    if (userId == null) return null;
+    final id = userId.toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{24}$').hasMatch(id)) return null;
+    final padded = '${id}00000000'; // 32 hex
+    return '${padded.substring(0, 8)}-'
+        '${padded.substring(8, 12)}-'
+        '${padded.substring(12, 16)}-'
+        '${padded.substring(16, 20)}-'
+        '${padded.substring(20)}';
+  }
+
   /// Доступны ли покупки на устройстве вообще.
   Future<bool> isAvailable() => _iap.isAvailable();
 
@@ -44,8 +73,16 @@ class PurchaseService {
 
   /// Инициирует покупку. Подписки и non-consumable идут через buyNonConsumable
   /// (авто-возобновление StoreKit обрабатывает сам).
-  Future<void> buy(ProductDetails product) async {
-    final param = PurchaseParam(productDetails: product);
+  ///
+  /// [appAccountToken] — UUID из appAccountTokenFromUserId (B2). Уходит в
+  /// PurchaseParam.applicationUserName: на iOS StoreKit кладёт его в
+  /// appAccountToken транзакции, и он приходит серверу в каждом
+  /// S2S-уведомлении. null — покупка без токена (гость до логин-гейта и т.п.).
+  Future<void> buy(ProductDetails product, {String? appAccountToken}) async {
+    final param = PurchaseParam(
+      productDetails: product,
+      applicationUserName: appAccountToken,
+    );
     await _iap.buyNonConsumable(purchaseParam: param);
   }
 
