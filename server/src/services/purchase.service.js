@@ -37,9 +37,10 @@ function getAppleLib() {
 }
 
 const SUBSCRIPTION_TIER_ENUM = ['basic', 'premium'];
-// Периоды, которые допускает enum User.subscriptionPlan. Неизвестный период
-// (например 'season') в это поле не пишем — полный период хранится в Purchase.
-const SUBSCRIPTION_PLAN_ENUM = ['monthly', 'semiannual', 'annual'];
+// Периоды, которые допускает enum User.subscriptionPlan.
+// 'season' добавлен фиксом B4 аудита 07.07.2026 (сезонный тариф 3 мес,
+// club.basic.season) — синхронно с enum в models/User.js.
+const SUBSCRIPTION_PLAN_ENUM = ['monthly', 'season', 'semiannual', 'annual'];
 
 /**
  * productId → { itemType, tier?, period?, itemId }.
@@ -115,11 +116,32 @@ function getVerifier() {
  * Применяет декодированную транзакцию Apple к пользователю:
  * upsert Purchase + обновление прав. Используется и при покупке (verify),
  * и при S2S-уведомлениях (webhook).
- * @param {{ userId: string, decodedTransaction: object, statusOverride?: string|null }} args
- *   statusOverride — форсит статус ('expired' | 'refunded' | 'cancelled') для webhook.
+ *
+ * @param {{
+ *   userId: string,
+ *   decodedTransaction: object,
+ *   statusOverride?: string|null,
+ *   gracePeriodExpiresAt?: Date|null|undefined,
+ * }} args
+ *   statusOverride — форсит статус ('active' | 'expired' | 'refunded' |
+ *     'cancelled') для webhook. 'active' используется при billing retry с
+ *     grace period (DID_FAIL_TO_RENEW): expiresDate уже в прошлом, но доступ
+ *     сохраняется до gracePeriodExpiresAt.
+ *   gracePeriodExpiresAt — управление льготным периодом (фикс B3 аудита
+ *     07.07.2026). Семантика:
+ *       undefined — НЕ трогать поле (например, verify при покупке);
+ *       null      — снять льготный период (оплата прошла / подписка истекла
+ *                   окончательно / refund);
+ *       Date      — выставить (Apple дал grace при неудачном списании).
+ *     Применяется только к itemType='subscription'.
  * @returns {Promise<object>} обновлённый документ User
  */
-async function applyTransaction({ userId, decodedTransaction, statusOverride = null }) {
+async function applyTransaction({
+  userId,
+  decodedTransaction,
+  statusOverride = null,
+  gracePeriodExpiresAt = undefined,
+}) {
   const tx = decodedTransaction;
   const productId = tx.productId;
   const originalTransactionId = tx.originalTransactionId || tx.transactionId;
@@ -167,6 +189,11 @@ async function applyTransaction({ userId, decodedTransaction, statusOverride = n
       : null;
     user.subscriptionExpiresAt = expiresAt;
     user.subscriptionOriginalTransactionId = originalTransactionId;
+
+    // Льготный период (B3): undefined = не трогать, null = снять, Date = выставить.
+    if (gracePeriodExpiresAt !== undefined) {
+      user.gracePeriodExpiresAt = gracePeriodExpiresAt;
+    }
   } else if (mapped.itemType === 'archive') {
     user.hasArchiveAccess = !revoked;
   } else if (mapped.itemType === 'book') {
