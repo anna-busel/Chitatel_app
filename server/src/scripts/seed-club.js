@@ -12,7 +12,7 @@
  *    - test-basic@chitatel.app (basic подписка до 2027-12-31) — пароль test123456
  *    - test-expired@chitatel.app (истёкшая 2 дня назад, видит только архив) — пароль test123456
  * 2. Создаёт 3 параллельных ClubMonth относительно сегодняшней даты:
- *    - ПРОШЛЫЙ: закончился 1 день назад, archiveUntilDate +31 день (доступен expired)
+ *    - ПРОШЛЫЙ: закончился 1 день назад, archiveUntilDate = конец след. месяца (доступен expired)
  *    - ТЕКУЩИЙ: startsAt 5 дней назад, endsAt через 25 дней, isActive=true
  *    - БУДУЩИЙ: стартует через 25 дней
  * 3. Каждый клуб привязан к существующей книге из БД (берёт первые 3 платные).
@@ -41,16 +41,21 @@ const Report = require('../models/Report');
 
 const BCRYPT_ROUNDS = 12;
 
-// Архивное окно: сколько дней после endsAt клуб доступен на чтение истёкшей
-// подписке. Согласованная модель 15.06 / 08.07.2026 — 31 день (было 21).
-const ARCHIVE_WINDOW_DAYS = 31;
-
 // --- Helpers ---
 
 function daysFromNow(n) {
   const d = new Date();
   d.setDate(d.getDate() + n);
   return d;
+}
+
+// Конец АРХИВНОГО ОКНА = последняя миллисекунда СЛЕДУЮЩЕГО календарного
+// месяца после месяца endsAt. Согласованная модель 08.07.2026 (календарная):
+// клуб доступен весь свой месяц + весь следующий месяц (архив). Должно
+// совпадать с archiveWindowEnd() в middleware/subscription.js.
+function archiveWindowEnd(endsAt) {
+  const d = new Date(endsAt);
+  return new Date(d.getFullYear(), d.getMonth() + 2, 0, 23, 59, 59, 999);
 }
 
 function genReferralCode() {
@@ -103,8 +108,9 @@ async function upsertUser({ email, name, password, role, subscription }) {
 // --- Создание одного ClubMonth ---
 
 async function upsertClubMonth({ month, year, book, startsAt, endsAt, isActive }) {
-  const archiveUntilDate = new Date(endsAt);
-  archiveUntilDate.setDate(archiveUntilDate.getDate() + ARCHIVE_WINDOW_DAYS);
+  // Архивное окно = конец следующего календарного месяца после endsAt
+  // (модель 08.07 — календарная, не «+31 день»).
+  const archiveUntilDate = archiveWindowEnd(endsAt);
 
   const update = {
     bookId: book._id,
@@ -411,13 +417,13 @@ async function seed() {
       expiresAt: daysFromNow(-2),
     },
   });
-  console.log(`   ✅ ${expired.email} (expired 2 дня назад — видит архив ${ARCHIVE_WINDOW_DAYS} дней)`);
+  console.log(`   ✅ ${expired.email} (expired 2 дня назад — видит архив след. месяц)`);
 
   // 3. Создаём 3 ClubMonth относительно сегодня.
   console.log('\n🗓 Создание 3 параллельных клубов...');
   const now = new Date();
 
-  // Прошлый клуб: endsAt = 1 день назад, archiveUntilDate = +31 день от endsAt
+  // Прошлый клуб: endsAt = 1 день назад, archiveUntilDate = конец след. месяца
   const archiveStarts = daysFromNow(-31);
   const archiveEnds = daysFromNow(-1);
   const archiveClub = await upsertClubMonth({
@@ -471,7 +477,7 @@ async function seed() {
 
   console.log('\n💬 Создание сообщений в прошлом (архивном) клубе...');
   await seedChatForArchiveClub(archiveClub, { anna, premium });
-  console.log('   ✅ 3 сообщения (для проверки read-only режима)');
+  console.log('   ✅ 3 сообщения (для проверки архивного режима)');
 
   // 5. Итог.
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
