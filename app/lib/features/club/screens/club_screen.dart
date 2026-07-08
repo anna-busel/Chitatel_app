@@ -29,8 +29,8 @@ import '../widgets/qa_tab.dart';
 ///
 /// PAYWALL (модель доступа 08.07.2026): если сервер вернул 403
 /// SUBSCRIPTION_REQUIRED (нет подписки на текущий клуб, либо клуб старше
-/// 31 дня), показываем PaywallScreen вместо ошибки — это точка входа в
-/// покупку из клуба. Прочие ошибки (сеть/сервер) — обычный ErrorView.
+/// архивного окна), показываем PaywallScreen вместо ошибки — это точка входа
+/// в покупку из клуба. Прочие ошибки (сеть/сервер) — обычный ErrorView.
 class ClubScreen extends ConsumerStatefulWidget {
   const ClubScreen({super.key});
 
@@ -94,7 +94,7 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
         // — Шапка-переключатель: «Клуб <месяца>» + название книги + chevron —
         _ClubHeaderSwitcher(club: club, onTap: _openSwitcher),
 
-        // — Баннер «Архив» если доступ только read-only —
+        // — Баннер «Архив» если это архивный клуб (прошлый месяц) —
         if (access.kind == ClubAccessKind.archive)
           _ArchiveBanner(archiveUntil: club.archiveUntilDate),
 
@@ -249,8 +249,12 @@ class _LoadingView extends StatelessWidget {
   }
 }
 
-/// Баннер «Архивный доступ — чтение до DD.MM».
-/// Показывается под шапкой когда access.kind == archive.
+/// Баннер архивного клуба (прошлый месяц). Показывается под шапкой когда
+/// access.kind == archive.
+///
+/// В архиве МОЖНО писать (обсуждение прошлой книги продолжается весь следующий
+/// месяц — модель 08.07). Поэтому баннер лишь сообщает, что это прошлый клуб
+/// и до какой даты он открыт, БЕЗ «продлите подписку, чтобы писать».
 class _ArchiveBanner extends StatelessWidget {
   const _ArchiveBanner({required this.archiveUntil});
   final DateTime archiveUntil;
@@ -275,7 +279,7 @@ class _ArchiveBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Архивный доступ — чтение до $dd.$mm. Продлите подписку, чтобы писать.',
+              'Прошлый клуб — обсуждение открыто до $dd.$mm.',
               style: AppTypography.caption,
             ),
           ),
