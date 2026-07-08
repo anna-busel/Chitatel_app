@@ -1,17 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../club/providers/club_provider.dart';
 
 /// Экран успешной покупки подписки (MASTER 4.29).
 /// Показывается после подтверждения чека сервером.
-class SuccessScreen extends StatelessWidget {
+///
+/// ⚠️ После покупки сбрасываем кэш клуба (currentClubProvider): до покупки
+/// провайдер мог закэшировать 403 SUBSCRIPTION_REQUIRED (юзер был без
+/// подписки → paywall). Без invalidate переход в клуб показал бы старый
+/// закэшированный paywall, хотя подписка уже активна. invalidate заставляет
+/// клуб перезапросить доступ у сервера — теперь вернётся активный доступ.
+class SuccessScreen extends ConsumerWidget {
   const SuccessScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -45,11 +53,21 @@ class SuccessScreen extends StatelessWidget {
               const Spacer(),
               AppButton(
                 text: 'Начать слушать',
-                onPressed: () => context.go('/club'),
+                onPressed: () {
+                  // Сбросить кэш клуба, чтобы он перезапросил доступ с новой
+                  // подпиской (иначе покажется старый закэшированный paywall).
+                  ref.invalidate(currentClubProvider);
+                  ref.invalidate(clubListProvider);
+                  context.go('/club');
+                },
               ),
               const SizedBox(height: 8),
               TextButton(
-                onPressed: () => context.go('/'),
+                onPressed: () {
+                  ref.invalidate(currentClubProvider);
+                  ref.invalidate(clubListProvider);
+                  context.go('/');
+                },
                 child: Text(
                   'На главную',
                   style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
