@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/error_view.dart';
+import '../../payments/screens/paywall_screen.dart';
 import '../models/club_access.dart';
 import '../models/club_month.dart';
 import '../models/club_summary.dart';
@@ -24,6 +26,11 @@ import '../widgets/qa_tab.dart';
 /// Подгружает currentClubProvider (зависит от selectedClubIdProvider) один
 /// раз для всех табов. Когда юзер выбирает другой клуб — провайдер
 /// перезагружает контент через GET /api/club/:id.
+///
+/// PAYWALL (модель доступа 08.07.2026): если сервер вернул 403
+/// SUBSCRIPTION_REQUIRED (нет подписки на текущий клуб, либо клуб старше
+/// 31 дня), показываем PaywallScreen вместо ошибки — это точка входа в
+/// покупку из клуба. Прочие ошибки (сеть/сервер) — обычный ErrorView.
 class ClubScreen extends ConsumerStatefulWidget {
   const ClubScreen({super.key});
 
@@ -54,11 +61,28 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
     return clubAsync.when(
       data: (result) => _buildContent(result),
       loading: () => const _LoadingView(),
-      error: (err, _) => ErrorView(
-        message: 'Не удалось загрузить клуб',
-        onRetry: () => ref.invalidate(currentClubProvider),
-      ),
+      error: (err, _) {
+        // Нет подписки (SUBSCRIPTION_REQUIRED) → показываем paywall, а не ошибку.
+        // Это единственная точка входа в покупку из клуба (модель 08.07).
+        if (_isSubscriptionRequired(err)) {
+          return const PaywallScreen();
+        }
+        return ErrorView(
+          message: 'Не удалось загрузить клуб',
+          onRetry: () => ref.invalidate(currentClubProvider),
+        );
+      },
     );
+  }
+
+  /// Распознаёт ошибку «нужна подписка» (403 SUBSCRIPTION_REQUIRED) от бэка.
+  /// Только на неё показываем paywall; сеть/сервер/прочее → ErrorView.
+  bool _isSubscriptionRequired(Object err) {
+    if (err is DioException) {
+      final code = ClubApiService.errorCodeFromException(err);
+      return code == 'SUBSCRIPTION_REQUIRED';
+    }
+    return false;
   }
 
   Widget _buildContent(CurrentClubResult result) {
