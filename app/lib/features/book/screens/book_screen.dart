@@ -18,7 +18,10 @@ import '../widgets/book_parts_list.dart';
 ///
 /// 3 варианта отображения переключаются по флагам:
 /// - `book.isFree == true` → 4.12 (зелёная кнопка «Слушать бесплатно»)
-/// - `isPurchased == true` → 4.14 (кнопка «Слушать» + прогресс)
+/// - `book.hasAccess == true` → 4.14 (кнопка «Слушать» + прогресс).
+///   hasAccess считает СЕРВЕР в GET /books/:id: куплена отдельно ИЛИ
+///   открыта подпиской как книга клуба в календарном окне (месяц клуба +
+///   следующий месяц-архив; модель 08.07.2026) ИЛИ админ.
 /// - иначе → 4.13 (цена + «Купить» + замки на частях 2-4)
 ///
 /// onTap кнопок:
@@ -30,7 +33,8 @@ import '../widgets/book_parts_list.dart';
 /// disabled с текстом «Аудио загружается». Apple Guideline 2.1: не открывать
 /// плеер с пустым контентом.
 ///
-/// `_isPurchased`, `_listenedPartNumbers`, `_progressPercent` — заглушки до Фазы 3.
+/// `_listenedPartNumbers`, `_progressPercent` — заглушки (подтянутся из
+/// ProgressService отдельной микро-задачей).
 class BookScreen extends ConsumerWidget {
   const BookScreen({super.key, required this.bookId});
 
@@ -66,10 +70,10 @@ class _BookContent extends StatelessWidget {
 
   final BookModel book;
 
-  // TODO задача 3.2 (Фаза 3): получить реальное состояние из purchaseProvider.
-  // listenedPartNumbers и progressPercent будут подтягиваться из ProgressService
-  // когда BookScreen начнёт это делать (отдельная микро-задача в Фазе 3).
-  static const bool _isPurchased = false;
+  // Доступ (куплено/подписка) теперь считает сервер — book.hasAccess
+  // (GET /books/:id, 08.07.2026). listenedPartNumbers и progressPercent —
+  // заглушки: будут подтягиваться из ProgressService когда BookScreen
+  // начнёт это делать (отдельная микро-задача).
   static const Set<int> _listenedPartNumbers = <int>{};
   static const double _progressPercent = 0.0;
 
@@ -94,13 +98,13 @@ class _BookContent extends StatelessWidget {
                 const SizedBox(height: 20),
                 _ActionSection(
                   book: book,
-                  isPurchased: _isPurchased,
+                  hasAccess: book.hasAccess,
                   progressPercent: _progressPercent,
                 ),
                 const SizedBox(height: 24),
                 BookPartsList(
                   book: book,
-                  isPurchased: _isPurchased,
+                  isPurchased: book.hasAccess,
                   listenedPartNumbers: _listenedPartNumbers,
                   onPartTap: (part) => _onPartTap(context, part),
                 ),
@@ -109,7 +113,7 @@ class _BookContent extends StatelessWidget {
                 const SizedBox(height: 28),
                 _ReviewsPlaceholder(),
                 const SizedBox(height: 16),
-                if (!book.isFree && !_isPurchased) _ReportLink(),
+                if (!book.isFree && !book.hasAccess) _ReportLink(),
                 const SizedBox(height: 40),
               ],
             ),
@@ -258,9 +262,6 @@ class _Badge extends StatelessWidget {
   factory _Badge.free() =>
       const _Badge(text: 'БЕСПЛАТНО', background: AppColors.success);
 
-  factory _Badge.purchased() =>
-      const _Badge(text: 'КУПЛЕНО', background: AppColors.terracotta);
-
   final String text;
   final Color background;
 
@@ -356,12 +357,15 @@ class _MetaRow extends StatelessWidget {
 class _ActionSection extends StatelessWidget {
   const _ActionSection({
     required this.book,
-    required this.isPurchased,
+    required this.hasAccess,
     required this.progressPercent,
   });
 
   final BookModel book;
-  final bool isPurchased;
+
+  /// Полный доступ к платной книге (считает сервер, см. BookModel.hasAccess):
+  /// куплена отдельно ИЛИ открыта подпиской как книга клуба в календарном окне.
+  final bool hasAccess;
   final double progressPercent;
 
   @override
@@ -378,8 +382,8 @@ class _ActionSection extends StatelessWidget {
       );
     }
 
-    // Вариант 4.14: купленная
-    if (isPurchased) {
+    // Вариант 4.14: есть полный доступ (куплена / подписка на клуб)
+    if (hasAccess) {
       return _PurchasedActions(
         hasAudio: hasAudio,
         progressPercent: progressPercent,
@@ -387,7 +391,7 @@ class _ActionSection extends StatelessWidget {
       );
     }
 
-    // Вариант 4.13: платная не купленная
+    // Вариант 4.13: платная без доступа
     return _PaidActions(
       book: book,
       hasAudio: hasAudio,
@@ -433,7 +437,7 @@ class _FreeActions extends StatelessWidget {
   }
 }
 
-// — 4.13 платная (не куплена) —
+// — 4.13 платная (нет доступа) —
 // Apple запрещает в приложении призывать покупать вне Apple IAP
 // (правило 3.1.1, послабления 3.1.1(a) действуют только в US storefront).
 // Поэтому здесь ТОЛЬКО IAP-кнопка и превью. Никаких ссылок на внешние сайты.
@@ -476,7 +480,10 @@ class _PaidActions extends StatelessWidget {
   }
 }
 
-// — 4.14 купленная (с прогрессом) —
+// — 4.14 есть полный доступ (куплена ИЛИ открыта подпиской на клуб) —
+// Бейдж «КУПЛЕНО» убран (08.07.2026): клиент не различает покупку и подписку
+// (сервер отдаёт единый hasAccess), бейдж врал бы подписчику. Оставлена
+// нейтральная подпись «У вас есть полный доступ» (согласовано с юзером).
 
 class _PurchasedActions extends StatelessWidget {
   const _PurchasedActions({
@@ -494,17 +501,9 @@ class _PurchasedActions extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            _Badge.purchased(),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'У вас есть полный доступ',
-                style: AppTypography.caption,
-              ),
-            ),
-          ],
+        Text(
+          'У вас есть полный доступ',
+          style: AppTypography.caption,
         ),
         const SizedBox(height: 14),
         _GreenListenButton(

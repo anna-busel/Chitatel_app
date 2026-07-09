@@ -63,6 +63,7 @@ class BookModel {
     this.purchaseUrl = '',
     this.appleProductId,
     this.freeChapterIndex = 0,
+    this.hasAccess = false,
   });
 
   /// MongoDB ObjectId (строкой)
@@ -118,6 +119,16 @@ class BookModel {
   /// Индекс бесплатной части для превью платных (0-based).
   final int freeChapterIndex;
 
+  /// ВЫЧИСЛЯЕМОЕ СЕРВЕРОМ поле (НЕ из схемы Book.js): есть ли у текущего
+  /// юзера ПОЛНЫЙ доступ к книге: куплена отдельно ИЛИ бесплатная ИЛИ
+  /// открыта подпиской как книга клуба в календарном окне (месяц клуба +
+  /// следующий месяц-архив; модель 08.07.2026) ИЛИ админ.
+  ///
+  /// Сервер кладёт его ТОЛЬКО в GET /api/books/:id (с optionalAuth);
+  /// в списках каталога/поиска поля нет → здесь будет false по дефолту.
+  /// Используется book_screen для выбора «Слушать» vs «Купить».
+  final bool hasAccess;
+
   /// Парсинг JSON-ответа бэкенда.
   /// Все поля optional — бэкенд может отдавать урезанный projection.
   factory BookModel.fromJson(Map<String, dynamic> json) {
@@ -145,6 +156,7 @@ class BookModel {
       purchaseUrl: json['purchaseUrl'] as String? ?? '',
       appleProductId: json['appleProductId'] as String?,
       freeChapterIndex: (json['freeChapterIndex'] as num?)?.toInt() ?? 0,
+      hasAccess: json['hasAccess'] as bool? ?? false,
     );
   }
 
