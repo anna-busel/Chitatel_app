@@ -234,7 +234,19 @@ async function verifyPurchase({ userId, signedTransaction }) {
   try {
     tx = await verifier.verifyAndDecodeTransaction(signedTransaction);
   } catch (err) {
-    logger.warn('Apple transaction verification failed', { message: err.message });
+    // VerificationException из @apple/app-store-server-library кладёт причину
+    // не в message (он часто пустой), а в числовое поле status. Логируем всё,
+    // чтобы видеть точный код: 1=INVALID_APP_IDENTIFIER/подпись,
+    // 2=INVALID_CERTIFICATE (цепочка/корневые), 3=INVALID_CHAIN_LENGTH,
+    // 4=INVALID_CHAIN, 5=INVALID_ENVIRONMENT (sandbox/prod). Диагностика
+    // добавлена 10.07.2026 — verifyAndDecodeTransaction падал, а err.message
+    // был пустой, причина не читалась.
+    logger.warn('Apple transaction verification failed', {
+      message: err.message,
+      status: err.status,
+      name: err.name,
+      reason: err.reason,
+    });
     throw new AppError('PURCHASE_INVALID', 'Не удалось проверить покупку', 400);
   }
 
