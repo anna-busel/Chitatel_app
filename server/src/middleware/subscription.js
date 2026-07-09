@@ -328,4 +328,9 @@ const resolveClubAccess = async (req, _res, next) => {
   }
 };
 
-module.exports = { requireSubscription, requireAdmin, resolveClubAccess };
+module.exports = {
+  requireSubscription,
+  requireAdmin,
+  resolveClubAccess,
+  archiveWindowEnd,
+};

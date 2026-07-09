@@ -6,6 +6,8 @@ const { success, paginated } = require('../utils/response');
 const { AppError } = require('../middleware/error');
 const Book = require('../models/Book');
 const User = require('../models/User');
+const ClubMonth = require('../models/ClubMonth');
+const { archiveWindowEnd } = require('../middleware/subscription');
 const { generateSignedUrl } = require('../services/audio.service');
 
 const router = Router();
@@ -104,9 +106,15 @@ router.get('/search', async (req, res, next) => {
 
 /**
  * GET /api/books/:id
- * MASTER 7.4: детальная информация о книге
+ * MASTER 7.4: детальная информация о книге.
+ *
+ * optionalAuth: если юзер авторизован — в объект книги добавляется
+ * ВЫЧИСЛЯЕМОЕ поле hasAccess (true = полный доступ: куплена отдельно /
+ * бесплатная / открыта подпиской как книга клуба в календарном окне /
+ * админ). Клиент (book_screen) по нему решает «Слушать» vs «Купить».
+ * Без авторизации hasAccess = isFree.
  */
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', optionalAuth, async (req, res, next) => {
   try {
     const book = await Book.findOne({
       _id: req.params.id,
@@ -119,7 +127,15 @@ router.get('/:id', async (req, res, next) => {
       throw new AppError('BOOK_NOT_FOUND', 'Разбор не найден', 404);
     }
 
-    return success(res, { book });
+    let hasAccess = !!book.isFree;
+    if (!hasAccess && req.user && req.user.userId) {
+      const user = await User.findById(req.user.userId).lean();
+      if (user) {
+        hasAccess = await userHasBookAccess(book, user);
+      }
+    }
+
+    return success(res, { book: { ...book, hasAccess } });
   } catch (err) {
     return next(err);
   }
@@ -133,7 +149,8 @@ router.get('/:id', async (req, res, next) => {
  * Доступ:
  * - Бесплатная книга — без авторизации, любой может слушать
  * - Платная часть с isPreviewAvailable: true — без авторизации (5-минутное превью)
- * - Платная часть без превью — нужна авторизация + покупка/подписка/архив
+ * - Платная часть без превью — нужна авторизация + доступ по userHasBookAccess
+ *   (куплена / книга клуба по подписке в календарном окне / админ)
  */
 router.get('/:id/audio/:partNumber', optionalAuth, async (req, res, next) => {
   try {
@@ -188,25 +205,62 @@ async function checkPartAccess(book, part, userPayload) {
   // Дальше нужна авторизация
   if (!userPayload) return false;
 
-  // Загружаем юзера для проверки подписки/покупок
+  // Загружаем юзера для проверки покупок/подписки
   const user = await User.findById(userPayload.userId).lean();
   if (!user) return false;
 
+  return userHasBookAccess(book, user);
+}
+
+/**
+ * Полный доступ юзера к платной книге (без учёта isFree и превью — их
+ * проверяют вызывающие).
+ *
+ * МОДЕЛЬ ДОСТУПА (согласована 08.07.2026, КАЛЕНДАРНАЯ — та же что у клуба,
+ * см. resolveClubAccess в middleware/subscription.js):
+ * 1. Книга куплена отдельно (purchasedBooks) → доступ.
+ * 2. Админ (Анна) → доступ ко всему.
+ * 3. Активная подписка (basic/premium, не истекла ЛИБО grace period)
+ *    включает ровно ОДИН разбор — книгу клуба, и только пока её клуб в
+ *    календарном окне: месяц клуба + весь СЛЕДУЮЩИЙ месяц (архив).
+ *    Пример: подписчик в июле слушает июльский разбор; продлил на август —
+ *    с 1 августа открывается августовский, и до 31 августа доступен ещё
+ *    июльский (архив). Будущие клубы подписка НЕ открывает.
+ * 4. Остальной каталог подписка НЕ открывает — только за отдельную плату.
+ *
+ * Окно считается через archiveWindowEnd — единая функция с логикой клуба,
+ * чтобы доступ к аудио и доступ к чату клуба не расходились.
+ */
+async function userHasBookAccess(book, user) {
   // Куплена ли книга отдельно
   const hasPurchased = user.purchasedBooks && user.purchasedBooks.some(
     (id) => id.toString() === book._id.toString()
   );
   if (hasPurchased) return true;
 
-  // Активная подписка
-  const hasSubscription =
-    user.subscriptionStatus === 'basic' || user.subscriptionStatus === 'premium';
-  if (hasSubscription) return true;
+  // Админ — доступ ко всему
+  if (user.role === 'admin') return true;
 
-  // Архивный доступ (21 день после окончания клуба)
-  if (user.hasArchiveAccess) return true;
+  // Активная подписка (учитываем истечение и grace period)
+  const now = new Date();
+  const isInGrace =
+    user.gracePeriodExpiresAt && user.gracePeriodExpiresAt > now;
+  const hasActiveSub =
+    (user.subscriptionStatus === 'basic' ||
+      user.subscriptionStatus === 'premium') &&
+    ((user.subscriptionExpiresAt && user.subscriptionExpiresAt > now) ||
+      isInGrace);
+  if (!hasActiveSub) return false;
 
-  return false;
+  // Подписка открывает книгу только если она — книга клуба, чей клуб сейчас
+  // в календарном окне (текущий месяц клуба либо следующий месяц-архив).
+  const clubs = await ClubMonth.find({ bookId: book._id })
+    .select('startsAt endsAt')
+    .lean();
+
+  return clubs.some(
+    (club) => club.startsAt <= now && now <= archiveWindowEnd(club.endsAt)
+  );
 }
 
 module.exports = router;
