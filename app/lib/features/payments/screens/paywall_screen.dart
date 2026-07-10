@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../club/providers/club_provider.dart';
 import '../providers/purchase_provider.dart';
 import '../services/purchase_service.dart';
-import 'success_screen.dart';
 
 /// Экран подписки на Клуб (MASTER 4.28).
 ///
-/// Показывает тарифы (месяц + сезон), цена берётся из App Store (локализованная).
-/// Обязательно для ревью Apple: текст про автопродление и как отменить,
-/// ссылки на Условия и Конфиденциальность, кнопка «Восстановить покупки».
+/// ⚠️ 10.07.2026: success-экран убран из потока (он ломал навигацию и
+/// перекрывал системный Manage). После реальной покупки (PaywallStatus.success)
+/// закрываем paywall, сбрасываем кэш клуба, уходим в /club. restore
+/// (авто-восстановление) идёт тихо (PaywallStatus.restored) — экран не трогаем.
 class PaywallScreen extends ConsumerWidget {
   const PaywallScreen({super.key});
 
-  // Ссылки должны быть «живыми» к моменту ревью Apple.
   static const String _termsUrl = 'https://chitatel.app/terms';
   static const String _privacyUrl = 'https://chitatel.app/privacy';
 
@@ -27,9 +28,9 @@ class PaywallScreen extends ConsumerWidget {
 
     ref.listen<PaywallState>(purchaseProvider, (prev, next) {
       if (next.status == PaywallStatus.success) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const SuccessScreen()),
-        );
+        ref.invalidate(currentClubProvider);
+        ref.invalidate(clubListProvider);
+        if (context.mounted) context.go('/club');
       } else if (next.status == PaywallStatus.error && next.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(next.errorMessage!)),
@@ -118,8 +119,6 @@ class PaywallScreen extends ConsumerWidget {
   }
 }
 
-/// Карточка одного тарифа. Заголовок/описание — по productId,
-/// цена — локализованная строка из App Store (product.price).
 class _TariffCard extends StatelessWidget {
   const _TariffCard({required this.product, required this.onTap});
 
@@ -201,7 +200,6 @@ class _UnavailableNote extends StatelessWidget {
   }
 }
 
-/// Юридический текст про автопродление + ссылки (требование Apple 3.1.2).
 class _LegalText extends StatelessWidget {
   const _LegalText({required this.termsUrl, required this.privacyUrl});
 
