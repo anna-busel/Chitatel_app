@@ -8,29 +8,20 @@ import '../../../core/theme/app_typography.dart';
 
 /// Виджет записи голосового сообщения (задача 4.12).
 ///
-/// Показывается ТОЛЬКО Анне-admin (родитель решает, передавать ли его —
-/// см. chat_input). Продуктовое правило: голосовые отправляет только
-/// ведущая (разборы, ответы голосом).
-///
-/// Состояния:
-/// - свёрнут → круглая кнопка-микрофон (terracotta), фиксированная 44x44
-/// - запись → красная пульсирующая точка + таймер MM:SS + кнопки
-///   «корзина» (отмена) и «отправить» (стоп + onSend). РАСТЯГИВАЕТСЯ на
-///   всю строку ввода — поэтому родитель (chat_input) при записи оборачивает
-///   виджет в Expanded и убирает скрепку/текстфилд. О смене состояния
-///   родитель узнаёт через onRecordingStateChanged.
+/// Показывается ТОЛЬКО Анне-admin. Продуктовое правило: голосовые отправляет
+/// только ведущая (разборы, ответы голосом).
 ///
 /// Запись: AAC в .m4a (encoder aacLc, 64 kbps, 44100) во временную
 /// директорию. Параллельно семплируем амплитуду каждые 200мс и строим
 /// waveform из 40 значений 0..100 (как ожидает бэк).
 ///
-/// Использует пакет record 4.4.x (НЕ 5.x): в 4.x API класс Record(),
-/// параметры записи передаются прямо в start() (encoder/bitRate/
-/// samplingRate/path), без RecordConfig. 5.x ломает сборку iOS на
-/// Flutter 3.22.3 (несовместимый граф под-пакетов record_linux).
+/// ⚠️ АПГРЕЙД 10.07.2026: пакет record 5.x. Класс AudioRecorder() (был
+/// Record() в 4.x). Параметры записи передаются через RecordConfig в start()
+/// (в 4.x — прямо в start). sampleRate вместо samplingRate. Остальной API
+/// (hasPermission/getAmplitude/stop/dispose) совпадает.
 ///
 /// Apple 5.1.2(iii): во время записи виден явный индикатор (красная точка +
-/// таймер) — пользователь всегда понимает что идёт запись.
+/// таймер).
 ///
 /// Лимит — 180 сек (совпадает с MAX_DURATION_SEC на бэке). На 180 сек
 /// автостоп с автоотправкой.
@@ -46,9 +37,6 @@ class VoiceRecorder extends StatefulWidget {
       onSend;
 
   /// Сообщает родителю о смене состояния записи (true = идёт запись).
-  /// chat_input по этому колбэку перестраивает layout: в режиме записи
-  /// отдаёт виджету всю строку через Expanded (иначе Spacer внутри Row
-  /// падает на unbounded width).
   final ValueChanged<bool>? onRecordingStateChanged;
 
   @override
@@ -56,8 +44,8 @@ class VoiceRecorder extends StatefulWidget {
 }
 
 class _VoiceRecorderState extends State<VoiceRecorder> {
-  // record 4.x: класс Record (в 5.x был бы AudioRecorder).
-  final Record _recorder = Record();
+  // record 5.x: класс AudioRecorder (был Record() в 4.x).
+  final AudioRecorder _recorder = AudioRecorder();
 
   bool _isRecording = false;
   int _elapsedSec = 0;
@@ -101,15 +89,15 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
       final path =
           '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
-      // record 4.x: параметры прямо в start() (нет RecordConfig).
-      // samplingRate (4.x) вместо sampleRate (5.x). Нет numChannels —
-      // AAC mono задаётся через samplingRate + encoder по умолчанию моно
-      // для речи; для голосовых клуба этого достаточно.
+      // record 5.x: параметры через RecordConfig, путь — отдельным аргументом.
+      // sampleRate (5.x) вместо samplingRate (4.x).
       await _recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 64000,
+          sampleRate: 44100,
+        ),
         path: path,
-        encoder: AudioEncoder.aacLc,
-        bitRate: 64000,
-        samplingRate: 44100,
       );
 
       _filePath = path;
@@ -150,7 +138,6 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
   }
 
   /// Ресемпл собранных амплитуд в ровно 40 значений 0..100 (как ждёт бэк).
-  /// Если семплов мало — растягиваем; много — усредняем по корзинам.
   List<int> _buildWaveform() {
     const target = 40;
     if (_amplitudes.isEmpty) {
@@ -166,7 +153,6 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
         sum += _amplitudes[j];
       }
       final avg = sum / (end - start);
-      // Минимальный пол 6 чтобы бары были видны даже на тишине.
       result.add((avg * 100).round().clamp(6, 100));
     }
     return result;
@@ -188,7 +174,6 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
     setState(() => _elapsedSec = 0);
 
     if (path == null) return;
-    // Слишком короткая запись — игнорируем (защита от случайного тапа).
     if (duration < 1) {
       _safeDelete(path);
       if (mounted) {
@@ -233,7 +218,6 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
   @override
   Widget build(BuildContext context) {
     if (!_isRecording) {
-      // Свёрнутое состояние — кнопка-микрофон фиксированного размера.
       return Material(
         color: Colors.transparent,
         shape: const CircleBorder(),
@@ -253,9 +237,6 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
       );
     }
 
-    // Состояние записи — растягивается на всю строку ввода. Родитель
-    // (chat_input) при записи оборачивает этот виджет в Expanded, поэтому
-    // здесь ширина ограничена и Spacer() работает корректно.
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -265,13 +246,11 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
       ),
       child: Row(
         children: [
-          // Отмена (корзина).
           IconButton(
             icon: const Icon(Icons.delete_outline, color: AppColors.error),
             onPressed: _cancel,
             tooltip: 'Отменить запись',
           ),
-          // Пульсирующая красная точка — индикатор записи (Apple 5.1.2(iii)).
           const _RecDot(),
           const SizedBox(width: 8),
           Text(
@@ -289,7 +268,6 @@ class _VoiceRecorderState extends State<VoiceRecorder> {
             ),
           ),
           const SizedBox(width: 8),
-          // Отправить (стоп + onSend).
           Material(
             color: AppColors.terracotta,
             shape: const CircleBorder(),
