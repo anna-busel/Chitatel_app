@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../payments/screens/paywall_screen.dart';
+import '../../payments/season_window.dart';
 import '../models/club_access.dart';
 import '../models/club_month.dart';
 import '../models/club_summary.dart';
@@ -18,19 +19,13 @@ import '../widgets/qa_tab.dart';
 /// Главный экран клуба месяца. Источник: MASTER.md секция 4.21.
 ///
 /// Структура (сверху вниз):
-/// 1. Шапка-переключатель «Клуб <месяца>» + название книги + chevron
-///    (тап открывает bottom sheet со списком клубов).
-/// 2. TabBar — 3 таба: Разборы / Чат / Q&A.
-/// 3. TabBarView — содержимое выбранного таба.
-///
-/// Подгружает currentClubProvider (зависит от selectedClubIdProvider) один
-/// раз для всех табов. Когда юзер выбирает другой клуб — провайдер
-/// перезагружает контент через GET /api/club/:id.
+/// 1. Шапка-переключатель «Клуб <месяца>» + название книги + chevron.
+/// 2. Плашка сезона (анонс/окно покупки) — для действующих подписчиц (11.07).
+/// 3. Баннер «Архив» если это архивный клуб.
+/// 4. TabBar — 3 таба: Разборы / Чат / Q&A.
 ///
 /// PAYWALL (модель доступа 08.07.2026): если сервер вернул 403
-/// SUBSCRIPTION_REQUIRED (нет подписки на текущий клуб, либо клуб старше
-/// архивного окна), показываем PaywallScreen вместо ошибки — это точка входа
-/// в покупку из клуба. Прочие ошибки (сеть/сервер) — обычный ErrorView.
+/// SUBSCRIPTION_REQUIRED — показываем PaywallScreen вместо ошибки.
 class ClubScreen extends ConsumerStatefulWidget {
   const ClubScreen({super.key});
 
@@ -63,7 +58,6 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
       loading: () => const _LoadingView(),
       error: (err, _) {
         // Нет подписки (SUBSCRIPTION_REQUIRED) → показываем paywall, а не ошибку.
-        // Это единственная точка входа в покупку из клуба (модель 08.07).
         if (_isSubscriptionRequired(err)) {
           return const PaywallScreen();
         }
@@ -75,8 +69,6 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
     );
   }
 
-  /// Распознаёт ошибку «нужна подписка» (403 SUBSCRIPTION_REQUIRED) от бэка.
-  /// Только на неё показываем paywall; сеть/сервер/прочее → ErrorView.
   bool _isSubscriptionRequired(Object err) {
     if (err is DioException) {
       final code = ClubApiService.errorCodeFromException(err);
@@ -89,16 +81,29 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
     final club = result.club;
     final access = result.access;
 
+    // Плашка сезона для тех, кто УЖЕ в клубе (подписчицы месяца):
+    // анонс и окно покупки сезона — тап ведёт на paywall. Админу не показываем.
+    final seasonText = SeasonWindow.clubBannerText();
+    final showSeasonBanner =
+        seasonText != null && access.kind != ClubAccessKind.admin;
+
     return Column(
       children: [
-        // — Шапка-переключатель: «Клуб <месяца>» + название книги + chevron —
         _ClubHeaderSwitcher(club: club, onTap: _openSwitcher),
 
-        // — Баннер «Архив» если это архивный клуб (прошлый месяц) —
+        if (showSeasonBanner)
+          _SeasonClubBanner(
+            text: seasonText,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PaywallScreen()),
+              );
+            },
+          ),
+
         if (access.kind == ClubAccessKind.archive)
           _ArchiveBanner(archiveUntil: club.archiveUntilDate),
 
-        // — TabBar —
         Container(
           color: AppColors.background,
           child: TabBar(
@@ -117,7 +122,6 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
           ),
         ),
 
-        // — Содержимое —
         Expanded(
           child: TabBarView(
             controller: _tabController,
@@ -132,9 +136,6 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
     );
   }
 
-  /// Открыть bottom sheet с переключателем клубов.
-  /// При выборе клуба — обновить selectedClubIdProvider, что вызовет
-  /// перезагрузку currentClubProvider.
   Future<void> _openSwitcher() async {
     final selectedId = await showModalBottomSheet<String?>(
       context: context,
@@ -146,9 +147,6 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
       builder: (ctx) => const ClubSwitcherSheet(),
     );
 
-    // null — закрыл sheet без выбора (тап вне sheet / drag-down).
-    // Передаваемые значения из листа: либо ClubSummary.id, либо
-    // спец-значение '__current__' = «выбрать текущий клуб».
     if (selectedId == null) return;
     if (!mounted) return;
 
@@ -157,6 +155,53 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
     } else {
       ref.read(selectedClubIdProvider.notifier).state = selectedId;
     }
+  }
+}
+
+/// Плашка сезона внутри клуба (анонс или окно покупки).
+/// Спокойно-информативная, без таймеров. Тап → paywall.
+class _SeasonClubBanner extends StatelessWidget {
+  const _SeasonClubBanner({required this.text, required this.onTap});
+
+  final String text;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.terracotta.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.terracotta.withOpacity(0.35)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.auto_awesome,
+                  size: 18, color: AppColors.terracotta),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  text,
+                  style: AppTypography.caption.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              const Icon(Icons.chevron_right,
+                  size: 18, color: AppColors.textSecondary),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -210,7 +255,6 @@ class _ClubHeaderSwitcher extends StatelessWidget {
     );
   }
 
-  /// «Клуб мая», «Клуб июня» и т.д. с месяцем в родительном падеже.
   String _formatClubMonthLabel(ClubMonth club) {
     const months = <int, String>{
       1: 'января',
@@ -249,12 +293,8 @@ class _LoadingView extends StatelessWidget {
   }
 }
 
-/// Баннер архивного клуба (прошлый месяц). Показывается под шапкой когда
-/// access.kind == archive.
-///
-/// В архиве МОЖНО писать (обсуждение прошлой книги продолжается весь следующий
-/// месяц — модель 08.07). Поэтому баннер лишь сообщает, что это прошлый клуб
-/// и до какой даты он открыт, БЕЗ «продлите подписку, чтобы писать».
+/// Баннер архивного клуба (прошлый месяц).
+/// В архиве МОЖНО писать (модель 08.07) — баннер лишь информирует.
 class _ArchiveBanner extends StatelessWidget {
   const _ArchiveBanner({required this.archiveUntil});
   final DateTime archiveUntil;

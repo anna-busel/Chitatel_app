@@ -8,22 +8,56 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../club/providers/club_provider.dart';
 import '../providers/purchase_provider.dart';
+import '../season_window.dart';
 import '../services/purchase_service.dart';
 
 /// Экран подписки на Клуб (MASTER 4.28).
 ///
-/// ⚠️ 10.07.2026: success-экран убран из потока (он ломал навигацию и
-/// перекрывал системный Manage). После реальной покупки (PaywallStatus.success)
-/// закрываем paywall, сбрасываем кэш клуба, уходим в /club. restore
-/// (авто-восстановление) идёт тихо (PaywallStatus.restored) — экран не трогаем.
-class PaywallScreen extends ConsumerWidget {
+/// ⚠️ 10.07.2026: success-экран убран из потока. После реальной покупки
+/// (PaywallStatus.success) сбрасываем кэш клуба и уходим в /club. restore
+/// (авто-восстановление) идёт тихо (PaywallStatus.restored).
+///
+/// ⚠️ 11.07.2026 СЕЗОНЫ: карточка «Сезон» показывается ТОЛЬКО в окно покупки
+/// (первый месяц сезона), с подписью «в течение <месяца>»; в окно анонса
+/// (с 15-го предыдущего месяца) — плашка-анонс без покупки; вне окон — только
+/// Месяц. Логика и тексты — season_window.dart.
+/// ТЕСТОВАЯ РУЧКА: тройной тап по заголовку «Месяц с книгой…» циклически
+/// подменяет дату (реальная → 20.08 → 05.09 → 10.10) — проверка календаря на
+/// одном билде. ⚠️ Убрать жест перед сабмитом (Фаза 7).
+class PaywallScreen extends ConsumerStatefulWidget {
   const PaywallScreen({super.key});
 
   static const String _termsUrl = 'https://chitatel.app/terms';
   static const String _privacyUrl = 'https://chitatel.app/privacy';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PaywallScreen> createState() => _PaywallScreenState();
+}
+
+class _PaywallScreenState extends ConsumerState<PaywallScreen> {
+  // Счётчик для скрытого жеста теста сезонов (тройной тап по заголовку).
+  int _titleTaps = 0;
+  DateTime _lastTap = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _onTitleTap() {
+    final now = DateTime.now();
+    if (now.difference(_lastTap).inMilliseconds > 1500) {
+      _titleTaps = 0;
+    }
+    _lastTap = now;
+    _titleTaps++;
+    if (_titleTaps >= 3) {
+      _titleTaps = 0;
+      final msg = SeasonWindow.cycleDebugDate();
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(purchaseProvider);
 
     ref.listen<PaywallState>(purchaseProvider, (prev, next) {
@@ -50,11 +84,11 @@ class PaywallScreen extends ConsumerWidget {
         centerTitle: true,
         title: Text('Клуб ЧИТАТЕЛЬ', style: AppTypography.screenTitle),
       ),
-      body: SafeArea(child: _buildBody(context, ref, state)),
+      body: SafeArea(child: _buildBody(context, state)),
     );
   }
 
-  Widget _buildBody(BuildContext context, WidgetRef ref, PaywallState state) {
+  Widget _buildBody(BuildContext context, PaywallState state) {
     if (state.status == PaywallStatus.initial || state.status == PaywallStatus.loading) {
       return const Center(
         child: CircularProgressIndicator(color: AppColors.terracotta),
@@ -63,8 +97,16 @@ class PaywallScreen extends ConsumerWidget {
 
     final bool busy =
         state.status == PaywallStatus.purchasing || state.status == PaywallStatus.verifying;
+
+    // СЕЗОНЫ: вне окна покупки карточка Сезона скрывается с витрины.
+    final seasonPhase = SeasonWindow.phase();
+    final visibleProducts = state.products
+        .where((p) =>
+            p.id != PurchaseService.seasonId || seasonPhase == SeasonPhase.open)
+        .toList();
+
     final bool noProducts =
-        state.status == PaywallStatus.unavailable || state.products.isEmpty;
+        state.status == PaywallStatus.unavailable || visibleProducts.isEmpty;
 
     return Stack(
       children: [
@@ -72,7 +114,12 @@ class PaywallScreen extends ConsumerWidget {
           padding: const EdgeInsets.all(AppSpacing.screenPadding),
           children: [
             const SizedBox(height: 8),
-            Text('Месяц с книгой, которая меняет', style: AppTypography.screenTitle),
+            GestureDetector(
+              onTap: _onTitleTap,
+              behavior: HitTestBehavior.opaque,
+              child: Text('Месяц с книгой, которая меняет',
+                  style: AppTypography.screenTitle),
+            ),
             const SizedBox(height: 8),
             Text(
               'Каждый месяц — одна тема и одна книга: аудиоразборы по понедельникам, '
@@ -80,24 +127,37 @@ class PaywallScreen extends ConsumerWidget {
               style: AppTypography.bodyLarge.copyWith(color: AppColors.textSecondary),
             ),
             const SizedBox(height: 24),
+            // Анонс сезона (15-е — конец месяца перед сезоном): информируем,
+            // купить ещё нельзя. Без таймеров/давления (Apple ревью).
+            if (seasonPhase == SeasonPhase.announce) ...[
+              _SeasonAnnounceCard(text: SeasonWindow.announceText()),
+              const SizedBox(height: AppSpacing.cardGapLarge),
+            ],
             if (noProducts)
               const _UnavailableNote()
             else
-              ...state.products.map(
+              ...visibleProducts.map(
                 (p) => Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.cardGapLarge),
                   child: _TariffCard(
                     product: p,
-                    onTap: busy ? null : () => ref.read(purchaseProvider.notifier).buy(p),
+                    onTap: busy
+                        ? null
+                        : () => ref.read(purchaseProvider.notifier).buy(p),
                   ),
                 ),
               ),
             const SizedBox(height: 16),
-            const _LegalText(termsUrl: _termsUrl, privacyUrl: _privacyUrl),
+            const _LegalText(
+              termsUrl: PaywallScreen._termsUrl,
+              privacyUrl: PaywallScreen._privacyUrl,
+            ),
             const SizedBox(height: 12),
             Center(
               child: TextButton(
-                onPressed: busy ? null : () => ref.read(purchaseProvider.notifier).restore(),
+                onPressed: busy
+                    ? null
+                    : () => ref.read(purchaseProvider.notifier).restore(),
                 child: Text(
                   'Восстановить покупки',
                   style: AppTypography.bodyMedium.copyWith(color: AppColors.terracotta),
@@ -119,6 +179,40 @@ class PaywallScreen extends ConsumerWidget {
   }
 }
 
+/// Плашка-анонс будущего сезона на paywall (фаза announce).
+class _SeasonAnnounceCard extends StatelessWidget {
+  const _SeasonAnnounceCard({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.terracotta.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+        border: Border.all(color: AppColors.terracotta.withOpacity(0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.auto_awesome, size: 18, color: AppColors.terracotta),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTypography.captionMedium.copyWith(color: AppColors.textPrimary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Карточка одного тарифа. Заголовок/описание — по productId,
+/// цена — локализованная строка из App Store (product.price).
+/// Для сезона подпись включает окно оформления («в течение сентября»).
 class _TariffCard extends StatelessWidget {
   const _TariffCard({required this.product, required this.onTap});
 
@@ -133,7 +227,7 @@ class _TariffCard extends StatelessWidget {
 
   String get _note {
     if (product.id == PurchaseService.seasonId) {
-      return 'Три месяца клуба выгоднее. Продлевается каждые 3 месяца.';
+      return SeasonWindow.openCardNote();
     }
     return 'Доступ к клубу на месяц. Продлевается автоматически.';
   }
