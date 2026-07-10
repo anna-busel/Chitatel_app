@@ -4,87 +4,37 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.4.4 <4.0.0'
+  sdk: '>=3.6.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.6
-  google_fonts: ^6.1.0
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.2.1
   shimmer: ^3.0.0
-  go_router: ^14.2.0
-  flutter_riverpod: ^2.5.1
-  shared_preferences: ^2.2.2
-  dio: ^5.4.0
-  flutter_secure_storage: ^9.0.0
-  google_sign_in: ^6.2.1
-  # — Apple Sign In (задача 1.7 / бэкенд 1.3) —
-  # sign_in_with_apple: вход через Apple ID на iOS. Отдаёт identityToken,
-  # который бэкенд (POST /api/auth/apple) верифицирует через Apple JWKS.
-  # fullName (givenName + familyName) приходит ТОЛЬКО при первой авторизации.
-  #
-  # Версия 6.1.x (НЕ 7.x/8.x): 8.0.0 требует Flutter 3.41+; 7.x таргетит
-  # Swift 6 (Xcode 16). Машина проекта — Xcode 15.2, Flutter 3.22.3. Ветка
-  # 6.1.x: min Flutter 3.19.0, поддерживает Xcode 15 И 16 (6.1.3 — «Support
-  # Xcode 16 in addition to all previously supported versions»). Поэтому
-  # ^6.1.4 = >=6.1.4 <7.0.0 — остаётся в Xcode-15-совместимой ветке (та же
-  # логика пиннинга что у record ^4.4.4 и just_audio ^0.9.40).
-  #
-  # ВАЖНО: в Xcode добавить capability «Sign in with Apple» (Runner → Targets
-  # → Runner → Signing & Capabilities → +), иначе вход падает без визуальной
-  # ошибки. App ID в портале уже с этой capability (Team 3GS6F87RKZ,
-  # app.chitatel.ios). Тест Apple Sign In — только на реальном устройстве
-  # (в симуляторе не работает), Фаза 7 / TestFlight.
+  go_router: ^14.6.2
+  flutter_riverpod: ^2.6.1
+  shared_preferences: ^2.3.3
+  dio: ^5.7.0
+  flutter_secure_storage: ^9.2.2
+  google_sign_in: ^6.2.2
   sign_in_with_apple: ^6.1.4
   url_launcher: ^6.3.1
-  # — Аудиоплеер (задача 2.7) —
-  # Версии зафиксированы: latest несовместим с Flutter 3.22.3
-  # just_audio 0.10+ ломает API стримов; audio_service 0.19+ требует Flutter 3.27+
-  just_audio: ^0.9.40
-  audio_service: ^0.18.15
-  audio_session: ^0.1.21
-  rxdart: ^0.27.7
-  path_provider: ^2.1.3
-  # — Клуб (задача 4.5) —
-  # Socket.io клиент для real-time чата клуба.
-  # Версия 2.x совместима с сервером Socket.io 4.x (наш сервер — 4.7.5).
+  just_audio: ^0.10.4
+  audio_service: ^0.18.18
+  audio_session: ^0.2.2
+  rxdart: ^0.28.0
+  path_provider: ^2.1.5
   socket_io_client: ^2.0.3+1
-  # — Картинки в чате (задача 4.6) —
-  # image_picker: выбор фото из галереи / съёмка камерой на iOS.
-  # 1.x стабильна с Flutter 3.22.3. Требует NSPhotoLibraryUsageDescription
-  # и NSCameraUsageDescription в Info.plist (уже добавлены в задаче 0.6).
   image_picker: ^1.1.2
-  # — Голосовые сообщения (задача 4.12) —
-  # record: запись аудио на iOS (AAC m4a). Только Анна-admin записывает
-  # (продуктовое правило). Требует NSMicrophoneUsageDescription в Info.plist.
-  # Воспроизведение — через just_audio (выше, не дублируем).
-  #
-  # Версия 4.x (НЕ 5.x): в 5.x пакет раскладывается на под-пакеты
-  # (record_platform_interface / record_linux / record_darwin), и их
-  # авто-резолв на Flutter 3.22.3 даёт несовместимый граф — record_linux
-  # не реализует методы интерфейса, и сборка iOS падает
-  # ("RecordLinux is missing implementations"), хотя Linux-код на iOS не
-  # нужен. Ветка 4.4.x — цельный пакет, граф простой, ставится без
-  # конфликта на 3.22.3. API записи отличается (класс Record(), см.
-  # voice_recorder.dart) — учтено.
-  record: ^4.4.4
-  # — Покупки (задача 3.2) —
-  # ПИН ТОЧНОЙ ВЕРСИИ 3.2.1 (НЕ ^3.2.0): в in_app_purchase 3.2.3 регрессия
-  # flutter/flutter#169335 — serverVerificationData (JWS) приходит ПУСТЫМ на
-  # части устройств при обычной покупке, из-за чего серверная верификация
-  # падает с VerificationException status=1 (INVALID_JWT_FORMAT / пустой JWS).
-  # В 3.2.1 этой регрессии нет. Пин на точную 3.2.1 (без ^) не даёт резолверу
-  # подтянуть багованную 3.2.3+, оставаясь на Flutter 3.22.3 — БЕЗ апгрейда
-  # Flutter/Xcode и БЕЗ переписывания серверного verify (он корректен под JWS).
-  # Диагностика причины — коммит ef07bc7 (лог status из VerificationException),
-  # снять после подтверждения фикса на билде.
-  in_app_purchase: 3.2.1
+  record: ^5.2.1
+  in_app_purchase: ^3.4.0
   cached_network_image: ^3.4.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^5.0.0
 
 flutter:
   uses-material-design: true
