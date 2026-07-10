@@ -7,16 +7,6 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../club/providers/club_provider.dart';
 
-/// Экран успешной покупки подписки (MASTER 4.29).
-/// Показывается ТОЛЬКО после реальной покупки (не после restore — см.
-/// purchase_provider: PaywallStatus.success vs restored).
-///
-/// ⚠️ НАВИГАЦИЯ (фикс 10.07.2026): экран открыт paywall через
-/// Navigator.pushReplacement (поверх ShellRoute). context.go('/club') сам по
-/// себе НЕ убирает этот Navigator-оверлей — маршрут под низом меняется, а
-/// success-экран остаётся сверху и перекрывает клуб (кнопка «мёртвая», клуб
-/// виден только после перезапуска). Поэтому сначала снимаем оверлей
-/// (pop до корня root-навигатора), затем context.go на нужный таб.
 class SuccessScreen extends ConsumerWidget {
   const SuccessScreen({super.key});
 
@@ -57,8 +47,7 @@ class SuccessScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                'Подписка активна. Слушайте разбор книги месяца, заходите '
-                'в чат сообщества и сохраняйте цитаты в журнал.',
+                'Подписка активна. Слушайте разбор книги месяца, заходите в чат сообщества и сохраняйте цитаты в журнал.',
                 style: AppTypography.bodyLarge.copyWith(color: AppColors.textSecondary),
                 textAlign: TextAlign.center,
               ),
@@ -77,3 +66,8 @@ class SuccessScreen extends ConsumerWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
