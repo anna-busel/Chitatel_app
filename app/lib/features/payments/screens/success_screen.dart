@@ -8,15 +8,27 @@ import '../../../shared/widgets/app_button.dart';
 import '../../club/providers/club_provider.dart';
 
 /// Экран успешной покупки подписки (MASTER 4.29).
-/// Показывается после подтверждения чека сервером.
+/// Показывается ТОЛЬКО после реальной покупки (не после restore — см.
+/// purchase_provider: PaywallStatus.success vs restored).
 ///
-/// ⚠️ После покупки сбрасываем кэш клуба (currentClubProvider): до покупки
-/// провайдер мог закэшировать 403 SUBSCRIPTION_REQUIRED (юзер был без
-/// подписки → paywall). Без invalidate переход в клуб показал бы старый
-/// закэшированный paywall, хотя подписка уже активна. invalidate заставляет
-/// клуб перезапросить доступ у сервера — теперь вернётся активный доступ.
+/// ⚠️ НАВИГАЦИЯ (фикс 10.07.2026): экран открыт paywall через
+/// Navigator.pushReplacement (поверх ShellRoute). context.go('/club') сам по
+/// себе НЕ убирает этот Navigator-оверлей — маршрут под низом меняется, а
+/// success-экран остаётся сверху и перекрывает клуб (кнопка «мёртвая», клуб
+/// виден только после перезапуска). Поэтому сначала снимаем оверлей
+/// (pop до корня root-навигатора), затем context.go на нужный таб.
 class SuccessScreen extends ConsumerWidget {
   const SuccessScreen({super.key});
+
+  void _goto(BuildContext context, WidgetRef ref, String location) {
+    ref.invalidate(currentClubProvider);
+    ref.invalidate(clubListProvider);
+    final nav = Navigator.of(context, rootNavigator: true);
+    while (nav.canPop()) {
+      nav.pop();
+    }
+    context.go(location);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -53,21 +65,11 @@ class SuccessScreen extends ConsumerWidget {
               const Spacer(),
               AppButton(
                 text: 'Начать слушать',
-                onPressed: () {
-                  // Сбросить кэш клуба, чтобы он перезапросил доступ с новой
-                  // подпиской (иначе покажется старый закэшированный paywall).
-                  ref.invalidate(currentClubProvider);
-                  ref.invalidate(clubListProvider);
-                  context.go('/club');
-                },
+                onPressed: () => _goto(context, ref, '/club'),
               ),
               const SizedBox(height: 8),
               TextButton(
-                onPressed: () {
-                  ref.invalidate(currentClubProvider);
-                  ref.invalidate(clubListProvider);
-                  context.go('/');
-                },
+                onPressed: () => _goto(context, ref, '/'),
                 child: Text(
                   'На главную',
                   style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
@@ -75,8 +77,3 @@ class SuccessScreen extends ConsumerWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
