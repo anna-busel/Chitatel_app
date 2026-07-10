@@ -68,7 +68,17 @@ dependencies:
   # конфликта на 3.22.3. API записи отличается (класс Record(), см.
   # voice_recorder.dart) — учтено.
   record: ^4.4.4
-  in_app_purchase: ^3.2.0
+  # — Покупки (задача 3.2) —
+  # ПИН ТОЧНОЙ ВЕРСИИ 3.2.1 (НЕ ^3.2.0): в in_app_purchase 3.2.3 регрессия
+  # flutter/flutter#169335 — serverVerificationData (JWS) приходит ПУСТЫМ на
+  # части устройств при обычной покупке, из-за чего серверная верификация
+  # падает с VerificationException status=1 (INVALID_JWT_FORMAT / пустой JWS).
+  # В 3.2.1 этой регрессии нет. Пин на точную 3.2.1 (без ^) не даёт резолверу
+  # подтянуть багованную 3.2.3+, оставаясь на Flutter 3.22.3 — БЕЗ апгрейда
+  # Flutter/Xcode и БЕЗ переписывания серверного verify (он корректен под JWS).
+  # Диагностика причины — коммит ef07bc7 (лог status из VerificationException),
+  # снять после подтверждения фикса на билде.
+  in_app_purchase: 3.2.1
   cached_network_image: ^3.4.1
 
 dev_dependencies:
