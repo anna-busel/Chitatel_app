@@ -14,7 +14,7 @@ enum PaywallStatus {
   purchasing, // идёт системный диалог Apple
   verifying, // проверка чека на бэкенде
   success, // покупка подтверждена сервером (ТОЛЬКО реальная покупка, не restore)
-  restored, // тихо восстановлена прошлая покупка (доступ обновлён, БЕЗ success-экрана)
+  restored, // восстановление по кнопке подтверждено (доступ обновлён)
   error,
 }
 
@@ -62,6 +62,22 @@ class PurchaseNotifier extends StateNotifier<PaywallState> {
   final PurchaseService _service;
   final SecureStorage _storage;
   StreamSubscription<List<PurchaseDetails>>? _sub;
+
+  /// ⚠️ АВТО-RESTORE УБРАН (решение 11.07.2026).
+  ///
+  /// StoreKit при запуске приложения сам скармливает в purchaseStream старые
+  /// (restored/незавершённые) транзакции. Раньше провайдер отправлял их на
+  /// verify без разбора → подписка «тихо» реанимировалась при каждом входе и
+  /// привязывалась к ЛЮБОМУ залогиненному юзеру приложения (один Apple ID
+  /// раздавал подписку разным аккаунтам — дыра). Теперь restored-транзакции
+  /// верифицируются ТОЛЬКО если восстановление явно запросил пользователь
+  /// кнопкой «Восстановить покупки» (_restoreRequested). Иначе транзакция
+  /// просто завершается (complete), ничего не привязывая.
+  ///
+  /// Сверка appAccountToken транзакции с юзером на сервере при verify/restore
+  /// (чтобы чужую транзакцию нельзя было привязать вообще) — отдельная задача
+  /// на потом (вариант 2, AI-CONTEXT-3).
+  bool _restoreRequested = false;
 
   Future<void> _init() async {
     state = state.copyWith(status: PaywallStatus.loading);
@@ -114,12 +130,15 @@ class PurchaseNotifier extends StateNotifier<PaywallState> {
     }
   }
 
-  /// Восстановить ранее совершённые покупки.
+  /// Восстановить ранее совершённые покупки (кнопка на paywall).
+  /// Только этот путь разрешает верификацию restored-транзакций.
   Future<void> restore() async {
+    _restoreRequested = true;
     state = state.copyWith(status: PaywallStatus.purchasing);
     try {
       await _service.restore();
     } catch (_) {
+      _restoreRequested = false;
       state = state.copyWith(
         status: PaywallStatus.error,
         errorMessage: 'Не удалось восстановить покупки',
@@ -145,23 +164,32 @@ class PurchaseNotifier extends StateNotifier<PaywallState> {
           await _service.complete(purchase);
           break;
         case PurchaseStatus.purchased:
-          // Реальная покупка → success-экран.
+          // Реальная покупка → verify → success (paywall уводит в клуб).
           await _verify(purchase, isRestore: false);
           break;
         case PurchaseStatus.restored:
-          // Тихое восстановление (напр. авто-restore при входе) → доступ
-          // обновляем на сервере, но success-экран НЕ показываем.
-          await _verify(purchase, isRestore: true);
+          if (_restoreRequested) {
+            // Пользователь явно нажал «Восстановить покупки».
+            await _verify(purchase, isRestore: true);
+          } else {
+            // Авто-выдача StoreKit при запуске: НЕ верифицируем и НЕ
+            // привязываем — только закрываем транзакцию, чтобы StoreKit
+            // не повторял её бесконечно. Доступ решает сервер по базе.
+            await _service.complete(purchase);
+          }
           break;
       }
+    }
+    // Явный restore обслужен этой пачкой — сбрасываем флаг, чтобы
+    // последующие авто-выдачи StoreKit снова игнорировались.
+    if (_restoreRequested &&
+        purchases.any((p) => p.status == PurchaseStatus.restored)) {
+      _restoreRequested = false;
     }
   }
 
   Future<void> _verify(PurchaseDetails purchase, {required bool isRestore}) async {
-    // При restore НЕ дёргаем UI в verifying (чтобы не мигал оверлей на входе).
-    if (!isRestore) {
-      state = state.copyWith(status: PaywallStatus.verifying);
-    }
+    state = state.copyWith(status: PaywallStatus.verifying);
     try {
       final jws = purchase.verificationData.serverVerificationData;
       final entitlements = await _service.verifyOnServer(jws);
@@ -170,16 +198,12 @@ class PurchaseNotifier extends StateNotifier<PaywallState> {
         entitlements: entitlements,
       );
     } catch (_) {
-      // Ошибку восстановления показываем тихо (не пугаем на входе);
-      // ошибку реальной покупки — явно.
-      if (!isRestore) {
-        state = state.copyWith(
-          status: PaywallStatus.error,
-          errorMessage: 'Не удалось подтвердить покупку',
-        );
-      } else {
-        state = state.copyWith(status: PaywallStatus.ready);
-      }
+      state = state.copyWith(
+        status: PaywallStatus.error,
+        errorMessage: isRestore
+            ? 'Не удалось восстановить покупки'
+            : 'Не удалось подтвердить покупку',
+      );
     } finally {
       await _service.complete(purchase);
     }
