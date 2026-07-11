@@ -14,8 +14,10 @@ import '../services/purchase_service.dart';
 /// Экран подписки на Клуб (MASTER 4.28).
 ///
 /// ⚠️ 10.07.2026: success-экран убран из потока. После реальной покупки
-/// (PaywallStatus.success) сбрасываем кэш клуба и уходим в /club. restore
-/// (авто-восстановление) идёт тихо (PaywallStatus.restored).
+/// (PaywallStatus.success) сбрасываем кэш клуба и уходим в /club.
+/// ⚠️ 11.07.2026: авто-restore при запуске убран (purchase_provider);
+/// восстановление — только кнопкой «Восстановить покупки», после успеха
+/// (PaywallStatus.restored) так же сбрасываем кэш клуба и уходим в /club.
 ///
 /// ⚠️ 11.07.2026 СЕЗОНЫ: карточка «Сезон» показывается ТОЛЬКО в окно покупки
 /// (первый месяц сезона), с подписью «в течение <месяца>»; в окно анонса
@@ -61,7 +63,10 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
     final state = ref.watch(purchaseProvider);
 
     ref.listen<PaywallState>(purchaseProvider, (prev, next) {
-      if (next.status == PaywallStatus.success) {
+      if (next.status == PaywallStatus.success ||
+          next.status == PaywallStatus.restored) {
+        // Покупка или восстановление по кнопке подтверждены сервером →
+        // сбрасываем кэш клуба (мог держать 403) и уходим в клуб.
         ref.invalidate(currentClubProvider);
         ref.invalidate(clubListProvider);
         if (context.mounted) context.go('/club');
