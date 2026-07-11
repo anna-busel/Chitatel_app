@@ -20,10 +20,10 @@ import '../services/purchase_service.dart';
 /// (PaywallStatus.restored) так же сбрасываем кэш клуба и уходим в /club.
 ///
 /// ⚠️ 11.07.2026 СЕЗОНЫ: карточка «Сезон» показывается ТОЛЬКО в окно покупки
-/// (первый месяц сезона), с подписью «в течение <месяца>»; в окно анонса
-/// (с 15-го предыдущего месяца) — плашка-анонс без покупки; вне окон — только
-/// Месяц. Логика и тексты — season_window.dart.
-/// ТЕСТОВАЯ РУЧКА: тройной тап по заголовку «Месяц с книгой…» циклически
+/// (первый месяц сезона); в окно анонса (с 15-го предыдущего месяца) —
+/// плашка-анонс без покупки; вне окон — только Месяц. Финальные тексты —
+/// season_window.dart («по цене двух», «до 30 сентября»).
+/// ТЕСТОВАЯ РУЧКА: тройной тап по заголовку «Одна книга в месяц…» циклически
 /// подменяет дату (реальная → 20.08 → 05.09 → 10.10) — проверка календаря на
 /// одном билде. ⚠️ Убрать жест перед сабмитом (Фаза 7).
 class PaywallScreen extends ConsumerStatefulWidget {
@@ -122,13 +122,13 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
             GestureDetector(
               onTap: _onTitleTap,
               behavior: HitTestBehavior.opaque,
-              child: Text('Месяц с книгой, которая меняет',
+              child: Text('Одна книга в месяц, которая меняет',
                   style: AppTypography.screenTitle),
             ),
             const SizedBox(height: 8),
             Text(
-              'Каждый месяц — одна тема и одна книга: аудиоразборы по понедельникам, '
-              'живой чат сообщества, журнал цитат и рекомендация фильма.',
+              'Аудиоразборы по понедельникам, живой чат с Анной и участницами, '
+              'журнал цитат и фильм месяца.',
               style: AppTypography.bodyLarge.copyWith(color: AppColors.textSecondary),
             ),
             const SizedBox(height: 24),
@@ -217,7 +217,8 @@ class _SeasonAnnounceCard extends StatelessWidget {
 
 /// Карточка одного тарифа. Заголовок/описание — по productId,
 /// цена — локализованная строка из App Store (product.price).
-/// Для сезона подпись включает окно оформления («в течение сентября»).
+/// Сезон: заголовок «Осенний сезон · 3 месяца» и подпись с месяцами,
+/// выгодой и окном оформления — из season_window.dart.
 class _TariffCard extends StatelessWidget {
   const _TariffCard({required this.product, required this.onTap});
 
@@ -225,7 +226,7 @@ class _TariffCard extends StatelessWidget {
   final VoidCallback? onTap;
 
   String get _title {
-    if (product.id == PurchaseService.seasonId) return 'Сезон · 3 месяца';
+    if (product.id == PurchaseService.seasonId) return SeasonWindow.cardTitle();
     if (product.id == PurchaseService.monthlyId) return 'Месяц';
     return product.title;
   }
@@ -234,7 +235,8 @@ class _TariffCard extends StatelessWidget {
     if (product.id == PurchaseService.seasonId) {
       return SeasonWindow.openCardNote();
     }
-    return 'Доступ к клубу на месяц. Продлевается автоматически.';
+    return 'Полный доступ к клубу этого месяца. '
+        'Продлевается автоматически, отменить можно в любой момент.';
   }
 
   @override
