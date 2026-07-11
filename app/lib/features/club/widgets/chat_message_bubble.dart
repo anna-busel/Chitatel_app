@@ -13,20 +13,23 @@ const List<String> kAllowedReactions = ['❤️', '👍', '🔥', '👏', '🥲'
 /// красятся terracotta + жирным (на тёмном фоне своего сообщения —
 /// белым жирным, чтобы читалось). Остальной текст — обычный.
 ///
-/// Эвристика: @ + последовательность букв/цифр/пробел-имя до знака
-/// препинания/конца. Имя может содержать пробел («@Анна Бусел»), поэтому
-/// захватываем буквы и одиночные пробелы между словами с заглавной — но
-/// проще и надёжно: подсвечиваем @ + одно-два слова (буквы, до 30 симв).
+/// ОПТИМИЗАЦИЯ (чат-лаг 11.07.2026): если в тексте нет '@' — сразу обычный
+/// Text без RegExp. 99% сообщений без упоминаний, а этот разбор гонялся на
+/// каждый build каждого пузыря при прокрутке.
 Widget buildMentionText(
   String text, {
   required Color baseColor,
   required bool isMine,
 }) {
+  final baseStyle = AppTypography.body.copyWith(color: baseColor);
+  if (!text.contains('@')) {
+    return Text(text, style: baseStyle);
+  }
+
   final mentionStyle = AppTypography.body.copyWith(
     color: isMine ? Colors.white : AppColors.terracotta,
     fontWeight: FontWeight.w700,
   );
-  final baseStyle = AppTypography.body.copyWith(color: baseColor);
 
   // @ + буквы/цифры/_ + опц. один пробел + ещё буквы (для «@Имя Фамилия»).
   final re = RegExp(
@@ -51,11 +54,35 @@ Widget buildMentionText(
   return RichText(text: TextSpan(children: spans));
 }
 
+/// Рамка чужого пузыря (ОПТИМИЗАЦИЯ чат-лага 11.07.2026).
+///
+/// Раньше чужие пузыри рисовались с boxShadow (AppColors.cardShadow) — тень
+/// с размытием на КАЖДОМ сообщении, самая дорогая операция отрисовки, и
+/// главный источник «вязкого» скролла. Заменена на тонкую рамку 1px
+/// (AppColors.border) — визуально пузырь так же отделён от бумажного фона,
+/// но кадр дешевеет радикально (Telegram-подход: у него теней на пузырях нет).
+/// У сообщений Анны (автор-админ) слева терракотовая полоска 2.5px,
+/// остальные стороны — та же тонкая рамка.
+Border? _bubbleBorder({required bool isMine, required bool adminAuthor}) {
+  if (isMine) return null;
+  const side = BorderSide(color: AppColors.border, width: 1);
+  if (adminAuthor) {
+    return const Border(
+      left: BorderSide(color: AppColors.terracotta, width: 2.5),
+      top: side,
+      right: side,
+      bottom: side,
+    );
+  }
+  return const Border.fromBorderSide(side);
+}
+
 /// Bubble одного сообщения в чате.
 ///
 /// Логика стиля:
 /// - Своё сообщение — справа, terracotta фон, белый текст, без аватара
-/// - Чужое — слева, белый фон, тёмный текст, с круглым аватаром-инициалом
+/// - Чужое — слева, белый фон + тонкая рамка (без тени — оптимизация 11.07),
+///   тёмный текст, с круглым аватаром-инициалом
 /// - Удалённое (deletedAt != null) — серый курсив «Сообщение удалено»
 /// - Reply preview — компактная полоска (1 строка) сверху bubble с цитатой
 ///   родителя. Берётся из message.replySnapshot (приходит с сервера populated,
@@ -66,7 +93,12 @@ Widget buildMentionText(
 /// - Голосовое (type=voice) — VoicePlayer (play/pause + waveform), 4.12
 /// - Реакции — ряд чипов под bubble (эмодзи + счётчик, свои подсвечены)
 /// - isHighlighted — временная подсветка (после перехода к закрепу/reply),
-///   снимается таймером в chat_tab. Жёлтая обводка поверх обычного bubble.
+///   снимается таймером в chat_tab. Рисуется через foregroundDecoration
+///   ПОВЕРХ пузыря (оптимизация 11.07: раньше был AnimatedContainer с
+///   постоянной прозрачной рамкой 2.5px на каждом сообщении — анимационная
+///   обвязка и лишний слой на всех пузырях всегда; теперь обычный Container,
+///   декорация создаётся только когда подсветка реально включена, layout не
+///   дёргается, т.к. foreground не участвует в размерах).
 ///
 /// Скругления пузырей — 18px (редизайн чата 28.06, мягче) с асимметричным
 /// «хвостиком»: свой пузырь острый снизу-справа (4px), чужой — снизу-слева,
@@ -187,14 +219,12 @@ class ChatMessageBubble extends StatelessWidget {
       bottomRight: Radius.circular(isMine ? 4 : 18),
     );
 
-    // Бейдж «АВТОР КЛУБА» + полоска слева — только у чужих сообщений Анны
-    // (автор-админ). У своих и у обычных участниц не показываем.
+    // Бейдж «АВТОР КЛУБА» — только у чужих сообщений Анны (автор-админ).
     final showAuthorBadge = authorIsAdmin && !isMine;
-    final adminBorder = showAuthorBadge
-        ? const Border(
-            left: BorderSide(color: AppColors.terracotta, width: 2.5),
-          )
-        : null;
+
+    // Рамка вместо тени (оптимизация чат-лага 11.07, см. _bubbleBorder).
+    final border =
+        _bubbleBorder(isMine: isMine, adminAuthor: showAuthorBadge);
 
     // — Внутренность bubble —
     Widget inner;
@@ -225,8 +255,7 @@ class ChatMessageBubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: bubbleColor,
           borderRadius: borderRadius,
-          boxShadow: isMine ? null : AppColors.cardShadow,
-          border: adminBorder,
+          border: border,
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -299,8 +328,7 @@ class ChatMessageBubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: bubbleColor,
           borderRadius: borderRadius,
-          boxShadow: isMine ? null : AppColors.cardShadow,
-          border: adminBorder,
+          border: border,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -347,26 +375,26 @@ class ChatMessageBubble extends StatelessWidget {
       );
     }
 
+    // Подсветка перехода — foregroundDecoration ПОВЕРХ пузыря: не влияет на
+    // layout и создаётся только когда реально включена (оптимизация 11.07,
+    // раньше — AnimatedContainer с прозрачной рамкой на каждом сообщении).
     final bubble = ConstrainedBox(
       constraints: BoxConstraints(
         maxWidth: MediaQuery.of(context).size.width * 0.72,
       ),
       child: GestureDetector(
         onLongPress: () => _showActionMenu(context, isMine),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          decoration: BoxDecoration(
-            borderRadius: borderRadius,
-            border: Border.all(
-              color: isHighlighted
-                  ? AppColors.terracotta
-                  : Colors.transparent,
-              width: 2.5,
-            ),
-            color: isHighlighted
-                ? AppColors.terracotta.withOpacity(0.10)
-                : Colors.transparent,
-          ),
+        child: Container(
+          foregroundDecoration: isHighlighted
+              ? BoxDecoration(
+                  borderRadius: borderRadius,
+                  border: Border.all(
+                    color: AppColors.terracotta,
+                    width: 2.5,
+                  ),
+                  color: AppColors.terracotta.withOpacity(0.10),
+                )
+              : null,
           child: inner,
         ),
       ),
@@ -501,7 +529,7 @@ class ChatMessageBubble extends StatelessWidget {
 }
 
 /// Содержимое контекстного меню (выносим отдельно — чтобы анимация scale/fade
-/// применялall к всей карточке). Ряд эмодзи + список действий.
+/// применялась к всей карточке). Ряд эмодзи + список действий.
 class _ActionMenuContent extends StatelessWidget {
   const _ActionMenuContent({
     required this.message,
