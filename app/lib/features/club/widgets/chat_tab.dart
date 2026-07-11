@@ -83,6 +83,13 @@ bool _sameDay(DateTime a, DateTime b) {
 /// этого окна — если успел нажать «Отменить», сообщение возвращается на место
 /// и запрос не отправляется. Так нет второго overlay (диалога) поверх
 /// клавиатуры → нет дёрганья layout, которое было с AlertDialog.
+///
+/// ПРОИЗВОДИТЕЛЬНОСТЬ (чат-лаг 11.07.2026): каждый элемент ленты обёрнут в
+/// RepaintBoundary — сообщение кэшируется как отдельный слой и не
+/// перерисовывается вместе с соседями при прокрутке. cacheExtent: 600 —
+/// список строит элементы чуть заранее за краями экрана, быстрый скролл не
+/// «доезжает» на пустоту. Парные правки в chat_message_bubble (тень→рамка,
+/// подсветка без AnimatedContainer, быстрый выход упоминаний).
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -1290,6 +1297,10 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                           reverse: true,
                           keyboardDismissBehavior:
                               ScrollViewKeyboardDismissBehavior.onDrag,
+                          // Строим элементы чуть заранее за краями экрана —
+                          // быстрый скролл не «доезжает» на пустоту
+                          // (оптимизация чат-лага 11.07).
+                          cacheExtent: 600,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: 8,
@@ -1364,16 +1375,23 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                                     : null,
                               ),
                             );
-                            if (!showDateHeader) return bubble;
-                            return Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.stretch,
-                              children: [
-                                _DateSeparator(
-                                  label: _formatDateLabel(m.createdAt),
-                                ),
-                                bubble,
-                              ],
+                            // RepaintBoundary: каждый элемент — отдельный слой
+                            // отрисовки; при прокрутке соседние сообщения не
+                            // перерисовывают друг друга (оптимизация 11.07).
+                            if (!showDateHeader) {
+                              return RepaintBoundary(child: bubble);
+                            }
+                            return RepaintBoundary(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.stretch,
+                                children: [
+                                  _DateSeparator(
+                                    label: _formatDateLabel(m.createdAt),
+                                  ),
+                                  bubble,
+                                ],
+                              ),
                             );
                           },
                         ),
