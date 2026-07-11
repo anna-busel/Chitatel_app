@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { optionalAuth } = require('../middleware/auth');
 const { success } = require('../utils/response');
 const Book = require('../models/Book');
+const ClubMonth = require('../models/ClubMonth');
 
 const router = Router();
 
@@ -12,6 +13,11 @@ const router = Router();
  *
  * Поля `.select()` соответствуют расширенной схеме Book (см. AI-CONTEXT →
  * РАСХОЖДЕНИЯ С MASTER.md): coverImageUrl, bookSlug, priceUsd/Rub/Byn, isFree.
+ *
+ * ⚠️ ФИКС 11.07.2026: книга клуба берётся через ClubMonth.bookId — тем же
+ * путём, что и сам клуб (единый источник истины). Раньше главная искала по
+ * дублирующим полям книги (isPartOfClub + Book.clubMonth), которые seed:club
+ * не проставляет → рассинхрон, карточка клуба на главной без книги/обложки.
  */
 router.get('/', optionalAuth, async (req, res, next) => {
   try {
@@ -27,16 +33,21 @@ router.get('/', optionalAuth, async (req, res, next) => {
       .limit(6)
       .lean();
 
-    // Книга клуба текущего месяца
+    // Книга клуба текущего месяца — через ClubMonth.bookId (как в самом клубе)
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const clubBook = await Book.findOne({
-      isPublished: true,
-      isPartOfClub: true,
-      clubMonth: currentMonth,
+    let clubBook = null;
+    const currentClub = await ClubMonth.findOne({
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
     })
-      .select(bookFields)
+      .select('bookId')
       .lean();
+    if (currentClub && currentClub.bookId) {
+      clubBook = await Book.findOne({ _id: currentClub.bookId, isPublished: true })
+        .select(bookFields)
+        .lean();
+    }
 
     // Популярные разборы (для авторизованных)
     let popularBooks = [];
