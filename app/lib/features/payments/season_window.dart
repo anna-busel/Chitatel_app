@@ -1,4 +1,5 @@
-/// Окна продаж СЕЗОННОЙ подписки (согласовано 10-11.07.2026).
+/// Окна продаж СЕЗОННОЙ подписки (согласовано 10-11.07.2026,
+/// финальные тексты — 11.07.2026).
 ///
 /// Сезоны = времена года: лето (июнь-август), осень (сентябрь-ноябрь),
 /// зима (декабрь-февраль), весна (март-май).
@@ -8,11 +9,15 @@
 /// - АНОНС: с 15-го числа последнего месяца текущего сезона до конца этого
 ///   месяца (напр. 15-31 августа для осеннего) — плашка-анонс, купить нельзя.
 /// - ОКНО ПОКУПКИ: весь ПЕРВЫЙ месяц сезона (сентябрь/декабрь/март/июнь) —
-///   карточка «Сезон» видна и покупаема, с подписью «в течение <месяца>».
+///   карточка «Сезон» видна и покупаема, с окном «до 30 сентября».
 /// - ВНЕ ОКОН: карточки Сезон нет вовсе, только Месяц.
 ///
 /// ⚠️ Формулировки в UI — спокойно-информативные, без таймеров и
 /// «только сегодня!» — Apple ревью не любит manipulative scarcity.
+/// ⚠️ «По цене двух»: честная математика при базовых ценах ASC
+/// monthly $27.99 × 2 = $55.98 ≥ season $54.99. Если цены в ASC когда-нибудь
+/// изменятся — ПЕРЕПРОВЕРИТЬ эту фразу (openCardNote/announceText/
+/// clubBannerText), иначе она станет враньём.
 ///
 /// ТЕСТОВАЯ РУЧКА: debugNowOverride подменяет «сегодня» для всей формулы.
 /// На paywall тройной тап по заголовку циклически переключает даты
@@ -51,7 +56,7 @@ class SeasonWindow {
     return SeasonPhase.none;
   }
 
-  /// Название сезона по его ПЕРВОМУ месяцу.
+  /// Название сезона по его ПЕРВОМУ месяцу (строчными: «осенний»).
   static String _seasonNameByFirstMonth(int month) {
     switch (month) {
       case 3:
@@ -65,6 +70,12 @@ class SeasonWindow {
       default:
         return 'новый';
     }
+  }
+
+  /// То же с заглавной («Осенний») — для заголовка карточки.
+  static String _seasonNameCapByFirstMonth(int month) {
+    final name = _seasonNameByFirstMonth(month);
+    return name[0].toUpperCase() + name.substring(1);
   }
 
   static const Map<int, String> _monthGenitive = {
@@ -82,34 +93,75 @@ class SeasonWindow {
     12: 'декабря',
   };
 
-  /// Текст плашки-анонса (фаза announce).
-  /// Пример: «С 1 сентября — осенний сезон: 3 месяца клуба одной оплатой».
+  static const Map<int, String> _monthNominative = {
+    1: 'январь',
+    2: 'февраль',
+    3: 'март',
+    4: 'апрель',
+    5: 'май',
+    6: 'июнь',
+    7: 'июль',
+    8: 'август',
+    9: 'сентябрь',
+    10: 'октябрь',
+    11: 'ноябрь',
+    12: 'декабрь',
+  };
+
+  /// Последний день ПЕРВОГО месяца сезона (окно оформления):
+  /// 30 сентября / 31 декабря / 31 марта / 30 июня.
+  static String _openUntil(int firstMonth) {
+    final lastDay = DateTime(2000, firstMonth + 1, 0).day; // 30 или 31
+    return '$lastDay ${_monthGenitive[firstMonth]}';
+  }
+
+  /// «Сентябрь, октябрь и ноябрь» — три месяца сезона по его первому месяцу.
+  static String _seasonMonthsList(int firstMonth) {
+    final m1 = _monthNominative[firstMonth]!;
+    final m2 = _monthNominative[firstMonth % 12 + 1]!;
+    final m3 = _monthNominative[(firstMonth + 1) % 12 + 1]!;
+    return '${m1[0].toUpperCase()}${m1.substring(1)}, $m2 и $m3';
+  }
+
+  /// Заголовок карточки Сезона в окно покупки.
+  /// Пример: «Осенний сезон · 3 месяца».
+  static String cardTitle() {
+    return '${_seasonNameCapByFirstMonth(now.month)} сезон · 3 месяца';
+  }
+
+  /// Подпись на карточке Сезона в окно покупки (фаза open).
+  /// Пример: «Сентябрь, октябрь и ноябрь — по цене двух месяцев.
+  /// Оформление открыто до 30 сентября. Продлевается автоматически.»
+  static String openCardNote() {
+    final m = now.month;
+    return '${_seasonMonthsList(m)} — по цене двух месяцев. '
+        'Оформление открыто до ${_openUntil(m)}. '
+        'Продлевается автоматически.';
+  }
+
+  /// Текст плашки-анонса на paywall (фаза announce).
+  /// Пример: «С 1 сентября — осенний сезон: три месяца клуба по цене двух».
   static String announceText() {
     final d = now;
     final firstMonth = d.month == 12 ? 1 : d.month + 1;
     final name = _seasonNameByFirstMonth(firstMonth);
     final genitive = _monthGenitive[firstMonth] ?? '';
-    return 'С 1 $genitive — $name сезон: 3 месяца клуба одной оплатой';
+    return 'С 1 $genitive — $name сезон: три месяца клуба по цене двух';
   }
 
-  /// Подпись на карточке Сезона в окно покупки (фаза open).
-  /// Пример: «Оформление — в течение сентября. Продлевается автоматически
-  /// каждые 3 месяца.»
-  static String openCardNote() {
-    final genitive = _monthGenitive[now.month] ?? '';
-    return 'Оформление — в течение $genitive. '
-        'Продлевается автоматически каждые 3 месяца.';
-  }
-
-  /// Текст плашки в КЛУБЕ (для действующих подписчиц): анонс или окно.
+  /// Текст плашки в КЛУБЕ и полоски на ГЛАВНОЙ (для действующих подписчиц
+  /// и всех, кто на главной): анонс или окно.
   static String? clubBannerText() {
     switch (phase()) {
       case SeasonPhase.announce:
-        return announceText();
+        final firstMonth = now.month == 12 ? 1 : now.month + 1;
+        final name = _seasonNameByFirstMonth(firstMonth);
+        final genitive = _monthGenitive[firstMonth] ?? '';
+        return 'С 1 $genitive — $name сезон: три месяца по цене двух';
       case SeasonPhase.open:
         final name = _seasonNameByFirstMonth(now.month);
-        final genitive = _monthGenitive[now.month] ?? '';
-        return 'Сейчас можно оформить $name сезон — 3 месяца одной оплатой, в течение $genitive';
+        return '${name[0].toUpperCase()}${name.substring(1)} сезон открыт: '
+            'три месяца по цене двух — оформление до ${_openUntil(now.month)}';
       case SeasonPhase.none:
         return null;
     }
