@@ -155,9 +155,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   /// Apple Sign In (MASTER 6.1 #1, 7.4).
   ///
-  /// Получаем у Apple identityToken + (при первой авторизации) имя, шлём на
-  /// бэкенд POST /api/auth/apple, который верифицирует токен через Apple JWKS.
-  /// Имя Apple отдаёт ТОЛЬКО один раз — собираем из givenName + familyName.
+  /// Получаем у Apple identityToken + authorizationCode + (при первой
+  /// авторизации) имя, шлём на бэкенд POST /api/auth/apple, который
+  /// верифицирует токен через Apple JWKS. Имя Apple отдаёт ТОЛЬКО один раз —
+  /// собираем из givenName + familyName.
+  ///
+  /// authorizationCode (Фаза 6, A2): одноразовый код; сервер обменивает его на
+  /// refresh-токен Apple и хранит, чтобы при удалении аккаунта отозвать доступ
+  /// приложения (требование Apple к приложениям с Sign in with Apple). Раньше
+  /// код не передавался вовсе, поэтому отзывать было нечего.
   ///
   /// Требует capability «Sign in with Apple» в Xcode (Runner → Signing &
   /// Capabilities). Не работает в симуляторе — тест на реальном устройстве.
@@ -190,6 +196,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       final data = await _authService.appleSignIn(
         identityToken: identityToken,
+        authorizationCode: credential.authorizationCode,
         fullName: fullName,
       );
       await _saveAuthData(data);
