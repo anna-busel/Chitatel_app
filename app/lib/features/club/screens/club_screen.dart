@@ -21,6 +21,7 @@ import '../widgets/qa_tab.dart';
 /// Структура (сверху вниз):
 /// 1. Шапка-переключатель «Клуб <месяца>» + название книги + chevron.
 /// 2. Плашка сезона (анонс/окно покупки) — для действующих подписчиц (11.07).
+///    12.07: НЕ показывается тем, у кого сезон уже оформлен (plan=='season').
 /// 3. Баннер «Архив» если это архивный клуб.
 /// 4. TabBar — 3 таба: Разборы / Чат / Q&A.
 ///
@@ -82,10 +83,13 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
     final access = result.access;
 
     // Плашка сезона для тех, кто УЖЕ в клубе (подписчицы месяца):
-    // анонс и окно покупки сезона — тап ведёт на paywall. Админу не показываем.
+    // анонс и окно покупки сезона — тап ведёт на paywall. Не показываем:
+    // админу и тем, у кого сезон уже оформлен (plan=='season', 12.07) —
+    // предлагать сезон сезоннице бессмысленно, её продление автоматическое.
     final seasonText = SeasonWindow.clubBannerText();
-    final showSeasonBanner =
-        seasonText != null && access.kind != ClubAccessKind.admin;
+    final showSeasonBanner = seasonText != null &&
+        access.kind != ClubAccessKind.admin &&
+        !access.hasSeasonPlan;
 
     return Column(
       children: [
