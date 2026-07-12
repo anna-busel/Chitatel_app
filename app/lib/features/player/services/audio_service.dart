@@ -23,10 +23,9 @@ import 'progress_service.dart';
 /// 3. Настраивает AVAudioSession через `audio_session` (категория `.playback`)
 ///    — обязательно для iOS Background Audio (Apple Guideline 6.10).
 /// 4. Загружает signed URL через PlayerApiService (TTL 1 час).
-/// 5. При истечении signed URL (410/403) перезапрашивает и продолжает с позиции
-///    (прозрачно для юзера — Apple Guideline 2.1).
+/// 5. При истечении signed URL (410/403) перезапрашивает и продолжает с позиции.
 /// 6. Сохраняет прогресс через ProgressService каждые 30 сек воспроизведения
-///    + при pause/dispose + при автопереходе.
+///    + при pause/dispose + при автопереходе + при закрытии плеера.
 /// 7. Автоматически переключает части (часть 1 → 2 → 3 ...) при окончании.
 /// 8. Sleep timer: 15/30/45/60 мин или до конца части.
 class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
@@ -102,9 +101,6 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Future<void> _init() async {
     // 1. AVAudioSession для iOS background audio.
-    // Без этого: даже с UIBackgroundModes=audio в Info.plist аудио ОСТАНОВИТСЯ
-    // при блокировке экрана. Apple Guideline 2.1: incomplete features → reject.
-    // Категория `.playback` — стандарт для медиа-приложений (Apple Music, Audible).
     try {
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.music());
@@ -130,12 +126,6 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
   // ─────────────────────────── ЗАГРУЗКА КНИГИ ───────────────────────────
 
   /// Загружает книгу в плеер.
-  ///
-  /// [startPartNumber] — с какой части начать (1-based). null → используется
-  /// прогресс с сервера, либо часть 1.
-  /// [startPositionSeconds] — позиция в секундах для стартовой части. null →
-  /// используется прогресс с сервера, либо 0.
-  /// [autoPlay] — начать ли воспроизведение сразу после загрузки.
   Future<void> loadBook(
     BookModel book, {
     int? startPartNumber,
@@ -170,7 +160,7 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
     _currentBook = book;
     _currentPartNumber = targetPart;
 
-    // Готовим artUri для lock screen (асинхронно — может потребовать копирования ассета).
+    // Готовим artUri для lock screen.
     _currentArtUri = await _coverCache.resolveArtUri(book.coverImageUrl);
 
     await _loadPart(
@@ -180,7 +170,7 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
-  /// Загружает конкретную часть текущей книги (используется при переключении частей).
+  /// Загружает конкретную часть текущей книги.
   Future<void> _loadPart({
     required int partNumber,
     int startPositionSeconds = 0,
@@ -236,15 +226,6 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // ─────────────────────────── ОБРАБОТКА ОШИБОК URL ───────────────────────────
 
-  /// Обработчик ошибок плеера. Главный сценарий — истечение signed URL (1 час TTL).
-  ///
-  /// just_audio при HTTP-ошибке выбрасывает PlatformException. Сервер возвращает:
-  /// - 410 Gone — URL истёк (exp в прошлом)
-  /// - 403 Forbidden — подпись невалидна
-  /// - 404 Not Found — файл не найден
-  ///
-  /// Для 410/403 — перезапрашиваем URL и переустанавливаем с сохранённой позицией.
-  /// Для остальных — оставляем плеер в error state, юзер увидит проблему в UI.
   Future<void> _onPlaybackError(Object error, StackTrace stack) async {
     if (kDebugMode) {
       debugPrint('[AudioHandler] playback error: $error');
@@ -265,11 +246,9 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
 
     _isRecovering = true;
     try {
-      // Запоминаем позицию ДО переустановки источника.
       final savedPosition = _player.position;
       final wasPlaying = _player.playing;
 
-      // Перезапрашиваем URL и переустанавливаем источник.
       await _loadPart(
         partNumber: _currentPartNumber,
         startPositionSeconds: savedPosition.inSeconds,
@@ -308,6 +287,44 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
     await super.stop();
   }
 
+  /// ЗАКРЫТЬ ПЛЕЕР (свайп вниз по мини-плееру, 12.07.2026).
+  ///
+  /// ЗАЧЕМ ОТДЕЛЬНО ОТ `stop()`: `stop()` глушит звук, но НЕ забывает книгу —
+  /// `_currentBook` остаётся, `mediaItem` остаётся, значит `hasContent` в
+  /// PlayerUiState по-прежнему true и мини-плеер тут же возвращается на экран.
+  /// Раньше убрать полосу было нельзя вообще: она висела до перезапуска
+  /// приложения, даже если человек давно ушёл из плеера.
+  ///
+  /// ЧТО ДЕЛАЕТ (порядок важен):
+  /// 1. СНАЧАЛА сохраняет позицию на сервер — иначе потерялся бы «хвост» с
+  ///    последнего автосохранения (они идут раз в 30 секунд). Человек ждёт, что
+  ///    вернувшись, продолжит ровно с того места, где закрыл.
+  /// 2. Останавливает воспроизведение и таймеры.
+  /// 3. ЗАБЫВАЕТ текущую книгу и чистит MediaItem (`mediaItem.add(null)`) —
+  ///    именно это убирает мини-плеер с экрана и Now Playing с локскрина.
+  ///
+  /// Прогресс при этом НЕ стирается: он лежит на сервере (Progress), и при
+  /// следующем открытии книги плеер сам подтянет часть и секунду.
+  Future<void> closePlayer() async {
+    await _flushProgress();
+
+    _stopProgressTimer();
+    _stopSleepTimer();
+    await _player.stop();
+
+    _currentBook = null;
+    _currentPartNumber = 1;
+    _currentArtUri = null;
+
+    // Сбрасываем Now Playing — без этого мини-плеер вернётся.
+    mediaItem.add(null);
+
+    playbackState.add(playbackState.value.copyWith(
+      processingState: AudioProcessingState.idle,
+      playing: false,
+    ));
+  }
+
   @override
   Future<void> seek(Duration position) async {
     await _player.seek(position);
@@ -342,15 +359,13 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> skipToPrevious() async => _skipToPart(_currentPartNumber - 1);
 
-  /// Переключение на часть с номером [target]. Если такой части нет —
-  /// ничего не делает.
+  /// Переключение на часть с номером [target].
   Future<void> _skipToPart(int target) async {
     final book = _currentBook;
     if (book == null) return;
     final partExists = book.parts.any((p) => p.number == target);
     if (!partExists) return;
 
-    // Сохраняем прогресс текущей части перед переключением.
     await _flushProgress();
     await _loadPart(partNumber: target, startPositionSeconds: 0, autoPlay: true);
   }
@@ -374,8 +389,6 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Часть закончилась естественным путём — переходим к следующей
   /// или останавливаемся если это последняя.
-  ///
-  /// Если sleep timer был «до конца части» — останавливаемся независимо.
   Future<void> _onPartCompleted() async {
     final book = _currentBook;
     if (book == null) return;
@@ -514,7 +527,6 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
   // ─────────────────────────── SLEEP TIMER ───────────────────────────
 
   /// Установить sleep timer на конкретную длительность.
-  /// Передай [Duration.zero] чтобы отменить активный таймер.
   void setSleepTimer(Duration duration) {
     _stopSleepTimer();
     if (duration == Duration.zero) return;
@@ -540,8 +552,7 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
     });
   }
 
-  /// Включить sleep timer «до конца части» — остановка при естественном
-  /// завершении текущей части.
+  /// Включить sleep timer «до конца части».
   void setSleepUntilEndOfPart() {
     _stopSleepTimer();
     _sleepUntilEndOfPart = true;
@@ -568,7 +579,7 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   /// Закрыть плеер и освободить ресурсы. Вызывается только при выходе
-  /// из приложения целиком (audio_service сам управляет жизненным циклом).
+  /// из приложения целиком.
   Future<void> dispose() async {
     await _flushProgress();
     _stopProgressTimer();
@@ -584,8 +595,6 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
 
 /// Инициализация AudioHandler через `AudioService.init()`.
 /// Вызывается один раз в `main.dart` ДО `runApp()`.
-///
-/// Возвращает singleton, который также записывается в [ChitatelAudioHandler.instance].
 Future<ChitatelAudioHandler> initChitatelAudio({
   required PlayerApiService apiService,
   required ProgressService progressService,
