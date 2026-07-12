@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../core/constants/app_contacts.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
@@ -10,26 +11,23 @@ import '../../../core/constants/app_spacing.dart';
 /// по вопросам, из-за которых чаще всего пишут (подписка, доступ, ИИ, удаление),
 /// кнопка «Написать в поддержку» и ссылки на политику и условия.
 ///
-/// ⚠️ Почта поддержки — единственный контакт. Если она не заведена, письма
-/// уйдут в никуда, а Apple проверяет Support URL и связь.
+/// ⚠️ Почта берётся из AppContacts — сейчас там ВРЕМЕННЫЙ адрес
+/// support@chitatel.app. Перед сабмитом заменить на реально работающий ящик:
+/// письма отсюда пойдут именно туда.
 class SupportScreen extends StatelessWidget {
   const SupportScreen({super.key});
-
-  static const String supportEmail = 'support@chitatel.app';
-  static const String privacyUrl = 'https://api.chitatel.app/legal/privacy';
-  static const String termsUrl = 'https://api.chitatel.app/legal/terms';
 
   Future<void> _writeSupport(BuildContext context) async {
     final uri = Uri(
       scheme: 'mailto',
-      path: supportEmail,
+      path: AppContacts.supportEmail,
       query: 'subject=${Uri.encodeComponent('Вопрос из приложения ЧИТАТЕЛЬ')}',
     );
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Почта: $supportEmail'),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Почта: ${AppContacts.supportEmail}'),
         backgroundColor: AppColors.textPrimary,
       ));
     }
@@ -86,7 +84,8 @@ class SupportScreen extends StatelessWidget {
               question: 'Участница ведёт себя грубо',
               answer:
                   'Долгое нажатие на сообщение → «Пожаловаться». Там же можно '
-                  'заблокировать её — вы перестанете видеть её сообщения.',
+                  'заблокировать её — вы перестанете видеть её сообщения. '
+                  'Жалобы разбираются в течение суток.',
             ),
 
             const SizedBox(height: 24),
@@ -111,7 +110,10 @@ class SupportScreen extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Center(
-              child: Text(supportEmail, style: AppTypography.caption),
+              child: Text(
+                AppContacts.supportEmail,
+                style: AppTypography.caption,
+              ),
             ),
 
             const SizedBox(height: 28),
@@ -119,11 +121,11 @@ class SupportScreen extends StatelessWidget {
             const SizedBox(height: 12),
             _LinkRow(
               title: 'Политика конфиденциальности',
-              onTap: () => _open(privacyUrl),
+              onTap: () => _open(AppContacts.privacyUrl),
             ),
             _LinkRow(
               title: 'Условия использования',
-              onTap: () => _open(termsUrl),
+              onTap: () => _open(AppContacts.termsUrl),
             ),
           ],
         ),
