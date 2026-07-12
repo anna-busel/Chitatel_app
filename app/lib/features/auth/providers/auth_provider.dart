@@ -4,6 +4,12 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../../../core/storage/secure_storage.dart';
+import '../../club/providers/club_provider.dart';
+import '../../club/services/block_service.dart';
+import '../../diary/providers/ai_consent_provider.dart';
+import '../../diary/providers/diary_provider.dart';
+import '../../home/providers/home_provider.dart';
+import '../../profile/providers/profile_provider.dart';
 import '../services/auth_service.dart';
 
 /// Состояния аутентификации.
@@ -44,14 +50,73 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   return AuthNotifier(
     ref.read(authServiceProvider),
     ref.read(secureStorageProvider),
+    ref,
   );
 });
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  AuthNotifier(this._authService, this._storage) : super(const AuthState());
+  AuthNotifier(this._authService, this._storage, this._ref)
+      : super(const AuthState());
 
   final AuthService _authService;
   final SecureStorage _storage;
+  final Ref _ref;
+
+  /// 🔴 СБРОС ПОЛЬЗОВАТЕЛЬСКОГО СОСТОЯНИЯ ПРИ СМЕНЕ АККАУНТА
+  /// (баг найден 12.07.2026 при первом тесте Фазы 6).
+  ///
+  /// СИМПТОМ: вышел из аккаунта Apple → вошёл под test-expired → в профиле
+  /// висит ЧУЖОЙ аватар и имя. После полного перезапуска приложения — верные.
+  ///
+  /// ПРИЧИНА: провайдеры ниже — обычные (не autoDispose). Создаются один раз,
+  /// тянут данные при первом чтении и живут до перезапуска ПРОЦЕССА.
+  /// `logout()` чистил только токены в secure storage — состояние Riverpod
+  /// оставалось от прежнего юзера.
+  ///
+  /// ЭТО НЕ КОСМЕТИКА: так же «переживали» смену аккаунта цитаты дневника,
+  /// блок-лист и данные о подписке. Показать чужие цитаты новому вошедшему —
+  /// утечка личных данных между аккаунтами.
+  ///
+  /// ЛЕЧЕНИЕ: явный сброс при КАЖДОЙ смене личности — и при выходе, и при
+  /// входе (вход без выхода возможен: истёк refresh → экран логина → вошли
+  /// другим аккаунтом).
+  ///
+  /// ⚠️ ПРАВИЛО НА БУДУЩЕЕ: любой новый провайдер, который держит данные
+  /// КОНКРЕТНОГО пользователя (профиль, дневник, прогресс, покупки, клуб,
+  /// блок-лист, push-настройки), ОБЯЗАН быть добавлен сюда. Иначе он
+  /// переживёт смену аккаунта и покажет чужое.
+  void _resetUserScopedState() {
+    // Профиль и подэкраны (6.2)
+    _ref.invalidate(profileProvider);
+    _ref.invalidate(progressStatsProvider);
+    _ref.invalidate(purchaseHistoryProvider);
+
+    // Блок-лист (A1) — иначе новый юзер унаследует чужие блокировки
+    _ref.invalidate(blockedIdsProvider);
+
+    // Дневник (Фаза 5) — цитаты и отчёты строго личные
+    _ref.invalidate(quotesProvider);
+    _ref.invalidate(latestReportProvider);
+    _ref.invalidate(aiConsentProvider);
+
+    // Главная и клуб — зависят от подписки конкретного юзера
+    _ref.invalidate(homeProvider);
+    _ref.invalidate(currentClubProvider);
+    _ref.invalidate(clubListProvider);
+  }
+
+  /// Локальные флаги, не привязанные к юзеру.
+  ///
+  /// `ai_consent` в SharedPreferences хранится БЕЗ привязки к пользователю
+  /// (aiConsentProvider кэширует его там, т.к. писался до появления
+  /// GET /api/profile). При смене аккаунта его надо стирать, иначе согласие
+  /// на ИИ-анализ «перетечёт» с одного пользователя на другого — а это
+  /// согласие на передачу личных цитат в OpenAI (Apple 5.1.2(i)).
+  /// Сервер всё равно проверяет своё `aiConsent`, но врать в UI нельзя.
+  Future<void> _clearLocalUserFlags() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('ai_consent');
+  }
 
   /// Проверка сохранённых токенов при запуске
   Future<void> checkAuth() async {
@@ -165,8 +230,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// приложения (требование Apple к приложениям с Sign in with Apple). Раньше
   /// код не передавался вовсе, поэтому отзывать было нечего.
   ///
-  /// Требует capability «Sign in with Apple» в Xcode (Runner → Signing &
-  /// Capabilities). Не работает в симуляторе — тест на реальном устройстве.
+  /// Требует capability «Sign in with Apple» в Xcode. Не работает в симуляторе.
   Future<void> signInWithApple() async {
     state = state.copyWith(status: AuthStatus.loading);
     try {
@@ -186,8 +250,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return;
       }
 
-      // Имя приходит только при первой авторизации. Собираем полное имя из
-      // givenName + familyName; если оба пусты — fullName = null.
+      // Имя приходит только при первой авторизации.
       final nameParts = [credential.givenName, credential.familyName]
           .where((p) => p != null && p.isNotEmpty)
           .cast<String>()
@@ -228,7 +291,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(status: AuthStatus.guest);
   }
 
-  /// Выход
+  /// Выход.
+  ///
+  /// Чистим ВСЁ: серверный refresh-токен, локальное хранилище, локальные флаги
+  /// и кэш провайдеров — иначе следующий вошедший увидит данные предыдущего
+  /// (см. _resetUserScopedState).
   Future<void> logout() async {
     try {
       final refreshToken = await _storage.getRefreshToken();
@@ -239,14 +306,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // Игнорируем ошибку — всё равно чистим локально
     }
     await _storage.clearAll();
+    await _clearLocalUserFlags();
+    _resetUserScopedState();
     state = const AuthState(status: AuthStatus.guest);
   }
 
   /// Сохранить токены + флаг прохождения онбординга.
   ///
-  /// onboarding_seen=true ставим при любой успешной авторизации (email/google/
-  /// apple/register/гость), иначе router.redirect будет кидать обратно на /login,
-  /// даже если пользователь авторизован. См. app_router.dart → redirect.
+  /// onboarding_seen=true ставим при любой успешной авторизации, иначе
+  /// router.redirect будет кидать обратно на /login.
+  ///
+  /// ⚠️ Здесь же сбрасываем кэш провайдеров и локальные флаги: вход мог
+  /// произойти БЕЗ выхода (истёк refresh → экран логина → вошли другим),
+  /// и тогда данные прежнего юзера остались бы на экранах.
   Future<void> _saveAuthData(Map<String, dynamic> data) async {
     await _storage.saveTokens(
       accessToken: data['accessToken'],
@@ -255,8 +327,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (data['user'] != null && data['user']['_id'] != null) {
       await _storage.saveUserId(data['user']['_id']);
     }
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('onboarding_seen', true);
+    await prefs.remove('ai_consent');
+
+    _resetUserScopedState();
   }
 
   /// Парсинг ошибок из Dio
