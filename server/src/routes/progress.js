@@ -7,11 +7,86 @@ const { success } = require('../utils/response');
 const { AppError } = require('../middleware/error');
 const Progress = require('../models/Progress');
 const Book = require('../models/Book');
+const Quote = require('../models/Quote');
 
 const router = Router();
 
 // Все endpoints требуют авторизацию — прогресс привязан к юзеру.
 router.use(requireAuth);
+
+/**
+ * GET /api/progress/stats
+ * Сводная статистика прослушивания (экран «Мой прогресс», 4.45, задача 6.2).
+ *
+ * ⚠️ ВАЖНО: этот маршрут ОБЯЗАН стоять ВЫШЕ '/:bookId' — иначе Express примет
+ * слово "stats" за bookId и вернёт ошибку невалидного ObjectId.
+ *
+ * Статистика — ЗА ВСЁ ВРЕМЯ (решение 12.07.2026). Недельной разбивки нет
+ * осознанно: Progress хранит только суммарные секунды по книге, посуточной
+ * истории прослушивания в базе не существует. Считать «минуты за неделю» из
+ * этого нельзя — вместо честного нуля лучше показывать честную сумму.
+ * Если недельная динамика понадобится — нужна отдельная посуточная запись
+ * (новая коллекция или словарь в Progress), это отдельная задача.
+ *
+ * Ответ:
+ * - totalMinutes — всего минут прослушано
+ * - booksStarted — сколько разборов начато
+ * - booksCompleted — сколько дослушано целиком (все части)
+ * - quotesCount — сколько цитат в дневнике
+ * - lastListenedAt — когда слушали в последний раз (null если ни разу)
+ */
+router.get('/stats', async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+
+    const progresses = await Progress.find({ userId })
+      .select('bookId listenedPartNumbers totalListenedSeconds lastListenedAt')
+      .lean();
+
+    const totalSeconds = progresses.reduce(
+      (sum, p) => sum + (p.totalListenedSeconds || 0),
+      0
+    );
+
+    // Дослушанные книги: количество прослушанных частей = количеству частей книги.
+    const bookIds = progresses.map((p) => p.bookId);
+    const books = await Book.find({ _id: { $in: bookIds } })
+      .select('parts')
+      .lean();
+    const partsByBook = new Map(
+      books.map((b) => [String(b._id), (b.parts || []).length])
+    );
+
+    let booksCompleted = 0;
+    for (const p of progresses) {
+      const totalParts = partsByBook.get(String(p.bookId)) || 0;
+      const listened = (p.listenedPartNumbers || []).length;
+      if (totalParts > 0 && listened >= totalParts) booksCompleted += 1;
+    }
+
+    const quotesCount = await Quote.countDocuments({ userId });
+
+    let lastListenedAt = null;
+    for (const p of progresses) {
+      if (!p.lastListenedAt) continue;
+      if (!lastListenedAt || p.lastListenedAt > lastListenedAt) {
+        lastListenedAt = p.lastListenedAt;
+      }
+    }
+
+    return success(res, {
+      stats: {
+        totalMinutes: Math.round(totalSeconds / 60),
+        booksStarted: progresses.length,
+        booksCompleted,
+        quotesCount,
+        lastListenedAt,
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
 
 /**
  * GET /api/progress/:bookId
