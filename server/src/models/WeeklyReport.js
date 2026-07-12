@@ -9,6 +9,12 @@ const mongoose = require('mongoose');
  *
  * aiSummary — поля соответствуют JSON-ответу промпта из MASTER 7.7:
  * weekTheme / insight / recommendation { title, author, why }.
+ *
+ * recommendation.bookId — проставляется сервером: ИИ выбирает разбор из списка
+ * опубликованных книг, сервер находит его в базе и кладёт _id. Если книга не
+ * опознана — bookId остаётся null, и клиент не показывает блок рекомендации
+ * (кнопка вела бы в никуда). Кнопка в отчёте — «Открыть разбор» → экран книги
+ * (там уже «Слушать» / «Купить» / «Продолжить», покупка только через Apple IAP).
  */
 const weeklyReportSchema = new mongoose.Schema(
   {
@@ -38,6 +44,11 @@ const weeklyReportSchema = new mongoose.Schema(
         title: String,
         author: String,
         why: String,
+        bookId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Book',
+          default: null,
+        },
       },
     },
 
