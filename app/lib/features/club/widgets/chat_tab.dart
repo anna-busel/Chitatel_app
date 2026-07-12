@@ -12,6 +12,7 @@ import '../../../shared/widgets/error_view.dart';
 import '../models/chat_message.dart';
 import '../models/club_access.dart';
 import '../models/club_month.dart';
+import '../services/block_service.dart';
 import '../services/club_api_service.dart';
 import '../services/club_socket_service.dart';
 import 'chat_message_bubble.dart';
@@ -42,7 +43,22 @@ bool _sameDay(DateTime a, DateTime b) {
   return la.year == lb.year && la.month == lb.month && la.day == lb.day;
 }
 
+/// Результат шторки жалобы: причина + флаг «заблокировать автора».
+class _ReportResult {
+  const _ReportResult({required this.reason, required this.block});
+  final String reason;
+  final bool block;
+}
+
 /// Таб «Чат» клуба.
+///
+/// ⚠️ 12.07.2026 — БЛОКИРОВКА УЧАСТНИЦ (Фаза 6, A1 — Apple Guideline 1.2).
+/// Блокировка живёт в шторке жалобы: выбираешь причину + тумблер «Заблокировать».
+/// После блокировки: сообщения автора мгновенно убираются из ленты, новые не
+/// принимаются из WebSocket, история с сервера приходит уже без них (фильтр в
+/// club.js), превью ответов на его сообщения сервер обнуляет.
+/// Заблокировать ведущую клуба (admin) нельзя — тумблер не показывается.
+/// Разблокировать — экран «Заблокированные» в профиле.
 ///
 /// ⚠️ 12.07.2026 — ФИКС «УДАЛЁННОЕ ФОТО ВОЗВРАЩАЕТСЯ ПОСЛЕ УХОДА С ЭКРАНА».
 /// Причина (подтверждена базой: deletedAt у сообщений ПРОСТАВЛЕН, сервер
@@ -54,7 +70,7 @@ bool _sameDay(DateTime a, DateTime b) {
 /// «воскресает» в ленте. DELETE уходит следом (из dispose), поэтому в БД оно
 /// удалено — но в ленте видно до следующего перезахода.
 /// ЛЕЧЕНИЕ: `_locallyDeletedIds` — id, удалённые мной. Фильтруем ими ЛЮБОЙ
-/// входящий источник (история, контекст, WS) в единой точке `_notDeleted`.
+/// входящий источник (история, контекст, WS) в единой точке `_visible`.
 /// Кнопка «Отменить» работает как прежде: id снимается — сообщение возвращается.
 ///
 /// ⚠️ 12.07.2026 — КЛЮЧИ ЭЛЕМЕНТОВ ЛЕНТЫ (регресс эксперимента 1, 85c02c9):
@@ -153,12 +169,24 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     super.dispose();
   }
 
+  /// Заблокированные мной (локальный блок-лист, blockedIdsProvider).
+  Set<String> get _blockedIds => ref.read(blockedIdsProvider);
+
   /// Единая точка фильтрации ЛЮБОГО входящего списка сообщений (история,
-  /// контекст). Отсекает: удалённые на сервере (deletedAt) и удалённые мной
-  /// локально, пока идёт окно отмены и DELETE ещё не дошёл до сервера.
-  Iterable<ChatMessage> _notDeleted(Iterable<ChatMessage> src) => src.where(
-        (m) => !m.isDeleted && !_locallyDeletedIds.contains(m.id),
-      );
+  /// контекст, WS). Отсекает:
+  /// - удалённые на сервере (deletedAt);
+  /// - удалённые мной локально, пока идёт окно отмены и DELETE ещё не дошёл;
+  /// - сообщения заблокированных участниц (A1) — подстраховка к серверному
+  ///   фильтру: свежий блок применяется мгновенно, не дожидаясь перезагрузки.
+  Iterable<ChatMessage> _visible(Iterable<ChatMessage> src) {
+    final blocked = _blockedIds;
+    return src.where(
+      (m) =>
+          !m.isDeleted &&
+          !_locallyDeletedIds.contains(m.id) &&
+          !blocked.contains(m.author.id),
+    );
+  }
 
   /// Прокрутка к низу (низ = offset 0 при reverse:true).
   /// Издалека — мгновенный jumpTo (анимация по длинной ленте переменной высоты
@@ -217,6 +245,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       final storage = ref.read(secureStorageProvider);
       _currentUserId = await storage.getUserId();
 
+      // Свежий блок-лист: если блокировали с другого устройства — подтянем.
+      await ref.read(blockedIdsProvider.notifier).load();
+
       final api = ref.read(clubApiServiceProvider);
       final history = await api.fetchChatHistory(
         clubMonthId: widget.club.id,
@@ -230,7 +261,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       setState(() {
         _messages
           ..clear()
-          ..addAll(_notDeleted(history.messages));
+          ..addAll(_visible(history.messages));
         _hasMoreBefore = history.hasMore;
         _hasMoreAfter = false;
         _pinnedMessage = history.pinnedMessage;
@@ -264,6 +295,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     if (event is ChatNewMessageEvent) {
       // Удалённое мной не может вернуться даже через WS.
       if (_locallyDeletedIds.contains(event.message.id)) return;
+      // Сообщения заблокированных не показываем (сокет вещает всем в комнате —
+      // персонализировать эмиты на сервере дороже, чем отсечь на входе).
+      if (_blockedIds.contains(event.message.author.id)) return;
       if (_messages.any((m) => m.id == event.message.id)) return;
       final isMine = event.message.isMine(_currentUserId);
       setState(() {
@@ -377,7 +411,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       setState(() {
         final existing = _messages.map((m) => m.id).toSet();
         _messages.addAll(
-          _notDeleted(history.messages).where((m) => !existing.contains(m.id)),
+          _visible(history.messages).where((m) => !existing.contains(m.id)),
         );
         _hasMoreBefore = history.hasMore;
         _isLoadingMore = false;
@@ -401,7 +435,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       setState(() {
         _messages
           ..clear()
-          ..addAll(_notDeleted(history.messages));
+          ..addAll(_visible(history.messages));
         _hasMoreBefore = history.hasMore;
         _hasMoreAfter = false;
         _isLoadingAfter = false;
@@ -470,7 +504,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       setState(() {
         _messages
           ..clear()
-          ..addAll(_notDeleted(ctxResult.messages));
+          ..addAll(_visible(ctxResult.messages));
         _hasMoreBefore = ctxResult.hasMoreBefore;
         _hasMoreAfter = ctxResult.hasMoreAfter;
         _isJumping = false;
@@ -1059,13 +1093,24 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  Future<void> _reportMessage(String messageId) async {
-    final reason = await _showReportSheet();
-    if (reason == null || !mounted) return;
+  /// Пожаловаться на сообщение (+ по желанию заблокировать автора).
+  ///
+  /// Apple Guideline 1.2: жалоба и блокировка должны быть доступны прямо из
+  /// контента. Мы объединили их в одну шторку: причина + тумблер «Заблокировать
+  /// участницу». Тумблер не показываем для ведущей клуба (её блокировать нельзя)
+  /// и для своих сообщений (на свои жаловаться нельзя — пункт меню не выводится).
+  Future<void> _reportMessage(ChatMessage m) async {
+    final canBlock = !_authorIsAdmin(m) && !m.isMine(_currentUserId);
+
+    final result = await _showReportSheet(
+      authorName: m.author.name,
+      canBlock: canBlock,
+    );
+    if (result == null || !mounted) return;
 
     try {
       final api = ref.read(clubApiServiceProvider);
-      await api.reportMessage(messageId: messageId, reason: reason);
+      await api.reportMessage(messageId: m.id, reason: result.reason);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Жалоба отправлена. Мы рассмотрим её в ближайшее время'),
@@ -1082,9 +1127,57 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         backgroundColor: AppColors.error,
       ));
     }
+
+    // Блокировка — независимо от исхода жалобы (жалоба могла быть дублем,
+    // но заблокировать человека всё равно нужно).
+    if (result.block && mounted) {
+      await _blockAuthor(m.author.id, m.author.name);
+    }
   }
 
-  Future<String?> _showReportSheet() {
+  /// Заблокировать участницу: сервер + локальный блок-лист + мгновенная
+  /// чистка ленты (её сообщения исчезают сразу, не дожидаясь перезагрузки).
+  Future<void> _blockAuthor(String userId, String name) async {
+    try {
+      await ref.read(blockedIdsProvider.notifier).block(userId);
+      if (!mounted) return;
+
+      setState(() {
+        _messages.removeWhere((m) => m.author.id == userId);
+        if (_pinnedMessage != null && _pinnedMessage!.author.id == userId) {
+          _pinnedMessage = null;
+          _pinnedMessageId = null;
+        }
+        if (_replyingTo != null && _replyingTo!.author.id == userId) {
+          _replyingTo = null;
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          'Вы заблокировали $name. Её сообщения больше не показываются. '
+          'Разблокировать можно в профиле',
+        ),
+        backgroundColor: AppColors.textPrimary,
+      ));
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final code = ClubApiService.errorCodeFromException(e);
+      final msg = code == 'VALIDATION_ERROR'
+          ? 'Этого участника нельзя заблокировать'
+          : 'Не удалось заблокировать. Попробуйте ещё раз';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.error,
+      ));
+    }
+  }
+
+  /// Шторка жалобы: 5 причин + тумблер «Заблокировать участницу» (A1).
+  Future<_ReportResult?> _showReportSheet({
+    required String authorName,
+    required bool canBlock,
+  }) {
     const reasons = <Map<String, String>>[
       {'code': 'spam', 'label': 'Спам'},
       {'code': 'inappropriate', 'label': 'Неуместный контент'},
@@ -1093,32 +1186,54 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       {'code': 'other', 'label': 'Другое'},
     ];
 
-    return showModalBottomSheet<String>(
+    bool block = false;
+
+    return showModalBottomSheet<_ReportResult>(
       context: context,
       backgroundColor: AppColors.cardBackground,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-                child: Text(
-                  'Причина жалобы',
-                  style: AppTypography.sectionHeader,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                  child: Text(
+                    'Причина жалобы',
+                    style: AppTypography.sectionHeader,
+                  ),
                 ),
-              ),
-              ...reasons.map(
-                (r) => ListTile(
-                  title: Text(r['label']!, style: AppTypography.body),
-                  onTap: () => Navigator.of(ctx).pop(r['code']),
+                if (canBlock) ...[
+                  SwitchListTile.adaptive(
+                    value: block,
+                    activeColor: AppColors.terracotta,
+                    title: Text(
+                      'Заблокировать $authorName',
+                      style: AppTypography.body,
+                    ),
+                    subtitle: Text(
+                      'Вы не будете видеть её сообщения в чате',
+                      style: AppTypography.caption,
+                    ),
+                    onChanged: (v) => setSheetState(() => block = v),
+                  ),
+                  const Divider(height: 1),
+                ],
+                ...reasons.map(
+                  (r) => ListTile(
+                    title: Text(r['label']!, style: AppTypography.body),
+                    onTap: () => Navigator.of(ctx).pop(
+                      _ReportResult(reason: r['code']!, block: block),
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1244,9 +1359,10 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                               onReplyTap: m.hasReply
                                   ? () => _jumpToMessage(m.replyToId)
                                   : null,
+                              // Жалоба + блокировка автора (A1) — одна шторка.
                               onReport: isMine
                                   ? null
-                                  : () => _reportMessage(m.id),
+                                  : () => _reportMessage(m),
                               onPinToggle: _isAdmin
                                   ? (pin) => _togglePin(m.id, pin)
                                   : null,
