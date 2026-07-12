@@ -4,7 +4,15 @@ const userSchema = new mongoose.Schema(
   {
     email: { type: String, unique: true, sparse: true },
     name: String,
+
+    // Ссылка на аватар (signed URL с фиксированным exp — стабильна, кэшируется).
+    // Она же попадает в снапшот автора каждого сообщения чата, поэтому фото
+    // видно напротив реплик участницы.
     avatarUrl: String,
+    // Относительный путь файла на диске (для перевыпуска ссылки и удаления
+    // старого файла при смене фото). Появился в Фазе 6 (задача 6.2).
+    avatarStoragePath: String,
+
     authProvider: { type: String, enum: ['apple', 'google', 'email'] },
     appleUserId: { type: String, unique: true, sparse: true },
     googleUserId: { type: String, unique: true, sparse: true },
