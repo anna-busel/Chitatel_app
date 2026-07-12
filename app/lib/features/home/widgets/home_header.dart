@@ -7,7 +7,15 @@ import '../../../core/constants/app_spacing.dart';
 
 /// Шапка главного экрана.
 ///
-/// Структура: [аватар] [ЧИТАТЕЛЬ (лого, центр)] [колокольчик]
+/// Структура: [аватар] [ЧИТАТЕЛЬ (лого, центр)]
+///
+/// ⚠️ 12.07.2026 (Фаза 6, A6): КОЛОКОЛЬЧИК УБРАН. Он вёл на экран «Уведомления»
+/// (лента пушей, 4.30), которого не существует — маршрут был заглушкой
+/// «Экран в разработке». Пуши и лента появятся в волне 6Б (задача 6.1), тогда
+/// же вернём колокольчик. Настройки уведомлений при этом доступны: Профиль →
+/// Уведомления.
+/// Справа оставлен пустой блок той же ширины — чтобы логотип остался ровно
+/// по центру, а не съехал.
 ///
 /// Рисуется внутри HomeScreen (решение в AI-CONTEXT: шапки на разных
 /// табах отличаются, общий виджет не делаем).
@@ -53,19 +61,10 @@ class HomeHeader extends StatelessWidget {
             ),
           ),
 
-          // Колокольчик → уведомления
-          InkResponse(
-            onTap: () => context.push(Routes.notifications),
-            radius: AppSpacing.minTapTarget / 2,
-            child: SizedBox(
-              width: AppSpacing.minTapTarget,
-              height: AppSpacing.minTapTarget,
-              child: const Icon(
-                Icons.notifications_outlined,
-                color: AppColors.textPrimary,
-                size: 24,
-              ),
-            ),
+          // Балансир вместо колокольчика — держит логотип по центру.
+          const SizedBox(
+            width: AppSpacing.minTapTarget,
+            height: AppSpacing.minTapTarget,
           ),
         ],
       ),
