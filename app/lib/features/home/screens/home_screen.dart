@@ -14,13 +14,19 @@ import '../widgets/daily_quote_card.dart';
 import '../widgets/free_books_section.dart';
 import '../widgets/popular_books_section.dart';
 import '../widgets/progress_card.dart';
-import '../widgets/referral_banner.dart';
 
 /// Главная страница. MASTER 4.9.
 ///
 /// Структура (сверху вниз):
 ///   Шапка → Клуб месяца → [Полоска сезона] → Мысль дня → Бесплатные разборы →
-///   Мой прогресс → Популярные → Реферал
+///   Мой прогресс → Популярные
+///
+/// ⚠️ 12.07.2026 (Фаза 6): баннер «Пригласите подругу» УБРАН. Реферальной
+/// программы нет ни на сервере (кода начисления бонусов не существует), ни в
+/// профиле — баннер обещал «месяц клуба в подарок» и вёл на пустой экран.
+/// Обещать то, чего нет, нельзя ни перед пользователем, ни перед ревью Apple.
+/// Виджет referral_banner.dart остался в репозитории, но больше не используется;
+/// вернём вместе с реальной реферальной механикой.
 ///
 /// Полоска сезона (11.07.2026): статичная, под карточкой клуба, только в фазы
 /// анонса (15-е — конец месяца перед сезоном) и окна покупки (первый месяц
@@ -89,9 +95,6 @@ class HomeScreen extends ConsumerWidget {
                         const ProgressCard(),
                         const SizedBox(height: 24),
                         PopularBooksSection(books: data.popularBooks),
-                        if (data.popularBooks.isNotEmpty)
-                          const SizedBox(height: 24),
-                        const ReferralBanner(),
                       ],
                     ),
                   ),
