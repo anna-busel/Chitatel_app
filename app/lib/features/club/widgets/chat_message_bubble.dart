@@ -95,10 +95,16 @@ Border? _bubbleBorder({required bool isMine, required bool adminAuthor}) {
 /// - isHighlighted — временная подсветка (после перехода к закрепу/reply),
 ///   снимается таймером в chat_tab. Рисуется через foregroundDecoration
 ///   ПОВЕРХ пузыря (оптимизация 11.07: раньше был AnimatedContainer с
-///   постоянной прозрачной рамкой 2.5px на каждом сообщении — анимационная
-///   обвязка и лишний слой на всех пузырях всегда; теперь обычный Container,
-///   декорация создаётся только когда подсветка реально включена, layout не
-///   дёргается, т.к. foreground не участвует в размерах).
+///   постоянной прозрачной рамкой 2.5px на каждом сообщении; теперь декорация
+///   создаётся только когда подсветка реально включена, layout не дёргается).
+///
+/// КЛИПЫ (оптимизация чат-лага 12.07.2026): скругление картинок в ленте —
+/// Clip.hardEdge вместо Clip.antiAlias. Clip-операции — одна из самых дорогих
+/// вещей в элементах списков (официальная рекомендация Flutter — минимизировать
+/// клипы в списках); antiAlias дополнительно сглаживает каждый пиксель дуги на
+/// каждом кадре. На фотографиях разница неразличима (ступенька в 1px тонет в
+/// пестроте фото). Аватары (ClipOval) НЕ трогаем — они маленькие, там
+/// сглаживание заметно.
 ///
 /// Скругления пузырей — 18px (редизайн чата 28.06, мягче) с асимметричным
 /// «хвостиком»: свой пузырь острый снизу-справа (4px), чужой — снизу-слева,
@@ -257,7 +263,8 @@ class ChatMessageBubble extends StatelessWidget {
           borderRadius: borderRadius,
           border: border,
         ),
-        clipBehavior: Clip.antiAlias,
+        // hardEdge вместо antiAlias — дешёвый клип (оптимизация 12.07).
+        clipBehavior: Clip.hardEdge,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -998,6 +1005,10 @@ class _MessageContent extends StatelessWidget {
 /// fullWidth=false — ограничена констрейнтами (режим «без подписи»),
 /// скруглена по [borderRadius] (= радиус bubble).
 ///
+/// Клип скругления — Clip.hardEdge (оптимизация 12.07): antiAlias на каждой
+/// картинке ленты — дорогая операция на каждом кадре, на фото разница
+/// неразличима.
+///
 /// Кэшируется на диск (CachedNetworkImage): после первого скачивания картинка
 /// берётся локально, мгновенно, без сети — даже после перезахода в приложение
 /// (как в Telegram). Работает благодаря фиксированному (стабильному) signed URL
@@ -1024,6 +1035,7 @@ class _ChatImage extends StatelessWidget {
     if (imageUrl.isEmpty) {
       return ClipRRect(
         borderRadius: borderRadius,
+        clipBehavior: Clip.hardEdge,
         child: Container(
           width: 220,
           height: 160,
@@ -1072,6 +1084,7 @@ class _ChatImage extends StatelessWidget {
       onTap: () => _openFullscreen(context),
       child: ClipRRect(
         borderRadius: borderRadius,
+        clipBehavior: Clip.hardEdge,
         child: Hero(
           tag: heroTag,
           child: fullWidth
