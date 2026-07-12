@@ -58,19 +58,20 @@ bool _sameDay(DateTime a, DateTime b) {
 /// зато сопоставление элементов при удалении/вставке снова корректное.
 /// ⛔️ НИКОГДА не убирать ключи из itemBuilder ленты чата.
 ///
+/// ⚠️ 12.07.2026 — СНЕКБАР «Сообщение удалено» ЗАКРЫВАЕМ САМИ:
+/// после апгрейда стека (Flutter 3.44) снекбар с кнопкой действия перестал
+/// уходить по `duration` и висел бесконечно. Теперь `_hideDeleteSnackBar()`
+/// вызывается явно — при «Отменить» и при истечении окна отмены (4 с).
+///
 /// ⚠️ 12.07.2026 — ЭКСПЕРИМЕНТ 2:
-/// 1. ТЕКСТУРА БУМАГИ УБРАНА. `_PaperTexturePainter` рисовал точки шагом 3px —
-///    десятки тысяч `drawCircle` на полноэкранном слое.
+/// 1. ТЕКСТУРА БУМАГИ УБРАНА (по ощущениям юзера скролл стал легче — вклад
+///    текстуры подтверждён): десятки тысяч `drawCircle` на полноэкранном слое.
 /// 2. АВТОСКРОЛЛ ПОСЛЕ ОТПРАВКИ — настоящая причина найдена (баг, не «недоезд»):
 ///    в `_insertOwnMessage` первым делом стоял ранний `return` при дубле id.
 ///    WS-эхо своего сообщения часто прилетает РАНЬШЕ ответа POST → сообщение
 ///    уже в ленте → return → `_scrollToBottom()` НЕ вызывался вообще. Теперь
 ///    дедупликация касается ТОЛЬКО вставки, скролл вниз выполняется всегда,
-///    когда сообщение отправила я. Плюс вторая попытка следующим кадром
-///    (высота картинки/многострочного текста известна только после layout).
-///
-/// Прыжок к закрепу/reply — по индексу (GlobalKey убраны в эксперименте 1):
-/// грубая позиция + подсветка, без точной доводки ensureVisible.
+///    когда сообщение отправила я.
 ///
 /// Real-time через Socket.io (singleton; виджет не рвёт сокет — урок #16).
 /// Отправка: своё сообщение вставляется сразу из ответа POST, WS-эхо
@@ -700,6 +701,16 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       );
   }
 
+  /// Убрать снекбар «Сообщение удалено» руками.
+  ///
+  /// ФИКС 12.07: на автозакрытие по `duration` полагаться нельзя — после
+  /// апгрейда стека (Flutter 3.44) снекбар с кнопкой действия остаётся висеть
+  /// бесконечно. Закрываем сами: при «Отменить» и при истечении окна отмены.
+  void _hideDeleteSnackBar() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+  }
+
   void _undoPendingDelete() {
     _deleteTimer?.cancel();
     _deleteTimer = null;
@@ -718,6 +729,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     _pendingDeleteMessage = null;
     _pendingDeleteIndex = -1;
     _pendingDeleteWasPinned = false;
+    _hideDeleteSnackBar();
   }
 
   void _commitPendingDelete() {
@@ -726,6 +738,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     _pendingDeleteIndex = -1;
     _pendingDeleteWasPinned = false;
     _deleteTimer = null;
+    _hideDeleteSnackBar();
     if (message == null) return;
     _sendDeleteRequest(message);
   }
