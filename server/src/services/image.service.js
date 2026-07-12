@@ -4,18 +4,20 @@ const config = require('../config');
 const { verifySignedUrl } = require('./audio.service');
 
 /**
- * Сервис картинок чата клуба (задача 4.6).
+ * Сервис картинок чата клуба (задача 4.6) и аватаров профиля (Фаза 6, 6.2).
  *
  * Переиспользует механизм signed URL из audio.service (тот же AUDIO_SECRET,
  * та же HMAC-SHA256 подпись, та же verifySignedUrl). Картинки хранятся в той
  * же файловой системе что и аудио — AUDIO_BASE_PATH/club-images/<clubMonthId>/<uuid>.<ext>.
+ * Аватары — AUDIO_BASE_PATH/avatars/<userId>/<uuid>.<ext>.
  *
  * Это согласовано с архитектурой из AI-CONTEXT: voice messages и картинки
  * переиспользуют ту же signed-URL инфраструктуру что аудиоразборы (2.3),
  * чтобы не плодить отдельные секреты и схемы доступа.
  *
  * Раздаются через GET /images/<filename>?exp&sig (routes/images.js),
- * по аналогии с /audio/.
+ * по аналогии с /audio/. Роут раздачи принимает ЛЮБОЙ относительный путь
+ * под AUDIO_BASE_PATH — поэтому аватары не требуют отдельного роута.
  */
 
 // Разрешённые MIME-типы для загрузки картинок в чат.
@@ -49,6 +51,10 @@ const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
 // невалиден, чужой не откроет. Срок (2099) для картинки чата роли не играет:
 // она иммутабельна (uuid в имени) и не платный контент. Аудио (audio.service)
 // остаётся с TTL 1 час — там защита от шеринга платного контента нужна.
+//
+// Для АВАТАРА это свойство критично вдвойне: его URL хранится в User.avatarUrl
+// и попадает в каждое сообщение чата (снапшот автора). Стабильный URL = аватар
+// кэшируется один раз и не мигает при каждой загрузке ленты.
 const IMAGE_URL_FIXED_EXP = Math.floor(Date.UTC(2099, 0, 1) / 1000);
 
 /**
@@ -65,6 +71,25 @@ function clubImagesDir(clubMonthId) {
  */
 function relativeImagePath(clubMonthId, fileName) {
   return path.posix.join('club-images', String(clubMonthId), fileName);
+}
+
+/**
+ * Папка аватаров пользователя (Фаза 6, 6.2 — экран 4.46).
+ * Полный путь: <AUDIO_BASE_PATH>/avatars/<userId>/<file>
+ *
+ * Своя папка на юзера, а не общая свалка: удобно чистить при удалении
+ * аккаунта и видеть глазами, чей файл.
+ */
+function avatarsDir(userId) {
+  return path.join(config.audio.basePath, 'avatars', String(userId));
+}
+
+/**
+ * Относительный путь аватара от AUDIO_BASE_PATH (для подписи URL).
+ * Например: 'avatars/6a3e.../a1b2c3d4.jpg'
+ */
+function relativeAvatarPath(userId, fileName) {
+  return path.posix.join('avatars', String(userId), fileName);
 }
 
 /**
@@ -94,7 +119,8 @@ function signPayload(filename, expiresAt) {
 /**
  * Сгенерировать signed URL для картинки чата с ФИКСИРОВАННЫМ exp.
  *
- * filename — относительный путь от AUDIO_BASE_PATH (см. relativeImagePath).
+ * filename — относительный путь от AUDIO_BASE_PATH (см. relativeImagePath
+ * и relativeAvatarPath).
  *
  * Ключевое отличие от аудио: exp = IMAGE_URL_FIXED_EXP (константа 2099), а НЕ
  * (now + TTL). Поэтому URL одной картинки ВСЕГДА идентичен между отдачами →
@@ -125,6 +151,8 @@ module.exports = {
   IMAGE_URL_FIXED_EXP,
   clubImagesDir,
   relativeImagePath,
+  avatarsDir,
+  relativeAvatarPath,
   generateImageFileName,
   generateImageSignedUrl,
   // verifySignedUrl переэкспортируем — routes/images.js использует ту же
