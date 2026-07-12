@@ -1,3 +1,4 @@
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -71,6 +72,23 @@ app.use('/api/profile', profileRoutes);
 // Пользователи (Фаза 6, A1): блокировка участника участником, список
 // заблокированных, жалоба на пользователя. Apple Guideline 1.2 (UGC).
 app.use('/api/users', userRoutes);
+
+// Админка жалоб и Q&A (Фаза 6, A5) — https://api.chitatel.app/admin
+//
+// Apple Guideline 1.2 требует реакции на жалобы в течение 24 часов. Серверные
+// эндпоинты (/api/admin/*) были готовы с задачи 4.4, но UI не существовало
+// нигде — разобрать жалобу или ответить на вопрос Q&A можно было только
+// curl'ом. Это статическая страница (без сборки), которая ходит в те же
+// эндпоинты под токеном Анны (role=admin).
+app.use('/admin', express.static(path.join(__dirname, '..', 'admin')));
+
+// Юридические страницы (Фаза 6, A3) — Privacy Policy, Terms/EULA, Support.
+// Ссылки на них указываются в App Store Connect и открываются из приложения
+// (paywall, экран поддержки). Отдаём статикой отсюда, чтобы не зависеть от
+// отдельного сайта: https://api.chitatel.app/legal/privacy и т.д.
+app.use('/legal', express.static(path.join(__dirname, '..', 'public', 'legal'), {
+  extensions: ['html'],
+}));
 
 // Audio streaming (на корне, не под /api — это стриминг файлов, не JSON API)
 // Защита через signed URL — проверяется внутри роута.
