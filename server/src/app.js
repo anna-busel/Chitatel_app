@@ -73,22 +73,58 @@ app.use('/api/profile', profileRoutes);
 // заблокированных, жалоба на пользователя. Apple Guideline 1.2 (UGC).
 app.use('/api/users', userRoutes);
 
-// Админка жалоб и Q&A (Фаза 6, A5) — https://api.chitatel.app/admin
+/* ------------------------------------------------------------------ *
+ *              СТАТИКА: АДМИНКА И ЮРИДИЧЕСКИЕ СТРАНИЦЫ               *
+ * ------------------------------------------------------------------ */
+
+// ⚠️ ВАЖНО: helmet() выше выставляет строгий Content-Security-Policy, в котором
+// инлайновые <script> и <style> ЗАПРЕЩЕНЫ. Для API это правильно, но наши
+// статические страницы (админка, privacy/terms) — одностраничные, со стилями и
+// скриптом внутри файла. Без послабления браузер молча не выполнит скрипт, и
+// админка откроется ПУСТОЙ. Поэтому на этих двух путях (и только на них)
+// переопределяем CSP: разрешаем инлайн, всё остальное оставляем закрытым.
+const staticPageCsp = helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: ["'self'"],
+      imgSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+});
+
+// Админка модерации (Фаза 6, A5) — https://api.chitatel.app/admin
 //
 // Apple Guideline 1.2 требует реакции на жалобы в течение 24 часов. Серверные
 // эндпоинты (/api/admin/*) были готовы с задачи 4.4, но UI не существовало
 // нигде — разобрать жалобу или ответить на вопрос Q&A можно было только
-// curl'ом. Это статическая страница (без сборки), которая ходит в те же
-// эндпоинты под токеном Анны (role=admin).
-app.use('/admin', express.static(path.join(__dirname, '..', 'admin')));
+// curl'ом. Страница без сборки (никакого React/Vite): ходит в те же эндпоинты
+// под токеном Анны (role=admin).
+//
+// РЕШЕНИЕ 12.07.2026: это НЕ времянка. Полноценная панель (задача 6.6) будет
+// наращиваться ИЗ ЭТОЙ ЖЕ страницы — добавятся разделы «Книги», «Клуб месяца»,
+// «Аудио», «Push». Отдельную React-панель не делаем: для одного пользователя
+// сборочный стек не окупается, а переписывать работающее заново — потеря.
+// Поддомен admin.chitatel.app поднимем, когда панель дорастёт (одна строка
+// в nginx, изменений в коде не потребует).
+app.use('/admin', staticPageCsp, express.static(path.join(__dirname, '..', 'admin')));
 
 // Юридические страницы (Фаза 6, A3) — Privacy Policy, Terms/EULA, Support.
-// Ссылки на них указываются в App Store Connect и открываются из приложения
-// (paywall, экран поддержки). Отдаём статикой отсюда, чтобы не зависеть от
-// отдельного сайта: https://api.chitatel.app/legal/privacy и т.д.
-app.use('/legal', express.static(path.join(__dirname, '..', 'public', 'legal'), {
-  extensions: ['html'],
-}));
+// Ссылки указываются в App Store Connect и открываются из приложения (paywall,
+// экран поддержки): https://api.chitatel.app/legal/privacy и т.д.
+// extensions:['html'] — чтобы /legal/privacy отдавал privacy.html без .html.
+app.use(
+  '/legal',
+  staticPageCsp,
+  express.static(path.join(__dirname, '..', 'public', 'legal'), {
+    extensions: ['html'],
+  })
+);
 
 // Audio streaming (на корне, не под /api — это стриминг файлов, не JSON API)
 // Защита через signed URL — проверяется внутри роута.
