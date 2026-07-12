@@ -84,7 +84,7 @@ class _PurchaseCard extends StatelessWidget {
   String get _statusLabel {
     switch (item.status) {
       case 'active':
-        return '活';
+        return 'Активна';
       case 'expired':
         return 'Истекла';
       case 'refunded':
