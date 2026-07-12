@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Поддержка — ЧИТАТЕЛЬ</title>
+<!--
+  Страница поддержки (Фаза 6, блок A3 аудита).
+  https://api.chitatel.app/legal/support
+
+  Указывается в App Store Connect как Support URL. Ревьюер Apple ОТКРЫВАЕТ её
+  и проверяет, что она живая и содержит способ связи. Пустая или битая страница
+  = отклонение.
+
+  ⚠️ ВРЕМЕННЫЙ адрес поддержки — support@chitatel.app (ящик ещё не заведён).
+  Заменить до сабмита, иначе письма пользователей уйдут в никуда.
+-->
+<style>
+  body {
+    margin: 0 auto;
+    padding: 24px 20px 64px;
+    max-width: 720px;
+    background: #FAF8F5;
+    color: #2C2825;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  h2 { font-size: 18px; margin-top: 28px; }
+  .updated { color: #8A8078; font-size: 14px; margin-bottom: 24px; }
+  a { color: #C4704F; }
+  .q { font-weight: 600; margin-top: 18px; }
+  .mail {
+    display: inline-block;
+    margin-top: 8px;
+    background: #C4704F;
+    color: #fff;
+    text-decoration: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+  }
+  .note {
+    background: #F4EFE9;
+    border-left: 3px solid #C4704F;
+    padding: 12px 14px;
+    border-radius: 6px;
+    margin: 16px 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>Поддержка</h1>
+<div class="updated">Приложение «ЧИТАТЕЛЬ» — книжный клуб Анны Бусел.</div>
+
+<p>
+  Не получается разобраться с приложением, подпиской или клубом? Напишите нам —
+  отвечаем в течение суток.
+</p>
+
+<a class="mail" href="mailto:support@chitatel.app">support@chitatel.app</a>
+
+<h2>Частые вопросы</h2>
+
+<div class="q">Как отменить подписку?</div>
+<p>
+  Настройки iPhone → ваш Apple ID → Подписки → ЧИТАТЕЛЬ → Отменить подписку.
+  Доступ к клубу сохранится до конца оплаченного периода. Отменить подписку
+  за вас мы не можем — ею управляет Apple.
+</p>
+
+<div class="q">Оплатила, но клуб не открылся</div>
+<p>
+  Откройте Профиль → Подписка → «Восстановить покупки». Обычно этого достаточно.
+  Если доступ не появился — напишите нам, укажите почту вашего аккаунта.
+</p>
+
+<div class="q">Как удалить аккаунт?</div>
+<p>
+  В приложении: Профиль → «Удалить аккаунт». Цитаты, разборы, отчёты и прогресс
+  удаляются; сообщения в чате остаются без вашего имени.
+  <b>Подписка при этом не отменяется</b> — отмените её отдельно в настройках Apple.
+</p>
+
+<div class="q">Участница в чате ведёт себя грубо</div>
+<p>
+  Долгое нажатие на сообщение → «Пожаловаться». В той же шторке можно
+  заблокировать участницу — вы перестанете видеть её сообщения. Жалобы мы
+  разбираем в течение 24 часов. Снять блокировку: Профиль → «Заблокированные».
+</p>
+
+<div class="q">Что происходит с моими цитатами?</div>
+<p>
+  Дневник виден только вам. Разбор цитаты делает ИИ (сервис OpenAI) и только
+  если вы включили «ИИ-анализ» в профиле. Выключить можно в любой момент.
+  Подробности — в <a href="/legal/privacy">Политике конфиденциальности</a>.
+</p>
+
+<div class="note">
+  Нашли ошибку или у вас есть предложение — тоже пишите. Мы читаем все письма.
+</div>
+
+<p style="margin-top:32px;">
+  <a href="/legal/privacy">Политика конфиденциальности</a> ·
+  <a href="/legal/terms">Условия использования</a>
+</p>
+
+</body>
+</html>
