@@ -30,7 +30,10 @@ class Routes {
   static const String deleteAccount = '/delete-account';
   static const String notificationSettings = '/notification-settings';
   static const String support = '/support';
-  static const String referral = '/referral';
+
+  /// Заблокированные участницы (Фаза 6, A1). Единственный способ снять
+  /// блокировку — Apple требует, чтобы она была обратимой.
+  static const String blockedUsers = '/blocked-users';
 
   // — Дневник (Фаза 5) —
 
