@@ -1,52 +1,52 @@
-&lt;?xml version="1.0" encoding="UTF-8"?&gt;
-&lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
-&lt;plist version="1.0"&gt;
-&lt;dict&gt;
-	&lt;key&gt;CADisableMinimumFrameDurationOnPhone&lt;/key&gt;
-	&lt;true/&gt;
-	&lt;key&gt;CFBundleDevelopmentRegion&lt;/key&gt;
-	&lt;string&gt;$(DEVELOPMENT_LANGUAGE)&lt;/string&gt;
-	&lt;key&gt;CFBundleDisplayName&lt;/key&gt;
-	&lt;string&gt;ЧИТАТЕЛЬ&lt;/string&gt;
-	&lt;key&gt;CFBundleExecutable&lt;/key&gt;
-	&lt;string&gt;$(EXECUTABLE_NAME)&lt;/string&gt;
-	&lt;key&gt;CFBundleIdentifier&lt;/key&gt;
-	&lt;string&gt;$(PRODUCT_BUNDLE_IDENTIFIER)&lt;/string&gt;
-	&lt;key&gt;CFBundleInfoDictionaryVersion&lt;/key&gt;
-	&lt;string&gt;6.0&lt;/string&gt;
-	&lt;key&gt;CFBundleName&lt;/key&gt;
-	&lt;string&gt;chitatel_app&lt;/string&gt;
-	&lt;key&gt;CFBundlePackageType&lt;/key&gt;
-	&lt;string&gt;APPL&lt;/string&gt;
-	&lt;key&gt;CFBundleShortVersionString&lt;/key&gt;
-	&lt;string&gt;$(FLUTTER_BUILD_NAME)&lt;/string&gt;
-	&lt;key&gt;CFBundleSignature&lt;/key&gt;
-	&lt;string&gt;????&lt;/string&gt;
-	&lt;key&gt;CFBundleVersion&lt;/key&gt;
-	&lt;string&gt;$(FLUTTER_BUILD_NUMBER)&lt;/string&gt;
-	&lt;key&gt;ITSAppUsesNonExemptEncryption&lt;/key&gt;
-	&lt;false/&gt;
-	&lt;key&gt;LSRequiresIPhoneOS&lt;/key&gt;
-	&lt;true/&gt;
-	&lt;key&gt;NSCameraUsageDescription&lt;/key&gt;
-	&lt;string&gt;Чтобы снимать фото для сообщений в чате клуба и для фото профиля&lt;/string&gt;
-	&lt;key&gt;NSMicrophoneUsageDescription&lt;/key&gt;
-	&lt;string&gt;Для записи голосовых сообщений в чате клуба&lt;/string&gt;
-	&lt;key&gt;NSPhotoLibraryUsageDescription&lt;/key&gt;
-	&lt;string&gt;Чтобы прикреплять фотографии к сообщениям в чате клуба и выбирать фото профиля&lt;/string&gt;
-	&lt;key&gt;UIApplicationSupportsIndirectInputEvents&lt;/key&gt;
-	&lt;true/&gt;
-	&lt;key&gt;UIBackgroundModes&lt;/key&gt;
-	&lt;array&gt;
-		&lt;string&gt;audio&lt;/string&gt;
-	&lt;/array&gt;
-	&lt;key&gt;UILaunchStoryboardName&lt;/key&gt;
-	&lt;string&gt;LaunchScreen&lt;/string&gt;
-	&lt;key&gt;UIMainStoryboardFile&lt;/key&gt;
-	&lt;string&gt;Main&lt;/string&gt;
-	&lt;key&gt;UISupportedInterfaceOrientations&lt;/key&gt;
-	&lt;array&gt;
-		&lt;string&gt;UIInterfaceOrientationPortrait&lt;/string&gt;
-	&lt;/array&gt;
-&lt;/dict&gt;
-&lt;/plist&gt;
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>ЧИТАТЕЛЬ</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>chitatel_app</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(FLUTTER_BUILD_NAME)</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Чтобы снимать фото для сообщений в чате клуба и для фото профиля</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Для записи голосовых сообщений в чате клуба</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Чтобы прикреплять фотографии к сообщениям в чате клуба и выбирать фото профиля</string>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+</dict>
+</plist>
