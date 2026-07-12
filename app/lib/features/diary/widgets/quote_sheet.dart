@@ -11,14 +11,16 @@ import '../providers/diary_provider.dart';
 
 /// Шторка «Новая цитата» (MASTER 4.17).
 ///
-/// Открывается из FAB в дневнике. Поля «Автор» и «Книга» можно предзаполнить
-/// (например, из активного плеера) — тогда показывается подсказка
-/// «Автозаполнено из текущего разбора».
+/// Открывается:
+///   - FAB (перо) на главной и в дневнике;
+///   - кнопкой «В дневник» в карточке «Мысль дня» (текст и источник предзаполнены).
 ///
-/// Если согласие на ИИ ещё не дано — перед сохранением показывается
-/// модалка 4.42. Отказ не мешает сохранить цитату, просто без разбора.
+/// Если поля предзаполнены — показывается подсказка «Автозаполнено».
+/// Если согласие на ИИ ещё не дано — перед сохранением показывается модалка 4.42.
+/// Отказ не мешает сохранить цитату, просто без разбора.
 Future<bool> showQuoteSheet(
   BuildContext context, {
+  String? text,
   String? author,
   String? bookTitle,
   String? bookId,
@@ -29,6 +31,7 @@ Future<bool> showQuoteSheet(
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
     builder: (_) => _QuoteSheet(
+      text: text,
       author: author,
       bookTitle: bookTitle,
       bookId: bookId,
@@ -40,12 +43,14 @@ Future<bool> showQuoteSheet(
 
 class _QuoteSheet extends ConsumerStatefulWidget {
   const _QuoteSheet({
+    this.text,
     this.author,
     this.bookTitle,
     this.bookId,
     this.audioTimestamp,
   });
 
+  final String? text;
   final String? author;
   final String? bookTitle;
   final String? bookId;
@@ -62,15 +67,16 @@ class _QuoteSheetState extends ConsumerState<_QuoteSheet> {
 
   bool _isSaving = false;
 
-  /// true — автор/книга подставились из плеера (показываем зелёную подсказку).
+  /// true — что-то подставилось извне (мысль дня / текущий разбор).
   bool get _isPrefilled =>
+      (widget.text?.isNotEmpty ?? false) ||
       (widget.author?.isNotEmpty ?? false) ||
       (widget.bookTitle?.isNotEmpty ?? false);
 
   @override
   void initState() {
     super.initState();
-    _textController = TextEditingController();
+    _textController = TextEditingController(text: widget.text ?? '');
     _authorController = TextEditingController(text: widget.author ?? '');
     _bookController = TextEditingController(text: widget.bookTitle ?? '');
   }
@@ -170,7 +176,7 @@ class _QuoteSheetState extends ConsumerState<_QuoteSheet> {
             controller: _textController,
             placeholder: 'Текст цитаты',
             maxLines: 5,
-            autofocus: true,
+            autofocus: widget.text == null || widget.text!.isEmpty,
             textCapitalization: TextCapitalization.sentences,
             autocorrect: true,
             enableSuggestions: true,
@@ -194,7 +200,7 @@ class _QuoteSheetState extends ConsumerState<_QuoteSheet> {
                 const Icon(Icons.check, size: 14, color: AppColors.success),
                 const SizedBox(width: 6),
                 Text(
-                  'Автозаполнено из текущего разбора',
+                  'Автозаполнено — можно отредактировать',
                   style: AppTypography.small.copyWith(color: AppColors.success),
                 ),
               ],
