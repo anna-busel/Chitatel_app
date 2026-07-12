@@ -19,6 +19,7 @@ const adminRoutes = require('./routes/admin');
 const quoteRoutes = require('./routes/quotes');
 const reportRoutes = require('./routes/reports');
 const profileRoutes = require('./routes/profile');
+const userRoutes = require('./routes/users');
 
 const app = express();
 
@@ -66,6 +67,10 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/quotes', quoteRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/profile', profileRoutes);
+
+// Пользователи (Фаза 6, A1): блокировка участника участником, список
+// заблокированных, жалоба на пользователя. Apple Guideline 1.2 (UGC).
+app.use('/api/users', userRoutes);
 
 // Audio streaming (на корне, не под /api — это стриминг файлов, не JSON API)
 // Защита через signed URL — проверяется внутри роута.
