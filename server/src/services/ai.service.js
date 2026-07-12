@@ -3,6 +3,7 @@ const config = require('../config');
 const logger = require('../config/logger');
 const { AppError } = require('../middleware/error');
 const Quote = require('../models/Quote');
+const Book = require('../models/Book');
 const {
   AI_MODEL,
   AI_TEMPERATURE,
@@ -26,6 +27,9 @@ const {
 const REQUEST_TIMEOUT_MS = 30000;
 const MAX_ATTEMPTS = 3;
 const BACKOFF_MS = [1000, 3000, 9000];
+
+// Сколько разборов каталога показываем модели при генерации рекомендации.
+const CATALOG_LIMIT = 80;
 
 let client = null;
 
@@ -198,12 +202,26 @@ const analyzeQuoteInBackground = (quote, user) => {
   });
 };
 
+/** Нормализация названия для сопоставления ответа модели с каталогом. */
+const normalizeTitle = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[«»"'.,!?:;()]/g, '')
+    .replace(/ё/g, 'е')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 /**
  * Обобщённый анализ цитат за неделю (для еженедельного отчёта, MASTER 7.7).
  *
+ * Рекомендация берётся ТОЛЬКО из опубликованных разборов каталога:
+ * список подставляется в user-message, ответ модели сопоставляется с базой
+ * по названию → bookId. Если книга не опознана — bookId=null, и клиент
+ * не показывает блок рекомендации (кнопка вела бы в никуда).
+ *
  * @param {object} user - документ User (нужен aiConsent)
  * @param {Array} quotes - цитаты за неделю
- * @returns {Promise<object>} { weekTheme, insight, recommendation: { title, author, why } }
+ * @returns {Promise<object>} { weekTheme, insight, recommendation: { title, author, why, bookId } }
  */
 const generateWeeklySummary = async (user, quotes) => {
   if (!user || user.aiConsent !== true) {
@@ -214,6 +232,12 @@ const generateWeeklySummary = async (user, quotes) => {
     );
   }
 
+  // Каталог для рекомендации: только опубликованные разборы (у остальных нет аудио).
+  const catalog = await Book.find({ isPublished: true })
+    .select('title author tags')
+    .limit(CATALOG_LIMIT)
+    .lean();
+
   const lines = ['Цитаты, сохранённые читателем за неделю:'];
   for (const q of quotes) {
     lines.push(
@@ -221,17 +245,53 @@ const generateWeeklySummary = async (user, quotes) => {
     );
   }
 
+  if (catalog.length > 0) {
+    lines.push('');
+    lines.push('КАТАЛОГ РАЗБОРОВ (выбирай рекомендацию только отсюда, название — дословно):');
+    for (const b of catalog) {
+      const tags = Array.isArray(b.tags) && b.tags.length > 0
+        ? ` — темы: ${b.tags.slice(0, 5).join(', ')}`
+        : '';
+      lines.push(`- «${b.title}» — ${b.author || 'без автора'}${tags}`);
+    }
+  } else {
+    lines.push('');
+    lines.push('КАТАЛОГ РАЗБОРОВ: пуст. Верни "recommendation": null.');
+  }
+
   const result = await callOpenAI(WEEKLY_REPORT_PROMPT, lines.join('\n'));
 
-  return {
+  const summary = {
     weekTheme: result.weekTheme || '',
     insight: result.insight || '',
     recommendation: {
-      title: result.recommendation?.title || '',
-      author: result.recommendation?.author || '',
-      why: result.recommendation?.why || '',
+      title: '',
+      author: '',
+      why: '',
+      bookId: null,
     },
   };
+
+  const rec = result.recommendation;
+  if (rec && rec.title) {
+    const wanted = normalizeTitle(rec.title);
+    const matched = catalog.find((b) => normalizeTitle(b.title) === wanted);
+
+    if (matched) {
+      // Название и автор берём из базы, а не из ответа модели — чтобы в отчёте
+      // не было «почти правильных» названий.
+      summary.recommendation = {
+        title: matched.title,
+        author: matched.author || '',
+        why: rec.why || '',
+        bookId: matched._id,
+      };
+    } else {
+      logger.warn('AI recommended a book outside catalog', { title: rec.title });
+    }
+  }
+
+  return summary;
 };
 
 module.exports = {
