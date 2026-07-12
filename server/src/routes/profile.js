@@ -1,9 +1,13 @@
+const path = require('path');
+const fs = require('fs');
 const { Router } = require('express');
 const { z } = require('zod');
+const multer = require('multer');
 const { validate } = require('../middleware/validate');
 const { requireAuth } = require('../middleware/auth');
 const { success } = require('../utils/response');
 const { AppError } = require('../middleware/error');
+const imageService = require('../services/image.service');
 const User = require('../models/User');
 
 const router = Router();
@@ -12,6 +16,12 @@ router.use(requireAuth);
 
 // Поля, которые НИКОГДА не уходят клиенту.
 const HIDDEN_FIELDS = '-passwordHash -refreshTokens';
+
+// Аватар грузим в память, потом пишем на диск (как картинки чата).
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: imageService.MAX_FILE_SIZE_BYTES },
+});
 
 /**
  * GET /api/profile
@@ -43,9 +53,6 @@ router.get('/', async (req, res, next) => {
  * Меняются только имя и город. Почта не меняется: у Apple/Google-входа она
  * приходит от провайдера, у email-входа это логин — смена логина отдельная
  * история с подтверждением, в MVP её нет.
- *
- * Аватар — отдельная задача: загрузка файла (multipart) не сделана, экран
- * редактирования показывает инициал. Появится вместе с push-волной (6Б).
  */
 const updateSchema = z.object({
   name: z.string().min(1, 'Имя обязательно').max(100).trim().optional(),
@@ -76,6 +83,85 @@ router.patch('/', validate(updateSchema), async (req, res, next) => {
 
     return success(res, { user });
   } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/profile/avatar
+ * Загрузить фото профиля (multipart/form-data, поле "avatar").
+ *
+ * Экран 4.46 (камера/галерея). Аватар нужен не только в профиле: он лежит в
+ * User.avatarUrl, а этот же документ попадает в снапшот автора КАЖДОГО
+ * сообщения чата — значит после загрузки лицо участницы сразу появляется
+ * напротив её реплик, без изменений в коде чата.
+ *
+ * Хранение — та же инфраструктура, что у картинок чата: файл на диске под
+ * AUDIO_BASE_PATH/avatars/<userId>/<uuid>.<ext>, ссылка — signed URL с
+ * фиксированным exp (стабильный URL → клиент кэширует, аватар не мигает).
+ *
+ * Старый файл аватара удаляем: иначе диск VPS будет копить мусор при каждой
+ * смене фото.
+ */
+router.post('/avatar', upload.single('avatar'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      throw new AppError('VALIDATION_ERROR', 'Файл не передан', 400);
+    }
+
+    const ext = imageService.ALLOWED_MIME.get(req.file.mimetype);
+    if (!ext) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Недопустимый тип файла. Разрешены JPEG, PNG, WEBP, HEIC',
+        400
+      );
+    }
+
+    const userId = req.user.userId;
+
+    const dir = imageService.avatarsDir(userId);
+    await fs.promises.mkdir(dir, { recursive: true });
+
+    const fileName = imageService.generateImageFileName(ext);
+    const fullPath = path.join(dir, fileName);
+    await fs.promises.writeFile(fullPath, req.file.buffer);
+
+    const relPath = imageService.relativeAvatarPath(userId, fileName);
+    const avatarUrl = imageService.generateImageSignedUrl(relPath);
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $set: { avatarUrl, avatarStoragePath: relPath } },
+      { new: true }
+    )
+      .select(HIDDEN_FIELDS)
+      .lean();
+
+    if (!user) {
+      throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
+    }
+
+    // Чистим предыдущие файлы аватара этого юзера (кроме только что записанного).
+    try {
+      const files = await fs.promises.readdir(dir);
+      await Promise.all(
+        files
+          .filter((f) => f !== fileName)
+          .map((f) => fs.promises.unlink(path.join(dir, f)).catch(() => null))
+      );
+    } catch (_e) {
+      // Не критично: не смогли подчистить — аватар всё равно обновлён.
+    }
+
+    return success(res, { user });
+  } catch (err) {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return next(new AppError('VALIDATION_ERROR', 'Файл больше 8 МБ', 400));
+      }
+      return next(new AppError('VALIDATION_ERROR', 'Ошибка загрузки файла', 400));
+    }
     return next(err);
   }
 });
