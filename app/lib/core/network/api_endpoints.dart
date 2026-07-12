@@ -155,6 +155,27 @@ class ApiEndpoints {
   /// Возвращает обновлённую сводку прав пользователя.
   static const String purchasesVerify = '/purchases/verify';
 
+  // — Дневник (Фаза 5: задачи 5.1-5.3) —
+
+  /// POST /api/quotes — сохранить цитату.
+  /// Body: { text, author?, bookTitle?, bookId?, audioTimestamp? }
+  /// Если у юзера включён ИИ-анализ — цитата вернётся с aiStatus='pending',
+  /// разбор досчитается на сервере в фоне.
+  ///
+  /// GET /api/quotes?page=&limit=&bookId= — лента дневника (новые сверху).
+  static const String quotes = '/quotes';
+
+  /// GET /api/quotes/:id — цитата с разбором (экран 4.25).
+  /// DELETE /api/quotes/:id — удалить свою цитату.
+  static String quoteById(String id) => '/quotes/$id';
+
+  /// GET /api/reports/weekly/latest — последний еженедельный отчёт (4.26).
+  /// Если отчётов нет — { report: null }.
+  static const String reportsWeeklyLatest = '/reports/weekly/latest';
+
+  /// GET /api/reports/weekly?week=&year= — конкретный отчёт.
+  static const String reportsWeekly = '/reports/weekly';
+
   // — Health —
   static const String health = '/health';
 }
