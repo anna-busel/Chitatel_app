@@ -32,6 +32,15 @@ class Routes {
   static const String support = '/support';
   static const String referral = '/referral';
 
+  // — Дневник (Фаза 5) —
+
+  /// Экран анализа цитаты (4.25). Открывается из дневника.
+  static String analysis(String quoteId) => '/analysis/$quoteId';
+  static const String analysisPath = '/analysis/:quoteId';
+
+  /// Еженедельный отчёт (4.26). Открывается из дневника.
+  static const String weeklyReport = '/weekly-report';
+
   // — Контент —
   static String book(String id) => '/book/$id';
   static const String bookPath = '/book/:id';
