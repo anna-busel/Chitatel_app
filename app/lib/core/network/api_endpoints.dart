@@ -30,6 +30,10 @@ class ApiEndpoints {
   static const String logout = '/auth/logout';
   static const String forgotPassword = '/auth/forgot-password';
   static const String resetPassword = '/auth/reset-password';
+
+  /// DELETE /api/auth/account — удаление аккаунта (Apple 5.1.1(v), экран 4.34).
+  /// Body: { confirm: 'УДАЛИТЬ' }. Аккаунт помечается удалённым, PII стирается,
+  /// цитаты/отчёты/прогресс удаляются, сообщения чата анонимизируются.
   static const String deleteAccount = '/auth/account';
 
   // — Profile —
@@ -40,6 +44,23 @@ class ApiEndpoints {
   static const String profileAiConsent = '/profile/ai-consent';
   static const String profileSurvey = '/profile/survey';
   static const String profileReferral = '/profile/referral';
+
+  // — Пользователи: блокировка и жалобы (Фаза 6, A1 — Apple Guideline 1.2) —
+
+  /// GET /api/users/blocked — список заблокированных мной участников.
+  /// Экран «Заблокированные» в профиле (единственный способ разблокировать).
+  static const String usersBlocked = '/users/blocked';
+
+  /// POST /api/users/:id/block — заблокировать участника.
+  /// DELETE /api/users/:id/block — разблокировать.
+  /// Сообщения заблокированного не приходят в чате и не показываются в
+  /// превью ответов. Администратора (Анну) заблокировать нельзя.
+  static String userBlock(String userId) => '/users/$userId/block';
+
+  /// POST /api/users/:id/report — жалоба на участника целиком.
+  /// Body: { reason, comment? }. Жалоба на конкретное сообщение — отдельно,
+  /// clubChatReport.
+  static String userReport(String userId) => '/users/$userId/report';
 
   // — Home & Catalog —
   static const String home = '/home';
@@ -62,6 +83,10 @@ class ApiEndpoints {
   /// POST /api/progress — сохранить прогресс прослушивания.
   /// Body: { bookId, currentPartNumber, positionSeconds, markPartCompleted? }
   static const String progress = '/progress';
+
+  /// GET /api/progress/stats — сводная статистика прослушивания (экран 4.45,
+  /// задача 6.2): всего минут, книг начато/завершено, цитат, streak.
+  static const String progressStats = '/progress/stats';
 
   /// GET /api/progress/:bookId — получить прогресс по конкретной книге.
   /// Если прогресса нет — возвращает defaults (часть 1, позиция 0).
@@ -154,6 +179,9 @@ class ApiEndpoints {
   /// Body: { signedTransaction } (JWS из StoreKit 2).
   /// Возвращает обновлённую сводку прав пользователя.
   static const String purchasesVerify = '/purchases/verify';
+
+  /// GET /api/purchases/history — история покупок юзера (экран 4.44, задача 6.2).
+  static const String purchasesHistory = '/purchases/history';
 
   // — Дневник (Фаза 5: задачи 5.1-5.3) —
 
