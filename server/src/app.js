@@ -16,6 +16,9 @@ const clubRoutes = require('./routes/club');
 const purchaseRoutes = require('./routes/purchases');
 const webhookRoutes = require('./routes/webhooks');
 const adminRoutes = require('./routes/admin');
+const quoteRoutes = require('./routes/quotes');
+const reportRoutes = require('./routes/reports');
+const profileRoutes = require('./routes/profile');
 
 const app = express();
 
@@ -58,6 +61,11 @@ app.use('/api/club', clubRoutes);
 app.use('/api/purchases', purchaseRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/admin', adminRoutes);
+
+// Дневник (Фаза 5): цитаты, еженедельные ИИ-отчёты, согласие на ИИ.
+app.use('/api/quotes', quoteRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/profile', profileRoutes);
 
 // Audio streaming (на корне, не под /api — это стриминг файлов, не JSON API)
 // Защита через signed URL — проверяется внутри роута.
