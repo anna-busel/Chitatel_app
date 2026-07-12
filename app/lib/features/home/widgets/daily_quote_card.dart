@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../diary/widgets/quote_sheet.dart';
 import '../services/home_service.dart';
 
 /// Карточка «Мысль дня» на главной — цитата дня с источником.
+///
+/// Кнопка «В дневник» (задача 5.3) открывает шторку «Новая цитата» (4.17)
+/// с предзаполненными текстом, автором и книгой — их можно отредактировать
+/// перед сохранением.
 class DailyQuoteCard extends StatelessWidget {
   const DailyQuoteCard({super.key, required this.quote});
   final DailyQuote quote;
@@ -53,7 +58,54 @@ class DailyQuoteCard extends StatelessWidget {
                 color: AppColors.textTertiary,
               ),
             ),
+            const SizedBox(height: 14),
+            _ToDiaryButton(
+              onTap: () => showQuoteSheet(
+                context,
+                text: quote.text,
+                author: quote.author,
+                bookTitle: quote.bookTitle,
+              ),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Кнопка «В дневник» (прототип v4.2 — карточка «Мысль дня»).
+class _ToDiaryButton extends StatelessWidget {
+  const _ToDiaryButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: double.infinity,
+          height: AppSpacing.minTapTarget,
+          decoration: BoxDecoration(
+            color: AppColors.surfaceLight,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.edit_outlined,
+                size: 16,
+                color: AppColors.textPrimary,
+              ),
+              const SizedBox(width: 8),
+              Text('В дневник', style: AppTypography.bodyMedium),
+            ],
+          ),
         ),
       ),
     );
