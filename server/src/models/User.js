@@ -15,6 +15,15 @@ const userSchema = new mongoose.Schema(
 
     authProvider: { type: String, enum: ['apple', 'google', 'email'] },
     appleUserId: { type: String, unique: true, sparse: true },
+
+    // Refresh-токен Apple, полученный обменом authorizationCode при входе
+    // (Фаза 6, A2). Нужен РОВНО для одного: отозвать доступ приложения при
+    // удалении аккаунта (Apple требует revoke у приложений с Sign in with
+    // Apple). Больше нигде не используется. Клиенту не отдаётся никогда.
+    // ⚠️ У пользователей, вошедших ДО этой правки, поля нет — отзывать нечего,
+    // удаление аккаунта просто пройдёт без revoke (в логах будет предупреждение).
+    appleRefreshToken: String,
+
     googleUserId: { type: String, unique: true, sparse: true },
     passwordHash: String,
 
