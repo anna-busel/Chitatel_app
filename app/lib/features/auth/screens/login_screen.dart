@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../core/constants/app_contacts.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
@@ -10,10 +12,31 @@ import '../providers/auth_provider.dart';
 
 /// Экран входа (MASTER 4.2).
 ///
-/// 3 кнопки: Apple (чёрная, первая), Google (белая), Email (серая).
+/// Кнопки: Apple (чёрная, первая), [Google — СКРЫТА, см. ниже], Email.
 /// Чекбокс GDPR. Кнопка «Продолжить без регистрации» (гостевой режим, 1.8).
+///
+/// 🔴 12.07.2026 — GOOGLE ВРЕМЕННО СКРЫТ (`_googleEnabled = false`).
+/// Кнопка была нерабочей СРАЗУ В ТРЁХ местах:
+///   1. на сервере `GOOGLE_CLIENT_ID` пуст → верификация токена падает;
+///   2. в Info.plist нет URL scheme (reversed client ID) → на iOS окно входа
+///      Google вообще не открывается;
+///   3. ключа в `.env` нет.
+/// Нажатие ревьюером Apple = гарантированная ошибка = отклонение сборки.
+/// Вход через Apple и почту закрывает iOS полностью.
+///
+/// ЧТОБЫ ВЕРНУТЬ (понадобится для Android): поставить `_googleEnabled = true`
+/// + выдать `GOOGLE_CLIENT_ID` в server/.env + добавить URL scheme в Info.plist.
+/// Сам код кнопки и вызов `signInWithGoogle()` НЕ удалены — только скрыты.
+///
+/// ⚠️ 12.07.2026 — ФИКС КРАША ПОСЛЕ РЕГИСТРАЦИИ: новый юзер отправлялся на
+/// `Routes.survey`, а этого маршрута в роутере НЕТ (опрос — волна 6Б, задача
+/// 6.3). go_router показал бы экран ошибки вместо приложения. Пока опроса нет,
+/// новый юзер идёт на главную, как и все.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
+
+  /// Показывать ли кнопку Google. Пока false — см. комментарий выше.
+  static const bool _googleEnabled = false;
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -26,6 +49,10 @@ enum _PendingMethod { none, apple, google }
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _gdprChecked = false;
   _PendingMethod _pending = _PendingMethod.none;
+
+  Future<void> _openLegal(String url) async {
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,11 +69,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     ref.listen<AuthState>(authProvider, (prev, next) {
       if (next.status == AuthStatus.authenticated) {
-        if (next.isNewUser) {
-          context.go(Routes.survey);
-        } else {
-          context.go(Routes.home);
-        }
+        // ⚠️ Раньше здесь было: isNewUser → Routes.survey. Маршрута нет —
+        // краш. Опрос вернём вместе с онбордингом (задача 6.3).
+        context.go(Routes.home);
       }
       if (next.status == AuthStatus.error && next.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -103,30 +128,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               const SizedBox(height: 10),
 
-              // Google Sign In
-              _SocialButton(
-                label: 'Google',
-                backgroundColor: Colors.white,
-                textColor: AppColors.textPrimary,
-                border: true,
-                icon: Image.network(
-                  'https://developers.google.com/identity/images/g-logo.png',
-                  width: 18,
-                  height: 18,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.g_mobiledata,
-                    size: 20,
-                    color: AppColors.textPrimary,
+              // Google Sign In — СКРЫТ до настройки (см. шапку файла).
+              if (LoginScreen._googleEnabled) ...[
+                _SocialButton(
+                  label: 'Google',
+                  backgroundColor: Colors.white,
+                  textColor: AppColors.textPrimary,
+                  border: true,
+                  icon: Image.network(
+                    'https://developers.google.com/identity/images/g-logo.png',
+                    width: 18,
+                    height: 18,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.g_mobiledata,
+                      size: 20,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
+                  enabled: _gdprChecked,
+                  loading: isLoading && _pending == _PendingMethod.google,
+                  onPressed: () {
+                    setState(() => _pending = _PendingMethod.google);
+                    ref.read(authProvider.notifier).signInWithGoogle();
+                  },
                 ),
-                enabled: _gdprChecked,
-                loading: isLoading && _pending == _PendingMethod.google,
-                onPressed: () {
-                  setState(() => _pending = _PendingMethod.google);
-                  ref.read(authProvider.notifier).signInWithGoogle();
-                },
-              ),
-              const SizedBox(height: 10),
+                const SizedBox(height: 10),
+              ],
 
               // Email
               _SocialButton(
@@ -153,18 +180,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               const SizedBox(height: 20),
 
-              // GDPR чекбокс
-              GestureDetector(
-                onTap: () => setState(() => _gdprChecked = !_gdprChecked),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
+              // GDPR чекбокс. Ссылки «Условия» и «Политика» теперь РАБОЧИЕ —
+              // раньше это был просто цветной текст (ревью Apple открывает их).
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () => setState(() => _gdprChecked = !_gdprChecked),
+                    child: Container(
                       width: 22,
                       height: 22,
                       margin: const EdgeInsets.only(top: 1),
                       decoration: BoxDecoration(
-                        color: _gdprChecked ? AppColors.terracotta : Colors.white,
+                        color:
+                            _gdprChecked ? AppColors.terracotta : Colors.white,
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
                           color: _gdprChecked
@@ -174,42 +203,62 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                       ),
                       child: _gdprChecked
-                          ? const Icon(Icons.check, size: 14, color: Colors.white)
+                          ? const Icon(Icons.check,
+                              size: 14, color: Colors.white)
                           : null,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text.rich(
-                        TextSpan(
-                          style: AppTypography.small.copyWith(
-                            color: AppColors.textSecondary,
-                            height: 1.5,
-                          ),
-                          children: [
-                            const TextSpan(
-                              text: 'Я согласна на обработку персональных данных и принимаю ',
-                            ),
-                            TextSpan(
-                              text: 'Условия',
-                              style: TextStyle(color: AppColors.terracotta),
-                            ),
-                            const TextSpan(text: ' и '),
-                            TextSpan(
-                              text: 'Политику конфиденциальности',
-                              style: TextStyle(color: AppColors.terracotta),
-                            ),
-                          ],
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        style: AppTypography.small.copyWith(
+                          color: AppColors.textSecondary,
+                          height: 1.5,
                         ),
+                        children: [
+                          TextSpan(
+                            text:
+                                'Я согласна на обработку персональных данных и принимаю ',
+                            recognizer: null,
+                          ),
+                          WidgetSpan(
+                            alignment: PlaceholderAlignment.middle,
+                            child: GestureDetector(
+                              onTap: () => _openLegal(AppContacts.termsUrl),
+                              child: Text(
+                                'Условия',
+                                style: AppTypography.small.copyWith(
+                                  color: AppColors.terracotta,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const TextSpan(text: ' и '),
+                          WidgetSpan(
+                            alignment: PlaceholderAlignment.middle,
+                            child: GestureDetector(
+                              onTap: () => _openLegal(AppContacts.privacyUrl),
+                              child: Text(
+                                'Политику конфиденциальности',
+                                style: AppTypography.small.copyWith(
+                                  color: AppColors.terracotta,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
 
               const Spacer(),
 
               // Продолжить без регистрации (гостевой режим — Apple 5.1.1(v)).
-              // Заметная опция: бесплатные разборы и каталог доступны без аккаунта.
               GestureDetector(
                 onTap: () async {
                   ref.read(authProvider.notifier).enterAsGuest();
