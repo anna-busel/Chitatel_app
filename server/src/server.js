@@ -5,6 +5,7 @@ const app = require('./app');
 const config = require('./config');
 const logger = require('./config/logger');
 const { setupSocket } = require('./socket');
+const { scheduleWeeklyReports } = require('./jobs/weekly-report');
 
 const server = http.createServer(app);
 
@@ -29,6 +30,10 @@ const start = async () => {
   try {
     await mongoose.connect(config.mongoUri);
     logger.info('MongoDB connected');
+
+    // Cron еженедельного ИИ-отчёта (задача 5.1).
+    // ⚠️ PM2 — строго fork mode, 1 инстанс, иначе cron задвоится.
+    scheduleWeeklyReports();
 
     server.listen(config.port, () => {
       logger.info(`Server running on port ${config.port} [${config.nodeEnv}]`);
