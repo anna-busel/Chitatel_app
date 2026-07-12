@@ -23,41 +23,24 @@ import '../services/purchase_service.dart';
 /// (первый месяц сезона); в окно анонса (с 15-го предыдущего месяца) —
 /// плашка-анонс без покупки; вне окон — только Месяц. Финальные тексты —
 /// season_window.dart («по цене двух», «до 30 сентября»).
-/// ТЕСТОВАЯ РУЧКА: тройной тап по заголовку «Одна книга в месяц…» циклически
-/// подменяет дату (реальная → 20.08 → 05.09 → 10.10) — проверка календаря на
-/// одном билде. ⚠️ Убрать жест перед сабмитом (Фаза 7).
+///
+/// ⚠️ 12.07.2026 (Фаза 6, шаг 0): тестовый жест «тройной тап по заголовку»
+/// (подмена даты для проверки сезонных окон) УДАЛЁН — скрытая отладка не
+/// должна уезжать в ревью Apple. Подмена даты остаётся в season_window.dart
+/// (debugNowOverride) и вызывается только из кода при отладке.
 class PaywallScreen extends ConsumerStatefulWidget {
   const PaywallScreen({super.key});
 
-  static const String _termsUrl = 'https://chitatel.app/terms';
-  static const String _privacyUrl = 'https://chitatel.app/privacy';
+  // Легальные страницы (A3). Отдаются Express'ом с api.chitatel.app —
+  // те же URL указаны в App Store Connect (Privacy Policy / EULA).
+  static const String _termsUrl = 'https://api.chitatel.app/legal/terms';
+  static const String _privacyUrl = 'https://api.chitatel.app/legal/privacy';
 
   @override
   ConsumerState<PaywallScreen> createState() => _PaywallScreenState();
 }
 
 class _PaywallScreenState extends ConsumerState<PaywallScreen> {
-  // Счётчик для скрытого жеста теста сезонов (тройной тап по заголовку).
-  int _titleTaps = 0;
-  DateTime _lastTap = DateTime.fromMillisecondsSinceEpoch(0);
-
-  void _onTitleTap() {
-    final now = DateTime.now();
-    if (now.difference(_lastTap).inMilliseconds > 1500) {
-      _titleTaps = 0;
-    }
-    _lastTap = now;
-    _titleTaps++;
-    if (_titleTaps >= 3) {
-      _titleTaps = 0;
-      final msg = SeasonWindow.cycleDebugDate();
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(purchaseProvider);
@@ -119,12 +102,8 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
           padding: const EdgeInsets.all(AppSpacing.screenPadding),
           children: [
             const SizedBox(height: 8),
-            GestureDetector(
-              onTap: _onTitleTap,
-              behavior: HitTestBehavior.opaque,
-              child: Text('Одна книга в месяц, которая меняет',
-                  style: AppTypography.screenTitle),
-            ),
+            Text('Одна книга в месяц, которая меняет',
+                style: AppTypography.screenTitle),
             const SizedBox(height: 8),
             Text(
               'Аудиоразборы по понедельникам, живой чат с Анной и участницами, '
