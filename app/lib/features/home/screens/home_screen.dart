@@ -37,6 +37,13 @@ import '../widgets/progress_card.dart';
 /// Живёт только на главной и в дневнике — там, где есть текст, который может
 /// зацепить. В каталоге/клубе/профиле его нет (в чате перекрывал бы ленту).
 ///
+/// ⚠️ 12.07.2026 — ИКОНКА FAB: была `Icons.edit_outlined` (карандаш), стала
+/// `Icons.history_edu` — ГУСИНОЕ ПЕРО над строкой. В прототипе v4.2 стояло
+/// перо (иконка из lucide-react), но lucide во Flutter не подключается: нужен
+/// был бы SVG + пакет flutter_svg (в спеке его нет). history_edu — штатная
+/// иконка Material (вшита во фреймворк, без зависимостей) и единственная в
+/// наборе, которая реально читается как перо, а не как стилус.
+///
 /// Обновление: pull-to-refresh (invalidate homeProvider).
 /// Ошибка: ErrorView с кнопкой «Попробовать снова».
 class HomeScreen extends ConsumerWidget {
@@ -147,8 +154,9 @@ class _QuoteFab extends StatelessWidget {
               boxShadow: AppColors.buttonShadow,
             ),
             child: const Icon(
-              Icons.edit_outlined,
-              size: 22,
+              // Гусиное перо (см. комментарий у HomeScreen).
+              Icons.history_edu,
+              size: 24,
               color: Colors.white,
             ),
           ),
