@@ -43,7 +43,7 @@ const requireSubscription = async (req, _res, next) => {
 
     const user = await User.findById(req.user.userId)
       .select(
-        'subscriptionStatus subscriptionExpiresAt gracePeriodExpiresAt role isBanned mutedUntil'
+        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt role isBanned mutedUntil'
       )
       .lean();
 
@@ -102,6 +102,7 @@ const requireSubscription = async (req, _res, next) => {
       userId: req.user.userId,
       status: user.subscriptionStatus,
       tier: user.subscriptionStatus,
+      plan: user.subscriptionPlan || null,
       expiresAt: user.subscriptionExpiresAt,
       isActive: true,
       isMuted,
@@ -149,6 +150,10 @@ const requireAdmin = async (req, _res, next) => {
  * ⚠️ ВАЖНО (08.07): в архиве МОЖНО ПИСАТЬ (canPost=true) — по требованию Анны
  * обсуждение прошлого клуба продолжается весь следующий месяц. Раньше архив
  * был read-only — исправлено.
+ *
+ * 12.07.2026: в clubAccess добавлено поле plan ('monthly'|'season'|null) —
+ * клиент скрывает плашку «оформите сезон» у тех, кто уже на сезоне.
+ * На решения доступа plan не влияет.
  *
  * Правила по запрошенному клубу:
  * 1. Бан → 403 CLUB_BLOCKED
@@ -204,7 +209,7 @@ const resolveClubAccess = async (req, _res, next) => {
 
     const user = await User.findById(req.user.userId)
       .select(
-        'subscriptionStatus subscriptionExpiresAt gracePeriodExpiresAt role isBanned mutedUntil'
+        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt role isBanned mutedUntil'
       )
       .lean();
 
@@ -239,6 +244,8 @@ const resolveClubAccess = async (req, _res, next) => {
         user.subscriptionStatus === 'premium') &&
       (user.subscriptionExpiresAt > now || isInGrace);
 
+    const plan = user.subscriptionPlan || null;
+
     // Классифицируем запрошенный клуб по времени (КАЛЕНДАРНО).
     const isCurrent = club.startsAt <= now && club.endsAt >= now;
     const isFuture = club.startsAt > now;
@@ -254,6 +261,7 @@ const resolveClubAccess = async (req, _res, next) => {
         req.clubAccess = {
           kind: 'active',
           tier: user.subscriptionStatus,
+          plan,
           canPost: !isMuted,
           isMuted,
           mutedUntil: isMuted ? user.mutedUntil : null,
@@ -277,6 +285,7 @@ const resolveClubAccess = async (req, _res, next) => {
         req.clubAccess = {
           kind: 'future',
           tier: user.subscriptionStatus,
+          plan,
           canPost: false,
           isMuted: false,
         };
@@ -307,6 +316,7 @@ const resolveClubAccess = async (req, _res, next) => {
         req.clubAccess = {
           kind: 'archive',
           tier: user.subscriptionStatus,
+          plan,
           canPost: !isMuted,
           isMuted,
           mutedUntil: isMuted ? user.mutedUntil : null,
