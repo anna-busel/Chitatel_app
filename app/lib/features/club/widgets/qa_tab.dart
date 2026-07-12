@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/app_button.dart';
@@ -8,6 +9,7 @@ import '../models/club_access.dart';
 import '../models/club_month.dart';
 import '../models/qa_question.dart';
 import '../services/club_api_service.dart';
+import '../services/qa_admin_service.dart';
 import 'ask_question_sheet.dart';
 
 /// Таб «Q&A» — список вопросов к Анне.
@@ -16,8 +18,11 @@ import 'ask_question_sheet.dart';
 /// Кнопка «Задать вопрос» внизу — открывает AskQuestionSheet, после успешной
 /// отправки рефрешим список.
 ///
-/// Анна отвечает по пятницам (см. AI-CONTEXT v5). Push участнице при ответе —
-/// задача 6.1.
+/// ⚠️ 12.07.2026 (Фаза 6): у АННЫ (role=admin, access.kind == admin) в карточке
+/// неотвеченного вопроса появилась кнопка «Ответить» — раньше ответить можно
+/// было только curl'ом по /api/admin/qa/:id/answer, UI не существовало нигде,
+/// и Q&A по факту не работал. Ответ уходит на тот же админский эндпоинт;
+/// карточка сразу перерисовывается как отвеченная.
 class QATab extends ConsumerStatefulWidget {
   const QATab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -31,6 +36,9 @@ class _QATabState extends ConsumerState<QATab> {
   List<QAQuestion> _questions = [];
   bool _isLoading = true;
   bool _hasError = false;
+
+  /// Анна — ведущая клуба. Только у неё есть кнопка «Ответить».
+  bool get _isAdmin => widget.access.kind == ClubAccessKind.admin;
 
   @override
   void initState() {
@@ -71,6 +79,98 @@ class _QATabState extends ConsumerState<QATab> {
     }
   }
 
+  /// Ответить на вопрос (только Анна). Диалог с полем ответа → отправка →
+  /// карточка перерисовывается уже с ответом.
+  Future<void> _answerQuestion(QAQuestion question) async {
+    final controller = TextEditingController();
+
+    final answer = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.background,
+        title: Text('Ответить', style: AppTypography.sectionHeader),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              question.questionText,
+              style: AppTypography.caption,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLength: 5000,
+              minLines: 3,
+              maxLines: 8,
+              style: AppTypography.body,
+              decoration: InputDecoration(
+                hintText: 'Ваш ответ участнице',
+                hintStyle: AppTypography.body.copyWith(
+                  color: AppColors.textPlaceholder,
+                ),
+                counterText: '',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              'Отмена',
+              style: AppTypography.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.terracotta,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Опубликовать'),
+          ),
+        ],
+      ),
+    );
+
+    if (answer == null || answer.isEmpty || !mounted) return;
+
+    try {
+      final updated = await ref.read(qaAdminServiceProvider).answerQuestion(
+            questionId: question.id,
+            answerText: answer,
+          );
+      if (!mounted) return;
+      setState(() {
+        _questions = _questions
+            .map((q) => q.id == updated.id ? updated : q)
+            .toList(growable: false);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Ответ опубликован'),
+        backgroundColor: AppColors.success,
+      ));
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final code = ClubApiService.errorCodeFromException(e);
+      final msg = code == 'FORBIDDEN'
+          ? 'На вопрос уже отвечено'
+          : 'Не удалось отправить ответ';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.error,
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -108,7 +208,12 @@ class _QATabState extends ConsumerState<QATab> {
                     child: ListView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
                       itemCount: _questions.length,
-                      itemBuilder: (_, i) => _QuestionCard(question: _questions[i]),
+                      itemBuilder: (_, i) => _QuestionCard(
+                        question: _questions[i],
+                        onAnswer: _isAdmin && !_questions[i].isAnswered
+                            ? () => _answerQuestion(_questions[i])
+                            : null,
+                      ),
                     ),
                   ),
           ),
@@ -162,9 +267,11 @@ class _QATabState extends ConsumerState<QATab> {
 
 /// Карточка одного Q&A.
 /// Свёрнутая показывает только вопрос; раскрытая — ответ Анны (если есть).
+/// Для Анны у неотвеченного вопроса — кнопка «Ответить» (onAnswer != null).
 class _QuestionCard extends StatelessWidget {
-  const _QuestionCard({required this.question});
+  const _QuestionCard({required this.question, this.onAnswer});
   final QAQuestion question;
+  final VoidCallback? onAnswer;
 
   @override
   Widget build(BuildContext context) {
@@ -214,7 +321,7 @@ class _QuestionCard extends StatelessWidget {
                 answeredAt: question.answeredAt,
                 answeredBy: question.answeredBy?.name ?? 'Анна Бусел',
               )
-            else
+            else ...[
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
@@ -224,6 +331,21 @@ class _QuestionCard extends StatelessWidget {
                   ),
                 ),
               ),
+              if (onAnswer != null) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.terracotta,
+                    ),
+                    onPressed: onAnswer,
+                    icon: const Icon(Icons.reply, size: 18),
+                    label: const Text('Ответить'),
+                  ),
+                ),
+              ],
+            ],
           ],
         ),
       ),
