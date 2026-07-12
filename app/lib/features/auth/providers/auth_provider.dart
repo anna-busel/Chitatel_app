@@ -65,8 +65,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// 🔴 СБРОС ПОЛЬЗОВАТЕЛЬСКОГО СОСТОЯНИЯ ПРИ СМЕНЕ АККАУНТА
   /// (баг найден 12.07.2026 при первом тесте Фазы 6).
   ///
-  /// СИМПТОМ: вышел из аккаунта Apple → вошёл под test-expired → в профиле
-  /// висит ЧУЖОЙ аватар и имя. После полного перезапуска приложения — верные.
+  /// СИМПТОМ 1: вышел из аккаунта Apple → вошёл под test-expired → в профиле
+  /// висит ЧУЖОЙ аватар и имя. После перезапуска приложения — верные.
+  /// СИМПТОМ 2 (нашли следом): в клубе открыт МЕСЯЦ, выбранный прежним юзером
+  /// в переключателе — человек заходит в клуб, видит чужой архивный месяц,
+  /// пустой чат и «нет вопросов», и решает, что клуб сломан.
   ///
   /// ПРИЧИНА: провайдеры ниже — обычные (не autoDispose). Создаются один раз,
   /// тянут данные при первом чтении и живут до перезапуска ПРОЦЕССА.
@@ -81,10 +84,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// входе (вход без выхода возможен: истёк refresh → экран логина → вошли
   /// другим аккаунтом).
   ///
-  /// ⚠️ ПРАВИЛО НА БУДУЩЕЕ: любой новый провайдер, который держит данные
-  /// КОНКРЕТНОГО пользователя (профиль, дневник, прогресс, покупки, клуб,
-  /// блок-лист, push-настройки), ОБЯЗАН быть добавлен сюда. Иначе он
-  /// переживёт смену аккаунта и покажет чужое.
+  /// ⚠️ ПРАВИЛО НА БУДУЩЕЕ: любой новый провайдер, который держит данные или
+  /// ВЫБОР КОНКРЕТНОГО пользователя (профиль, дневник, прогресс, покупки, клуб,
+  /// выбранный месяц клуба, блок-лист, push-настройки), ОБЯЗАН быть добавлен
+  /// сюда. Иначе он переживёт смену аккаунта и покажет чужое.
   void _resetUserScopedState() {
     // Профиль и подэкраны (6.2)
     _ref.invalidate(profileProvider);
@@ -99,8 +102,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _ref.invalidate(latestReportProvider);
     _ref.invalidate(aiConsentProvider);
 
-    // Главная и клуб — зависят от подписки конкретного юзера
+    // Главная и клуб — зависят от подписки конкретного юзера.
+    // selectedClubIdProvider — ВЫБРАННЫЙ В ПЕРЕКЛЮЧАТЕЛЕ МЕСЯЦ: без сброса
+    // новый юзер попадает в клуб, который выбрал предыдущий (симптом 2 выше).
     _ref.invalidate(homeProvider);
+    _ref.invalidate(selectedClubIdProvider);
     _ref.invalidate(currentClubProvider);
     _ref.invalidate(clubListProvider);
   }
@@ -112,7 +118,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// GET /api/profile). При смене аккаунта его надо стирать, иначе согласие
   /// на ИИ-анализ «перетечёт» с одного пользователя на другого — а это
   /// согласие на передачу личных цитат в OpenAI (Apple 5.1.2(i)).
-  /// Сервер всё равно проверяет своё `aiConsent`, но врать в UI нельзя.
   Future<void> _clearLocalUserFlags() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('ai_consent');
@@ -180,7 +185,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// Google Sign In
+  /// Google Sign In.
+  /// ⚠️ Кнопка Google на экране входа СКРЫТА (login_screen: _googleEnabled=false)
+  /// до настройки GOOGLE_CLIENT_ID и URL scheme. Метод оставлен рабочим.
   Future<void> signInWithGoogle() async {
     state = state.copyWith(status: AuthStatus.loading);
     try {
@@ -227,8 +234,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   ///
   /// authorizationCode (Фаза 6, A2): одноразовый код; сервер обменивает его на
   /// refresh-токен Apple и хранит, чтобы при удалении аккаунта отозвать доступ
-  /// приложения (требование Apple к приложениям с Sign in with Apple). Раньше
-  /// код не передавался вовсе, поэтому отзывать было нечего.
+  /// приложения (требование Apple к приложениям с Sign in with Apple).
   ///
   /// Требует capability «Sign in with Apple» в Xcode. Не работает в симуляторе.
   Future<void> signInWithApple() async {
@@ -312,9 +318,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Сохранить токены + флаг прохождения онбординга.
-  ///
-  /// onboarding_seen=true ставим при любой успешной авторизации, иначе
-  /// router.redirect будет кидать обратно на /login.
   ///
   /// ⚠️ Здесь же сбрасываем кэш провайдеров и локальные флаги: вход мог
   /// произойти БЕЗ выхода (истёк refresh → экран логина → вошли другим),
