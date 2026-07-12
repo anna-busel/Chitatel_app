@@ -18,9 +18,6 @@ import 'chat_message_bubble.dart';
 import 'chat_input.dart';
 import 'pinned_message_banner.dart';
 
-/// Яркость точек бумажной фактуры фона чата (редизайн 28.06).
-const double _paperDotOpacity = 0.08;
-
 /// Подпись разделителя даты: «Сегодня» / «Вчера» / «5 июня» (+год для прошлых).
 String _formatDateLabel(DateTime dt) {
   final d = dt.toLocal();
@@ -47,15 +44,24 @@ bool _sameDay(DateTime a, DateTime b) {
 
 /// Таб «Чат» клуба.
 ///
-/// ⚠️ 12.07.2026 (ЭКСПЕРИМЕНТ 1 чат-лага + фикс автоскролла):
-/// - GlobalKey со всех сообщений УБРАНЫ (были единственным местом в приложении
-///   с GlobalKey-на-каждый-элемент списка; реестр ключей + reparenting-проверки
-///   на каждом кадре — подозреваемый №1 «вязкого» скролла; каталог без ключей
-///   летает). Переход к закрепу/reply теперь прыжок по индексу + подсветка
-///   (без точной доводки ensureVisible — компромисс согласован).
-/// - Автоскролл после отправки: с большой дистанции animateTo(0) «не доезжал»
-///   (известное слабое место длинных лент переменной высоты) → при отступе
-///   >800px мгновенный jumpTo(0), вблизи — прежняя плавная анимация.
+/// ⚠️ 12.07.2026 — ЭКСПЕРИМЕНТ 2 (после билда 85c02c9):
+/// 1. ТЕКСТУРА БУМАГИ УБРАНА. `_PaperTexturePainter` рисовал точки шагом 3px —
+///    десятки тысяч `drawCircle` на полноэкранном слое. Даже с RepaintBoundary
+///    и shouldRepaint=false слой перерисовывается при каждом изменении размера
+///    вьюпорта (клавиатура, плашки) и стоит дорого на первом кадре. Фон чата —
+///    чистый AppColors.background.
+/// 2. АВТОСКРОЛЛ ПОСЛЕ ОТПРАВКИ — НАСТОЯЩАЯ ПРИЧИНА НАЙДЕНА (баг, не «недоезд»):
+///    в `_insertOwnMessage` первым делом стоял ранний `return` при дубле id.
+///    WS-эхо своего сообщения часто прилетает РАНЬШЕ ответа POST → сообщение
+///    уже в ленте → return → `_scrollToBottom()` НЕ вызывался вообще. Поэтому
+///    ни animateTo, ни jumpTo из билда 85c02c9 не помогали — их просто не
+///    выполняли. Теперь: дедупликация касается ТОЛЬКО вставки, скролл вниз
+///    выполняется всегда, когда сообщение отправила я. Плюс вторая попытка
+///    следующим кадром (высота картинки/многострочного текста известна только
+///    после layout — первый прыжок мог «не доехать»).
+///
+/// Прыжок к закрепу/reply — по индексу (GlobalKey убраны в эксперименте 1,
+/// 85c02c9): грубая позиция + подсветка, без точной доводки ensureVisible.
 ///
 /// Real-time через Socket.io (singleton; виджет не рвёт сокет — урок #16).
 /// Отправка: своё сообщение вставляется сразу из ответа POST, WS-эхо
@@ -139,30 +145,55 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   Iterable<ChatMessage> _notDeleted(Iterable<ChatMessage> src) =>
       src.where((m) => !m.isDeleted);
 
-  /// Прокрутка к низу (index 0 при reverse:true).
-  /// ФИКС 12.07: с большой дистанции animateTo «не доезжал» (лента переменной
-  /// высоты пересчитывает размеры по пути) → издалека мгновенный jumpTo, как
-  /// в Telegram; вблизи — плавная анимация.
+  /// Прокрутка к низу (низ = offset 0 при reverse:true).
+  /// Издалека — мгновенный jumpTo (анимация по длинной ленте переменной высоты
+  /// «не доезжает» и заодно тормозит), вблизи — короткая плавная анимация.
   void _scrollToBottom() {
     if (!_scrollController.hasClients) return;
-    if (_scrollController.position.pixels > 800) {
-      _scrollController.jumpTo(0);
-    } else {
+    final pos = _scrollController.position;
+    final target = pos.minScrollExtent;
+    if (pos.pixels - target > 800) {
+      _scrollController.jumpTo(target);
+    } else if (pos.pixels != target) {
       _scrollController.animateTo(
-        0,
+        target,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
     }
   }
 
-  /// Вставить своё отправленное сообщение (из ответа POST) и уйти вниз.
-  void _insertOwnMessage(ChatMessage message) {
-    if (_messages.any((m) => m.id == message.id)) return;
-    setState(() {
-      _messages.insert(0, message);
+  /// Уйти вниз после отправки. Два кадра подряд: на первом новый пузырь уже
+  /// вставлен, но его окончательная высота (картинка, многострочный текст,
+  /// reply-превью) может измениться после layout — тогда первый скролл
+  /// оказывается «недокрученным». Второй кадр добивает остаток jumpTo.
+  void _scrollToBottomAfterSend() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scrollToBottom();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        final pos = _scrollController.position;
+        if (pos.pixels > pos.minScrollExtent) {
+          _scrollController.jumpTo(pos.minScrollExtent);
+        }
+      });
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+  }
+
+  /// Вставить своё отправленное сообщение (из ответа POST) и уйти вниз.
+  ///
+  /// ФИКС 12.07: раньше при дубле (WS-эхо успело прийти раньше ответа POST)
+  /// метод делал ранний return — и скролл вниз НЕ выполнялся. Теперь дубль
+  /// пропускает только ВСТАВКУ; вниз уходим в любом случае.
+  void _insertOwnMessage(ChatMessage message) {
+    final alreadyThere = _messages.any((m) => m.id == message.id);
+    if (!alreadyThere) {
+      setState(() {
+        _messages.insert(0, message);
+      });
+    }
+    _scrollToBottomAfterSend();
     _scheduleMarkRead();
   }
 
@@ -217,9 +248,13 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
     if (event is ChatNewMessageEvent) {
       if (_messages.any((m) => m.id == event.message.id)) return;
+      final isMine = event.message.isMine(_currentUserId);
       setState(() {
         _messages.insert(0, event.message);
       });
+      // Своё сообщение могло прийти по WS раньше ответа POST — тогда вниз
+      // уводим прямо здесь (ответ POST потом увидит дубль и тоже дожмёт).
+      if (isMine) _scrollToBottomAfterSend();
       _scheduleMarkRead();
     } else if (event is ChatMessageHiddenEvent) {
       setState(() {
@@ -359,7 +394,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
-          _scrollController.jumpTo(0);
+          _scrollController.jumpTo(
+            _scrollController.position.minScrollExtent,
+          );
         }
       });
     } catch (_) {
@@ -378,7 +415,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
   void _scrollToPinned() => _jumpToMessage(_pinnedMessageId);
 
-  /// Прыжок по ИНДЕКСУ (без GlobalKey/ensureVisible — эксперимент 12.07):
+  /// Прыжок по ИНДЕКСУ (без GlobalKey/ensureVisible — эксперимент 1, 12.07):
   /// грубая позиция = доля индекса от maxScrollExtent. Для ленты переменной
   /// высоты неточно, но сообщение оказывается на экране/рядом + подсвечено.
   void _jumpToIndexAndHighlight(String id) {
@@ -1102,13 +1139,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
           Expanded(
             child: Stack(
               children: [
-                const Positioned.fill(
-                  child: RepaintBoundary(
-                    child: CustomPaint(
-                      painter: _PaperTexturePainter(),
-                    ),
-                  ),
-                ),
+                // ТЕКСТУРА БУМАГИ УБРАНА (эксперимент 2, 12.07) — фон чата
+                // теперь чистый AppColors.background.
                 GestureDetector(
                   behavior: HitTestBehavior.translucent,
                   onTap: () => FocusScope.of(context).unfocus(),
@@ -1155,9 +1187,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                                 _messages[index + 1].author.id ==
                                     m.author.id;
                             final bool showAvatar = !prevSameAuthor;
-                            // ЭКСПЕРИМЕНТ 12.07: БЕЗ GlobalKey/KeyedSubtree —
-                            // ключи на каждом элементе списка мешали
-                            // переиспользованию элементов (подозреваемый лага).
+                            // ЭКСПЕРИМЕНТ 1 (12.07): БЕЗ GlobalKey/KeyedSubtree
+                            // — ключи на каждом элементе списка мешали
+                            // переиспользованию элементов.
                             final bubble = ChatMessageBubble(
                               message: m,
                               currentUserId: _currentUserId,
@@ -1407,27 +1439,4 @@ class _DateSeparator extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Бумажная фактура фона ленты чата (точки ~1px шаг 3px). Рисуется один раз
-/// (shouldRepaint=false) в RepaintBoundary — прокрутка её не перерисовывает.
-class _PaperTexturePainter extends CustomPainter {
-  const _PaperTexturePainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const spacing = 3.0;
-    const radius = 0.6;
-    final paint = Paint()
-      ..color = const Color.fromRGBO(150, 130, 100, _paperDotOpacity)
-      ..style = PaintingStyle.fill;
-    for (double y = 0; y < size.height; y += spacing) {
-      for (double x = 0; x < size.width; x += spacing) {
-        canvas.drawCircle(Offset(x, y), radius, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _PaperTexturePainter oldDelegate) => false;
 }
