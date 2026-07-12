@@ -12,6 +12,7 @@ import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/email_login_screen.dart';
 import '../../features/auth/screens/email_register_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
+import '../../features/auth/screens/ai_consent_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/catalog/screens/catalog_screen.dart';
 import '../../features/club/screens/club_screen.dart';
@@ -20,6 +21,9 @@ import '../../features/search/screens/search_screen.dart';
 import '../../features/player/screens/player_screen.dart';
 import '../../features/player/widgets/mini_player.dart';
 import '../../features/payments/screens/paywall_screen.dart';
+import '../../features/diary/screens/diary_screen.dart';
+import '../../features/diary/screens/analysis_screen.dart';
+import '../../features/diary/screens/weekly_report_screen.dart';
 
 // — Key для ShellRoute navigator —
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -76,9 +80,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.survey,
         builder: (context, state) => const _Placeholder('Опрос'),
       ),
+      // Согласие на ИИ (4.7, задача 5.3) — шаг онбординга после опроса.
       GoRoute(
         path: Routes.aiConsent,
-        builder: (context, state) => const _Placeholder('Согласие на ИИ'),
+        builder: (context, state) => const AiConsentScreen(),
       ),
       GoRoute(
         path: Routes.pushConsent,
@@ -125,7 +130,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 title: 'Профиль',
                 message:
                     'Войдите, чтобы открыть профиль, дневник и историю покупок.',
-                child: _Placeholder('Профиль'),
+                child: _ProfilePlaceholder(),
               ),
             ),
           ),
@@ -179,11 +184,27 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const _Placeholder('Уведомления'),
       ),
+
+      // — Дневник (задача 5.3) —
       GoRoute(
         path: Routes.diary,
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _Placeholder('Дневник'),
+        builder: (context, state) => const DiaryScreen(),
       ),
+      GoRoute(
+        path: Routes.analysisPath,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) {
+          final quoteId = state.pathParameters['quoteId'] ?? '';
+          return AnalysisScreen(quoteId: quoteId);
+        },
+      ),
+      GoRoute(
+        path: Routes.weeklyReport,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const WeeklyReportScreen(),
+      ),
+
       GoRoute(
         path: Routes.editProfile,
         parentNavigatorKey: _rootNavigatorKey,
@@ -279,6 +300,73 @@ class _ScaffoldWithBottomBar extends StatelessWidget {
       case 3:
         context.go(Routes.profile);
     }
+  }
+}
+
+/// Профиль — временная заглушка до задачи 6.2.
+///
+/// ⚠️ Здесь только вход в «Мой дневник» (Фаза 5). Полный профиль (аватар, меню,
+/// тумблер ИИ, покупки, прогресс, выход, удаление аккаунта) — задача 6.2,
+/// этот экран будет заменён целиком.
+class _ProfilePlaceholder extends StatelessWidget {
+  const _ProfilePlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.screenPadding),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Профиль',
+                style: AppTypography.serifSectionTitle,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text('Экран в разработке', style: AppTypography.caption),
+              const SizedBox(height: 24),
+              GestureDetector(
+                onTap: () => context.push(Routes.diary),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.cardBackground,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.menu_book_outlined,
+                        size: 18,
+                        color: AppColors.terracotta,
+                      ),
+                      const SizedBox(width: 10),
+                      Text('Мой дневник', style: AppTypography.bodyMedium),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: AppColors.textMetadata,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
