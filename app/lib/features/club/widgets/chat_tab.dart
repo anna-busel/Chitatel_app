@@ -18,15 +18,10 @@ import 'chat_message_bubble.dart';
 import 'chat_input.dart';
 import 'pinned_message_banner.dart';
 
-/// Яркость точек бумажной фактуры фона чата (редизайн 28.06). В прототипе
-/// 0.045 — на экране телефона почти не видно, поэтому поднято до 0.08, чтобы
-/// фактура читалась. Это единственная ручка яркости: меньше — бледнее,
-/// больше — заметнее. Узор рисует [_PaperTexturePainter] внизу файла.
+/// Яркость точек бумажной фактуры фона чата (редизайн 28.06).
 const double _paperDotOpacity = 0.08;
 
-/// Подпись разделителя даты в ленте чата: «Сегодня» / «Вчера» / «5 июня»
-/// (день + месяц в родительном падеже). Для прошлых лет добавляется год.
-/// Сравнение по локальному времени (редизайн чата 28.06).
+/// Подпись разделителя даты: «Сегодня» / «Вчера» / «5 июня» (+год для прошлых).
 String _formatDateLabel(DateTime dt) {
   final d = dt.toLocal();
   final now = DateTime.now();
@@ -44,8 +39,6 @@ String _formatDateLabel(DateTime dt) {
   return label;
 }
 
-/// Два момента — один календарный день (по локальному времени)? Нужно для
-/// разделителей дат и группировки аватаров в серии (редизайн чата 28.06).
 bool _sameDay(DateTime a, DateTime b) {
   final la = a.toLocal();
   final lb = b.toLocal();
@@ -54,42 +47,22 @@ bool _sameDay(DateTime a, DateTime b) {
 
 /// Таб «Чат» клуба.
 ///
-/// Navigation к закрепу/reply (как в Telegram): тап по баннеру закрепа или
-/// reply-превью → _jumpToMessage. Если в окне — скролл+подсветка; если нет —
-/// fetchChatContext, замена ленты, скролл+подсветка. Кнопка «вниз».
+/// ⚠️ 12.07.2026 (ЭКСПЕРИМЕНТ 1 чат-лага + фикс автоскролла):
+/// - GlobalKey со всех сообщений УБРАНЫ (были единственным местом в приложении
+///   с GlobalKey-на-каждый-элемент списка; реестр ключей + reparenting-проверки
+///   на каждом кадре — подозреваемый №1 «вязкого» скролла; каталог без ключей
+///   летает). Переход к закрепу/reply теперь прыжок по индексу + подсветка
+///   (без точной доводки ensureVisible — компромисс согласован).
+/// - Автоскролл после отправки: с большой дистанции animateTo(0) «не доезжал»
+///   (известное слабое место длинных лент переменной высоты) → при отступе
+///   >800px мгновенный jumpTo(0), вблизи — прежняя плавная анимация.
 ///
-/// Real-time через Socket.io (singleton-провайдер; виджет не рвёт сокет в
-/// dispose — урок #16).
-///
-/// Отправка (как в Telegram): своё сообщение вставляется в ленту СРАЗУ из
-/// ответа POST (sendTextMessage возвращает готовое сообщение с реальным id),
-/// лента прокручивается вниз. WS-эхо с тем же id отсекается дедупликацией
-/// по id в _onSocketEvent. Так нет «резкого появления» с задержкой.
-///
-/// 4.9 mentions: при @ в инпуте — автокомплит mentionable (Анна). Упомянутые
-/// userId уходят на бэк, в bubble @имя подсвечено. 4.10 закреп: у админа в
-/// меню «Закрепить»/«Открепить». 4.11 read: видимые сообщения батчем в markRead.
-/// 4.12 voice: у Анны-admin кнопка записи в инпуте → _sendVoice.
-///
-/// Закреп (баннер) виден СРАЗУ при входе: закреплённое сообщение приходит
-/// отдельным полем history.pinnedMessage и хранится в _pinnedMessage. Баннер
-/// рисуется из него независимо от того, попало ли закреплённое сообщение в
-/// загруженное окно (как в Telegram). Раньше баннер искал закреп среди
-/// _messages → при входе его не было, пока не доскроллишь.
-///
-/// Удаление (как в Telegram): без диалога подтверждения. Жмёшь «Удалить» →
-/// сообщение СРАЗУ исчезает из ленты, внизу всплывает SnackBar «Сообщение
-/// удалено · Отменить» (~4 сек). Запрос на сервер уходит ТОЛЬКО по истечении
-/// этого окна — если успел нажать «Отменить», сообщение возвращается на место
-/// и запрос не отправляется. Так нет второго overlay (диалога) поверх
-/// клавиатуры → нет дёрганья layout, которое было с AlertDialog.
-///
-/// ПРОИЗВОДИТЕЛЬНОСТЬ (чат-лаг 11.07.2026): каждый элемент ленты обёрнут в
-/// RepaintBoundary — сообщение кэшируется как отдельный слой и не
-/// перерисовывается вместе с соседями при прокрутке. cacheExtent: 600 —
-/// список строит элементы чуть заранее за краями экрана, быстрый скролл не
-/// «доезжает» на пустоту. Парные правки в chat_message_bubble (тень→рамка,
-/// подсветка без AnimatedContainer, быстрый выход упоминаний).
+/// Real-time через Socket.io (singleton; виджет не рвёт сокет — урок #16).
+/// Отправка: своё сообщение вставляется сразу из ответа POST, WS-эхо
+/// отсекается дедупликацией по id. Закреп — из history.pinnedMessage.
+/// Удаление — оптимистично + SnackBar «Отменить» (окно 4с).
+/// ПРОИЗВОДИТЕЛЬНОСТЬ: RepaintBoundary на каждом элементе, cacheExtent 600,
+/// пузыри без теней (рамка), клипы hardEdge — см. chat_message_bubble.
 class ChatTab extends ConsumerStatefulWidget {
   const ChatTab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -101,38 +74,17 @@ class ChatTab extends ConsumerStatefulWidget {
 
 class _ChatTabState extends ConsumerState<ChatTab> {
   final List<ChatMessage> _messages = [];
-  final Map<String, GlobalKey> _messageKeys = {};
 
   String? _currentUserId;
   String? _pinnedMessageId;
-
-  /// Само закреплённое сообщение (для баннера). Приходит отдельным полем
-  /// history.pinnedMessage — баннер виден сразу, даже если сообщение не в
-  /// загруженном окне. null — закрепа нет / удалён / откреплён.
   ChatMessage? _pinnedMessage;
-
   ChatMessage? _replyingTo;
-
-  /// Кого можно упомянуть через @ (4.9). Обычно одна Анна.
   List<MentionableUser> _mentionable = const [];
-
-  /// Текущий юзер — админ (Анна). Тогда в меню есть «Закрепить» (4.10).
-  /// Вычисляем: _currentUserId есть в списке mentionable (там только админы).
   bool _isAdmin = false;
-
-  /// ID всех админов клуба (Анна). Собираем из mentionable (там только админы).
-  /// Нужен, чтобы у чужих сообщений Анны показывать бейдж «АВТОР КЛУБА» и
-  /// полоску слева (редизайн чата 28.06).
   final Set<String> _adminIds = {};
-
-  /// Уже отправленные в markRead id — чтобы не слать повторно (4.11).
   final Set<String> _readSent = {};
   Timer? _readDebounce;
 
-  /// Отложенное удаление (вариант Telegram): сообщение убрано из ленты, но
-  /// запрос на сервер ещё не отправлен — ждём окно «Отменить». Храним сам
-  /// объект и его индекс, чтобы вернуть на место при отмене. Таймер шлёт
-  /// запрос по истечении окна.
   Timer? _deleteTimer;
   ChatMessage? _pendingDeleteMessage;
   int _pendingDeleteIndex = -1;
@@ -143,18 +95,13 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
   bool _isLoading = true;
   bool _hasError = false;
-
   bool _isLoadingMore = false;
   bool _hasMoreBefore = false;
-
   bool _hasMoreAfter = false;
   bool _isLoadingAfter = false;
-
   bool _showJumpDown = false;
   bool _isJumping = false;
   bool _isUploadingImage = false;
-
-  /// Идёт отправка голосового (4.12) — показываем полоску, блокируем повтор.
   bool _isUploadingVoice = false;
 
   ClubSocketService? _socketService;
@@ -174,52 +121,48 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   void dispose() {
     _highlightTimer?.cancel();
     _readDebounce?.cancel();
-    // Если уходим с экрана с неотправленным отложенным удалением — отправляем
-    // запрос немедленно (окно «Отменить» завершилось уходом). Так удаление не
-    // потеряется, если юзер сразу закрыл чат.
     if (_deleteTimer != null && _deleteTimer!.isActive) {
       _deleteTimer!.cancel();
       final pending = _pendingDeleteMessage;
       if (pending != null) {
-        // fire-and-forget: виджет уже уходит, ответ не важен.
         ref
             .read(clubApiServiceProvider)
             .deleteMessage(pending.id)
             .catchError((_) => false);
       }
     }
-    // НЕ рвём сокет (singleton, управляется провайдером). Урок #16.
     _socketSub?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
-  /// Отфильтровать удалённые (deletedAt != null). Удалённые сообщения
-  /// исчезают из ленты полностью (решение: вариант А, как в Telegram —
-  /// не висят плашкой «сообщение удалено»). Reply-превью на удалённого
-  /// родителя остаётся «Сообщение удалено» — это отдельный снапшот.
   Iterable<ChatMessage> _notDeleted(Iterable<ChatMessage> src) =>
       src.where((m) => !m.isDeleted);
 
-  /// Вставить своё только что отправленное сообщение в начало ленты (index 0 =
-  /// низ при reverse:true) и прокрутить вниз. Если такое id уже есть (WS успел
-  /// прийти раньше ответа POST) — не дублируем. Как в Telegram: сообщение
-  /// появляется мгновенно, без ожидания WS-эха.
+  /// Прокрутка к низу (index 0 при reverse:true).
+  /// ФИКС 12.07: с большой дистанции animateTo «не доезжал» (лента переменной
+  /// высоты пересчитывает размеры по пути) → издалека мгновенный jumpTo, как
+  /// в Telegram; вблизи — плавная анимация.
+  void _scrollToBottom() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.pixels > 800) {
+      _scrollController.jumpTo(0);
+    } else {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  /// Вставить своё отправленное сообщение (из ответа POST) и уйти вниз.
   void _insertOwnMessage(ChatMessage message) {
     if (_messages.any((m) => m.id == message.id)) return;
     setState(() {
       _messages.insert(0, message);
     });
-    // Прокрутка к низу (свежее сообщение), плавно.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          0,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     _scheduleMarkRead();
   }
 
@@ -235,9 +178,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       );
       if (!mounted) return;
 
-      // Список упоминаемых (Анна). Не критично — пустой при ошибке.
-      final mentionable =
-          await api.fetchMentionable(widget.club.id);
+      final mentionable = await api.fetchMentionable(widget.club.id);
 
       if (!mounted) return;
       setState(() {
@@ -246,7 +187,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
           ..addAll(_notDeleted(history.messages));
         _hasMoreBefore = history.hasMore;
         _hasMoreAfter = false;
-        // Закреплённое сообщение (для баннера) — из ответа истории.
         _pinnedMessage = history.pinnedMessage;
         _pinnedMessageId = history.pinnedMessage?.id ?? _pinnedMessageId;
         _mentionable = mentionable;
@@ -284,7 +224,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     } else if (event is ChatMessageHiddenEvent) {
       setState(() {
         _messages.removeWhere((m) => m.id == event.messageId);
-        // Если скрыли закреплённое — снимаем баннер.
         if (_pinnedMessageId == event.messageId) {
           _pinnedMessageId = null;
           _pinnedMessage = null;
@@ -294,12 +233,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       setState(() {
         _pinnedMessageId = event.pinnedMessageId;
         if (event.pinnedMessageId == null) {
-          // Открепили — снимаем баннер.
           _pinnedMessage = null;
         } else {
-          // Закрепили другое — ищем его в ленте (если есть). Чаще всего
-          // закрепляют видимое сообщение, так что оно в _messages. Если нет —
-          // баннер подтянется при следующей загрузке истории.
           ChatMessage? found;
           for (final m in _messages) {
             if (m.id == event.pinnedMessageId) {
@@ -323,13 +258,10 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       if (idx != -1) {
         setState(() => _messages[idx] = event.message);
       }
-      // Если отредактировали закреплённое — обновляем баннер.
       if (_pinnedMessageId == event.message.id) {
         setState(() => _pinnedMessage = event.message);
       }
     } else if (event is ChatMessageDeletedEvent) {
-      // Вариант А: удалённое сообщение убираем из ленты полностью
-      // (а не оставляем плашкой). Если это был закреп — снимаем баннер.
       setState(() {
         _messages.removeWhere((m) => m.id == event.messageId);
         if (_pinnedMessageId == event.messageId) {
@@ -340,9 +272,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// 4.11: отметить видимые сообщения прочитанными (батч с дебаунсом).
-  /// Шлём все ещё не отправленные id из текущей ленты — для книжного чата
-  /// (не бесконечная лента) этого достаточно и проще, чем считать пиксели.
   void _scheduleMarkRead() {
     _readDebounce?.cancel();
     _readDebounce = Timer(const Duration(seconds: 2), () {
@@ -361,9 +290,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
 
-    // Гистерезис: показываем кнопку «вниз» когда отъехали > 300px,
-    // прячем когда вернулись < 120px. Между порогами состояние не
-    // дёргается на каждый кадр прокрутки (баг визуального дёрганья).
     final bool nextShow;
     if (_showJumpDown) {
       nextShow = pos.pixels > 120 || _hasMoreAfter;
@@ -428,7 +354,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         _hasMoreAfter = false;
         _isLoadingAfter = false;
         _showJumpDown = false;
-        // Обновляем закреп из свежего ответа (первая страница).
         _pinnedMessage = history.pinnedMessage;
         _pinnedMessageId = history.pinnedMessage?.id ?? _pinnedMessageId;
       });
@@ -448,65 +373,36 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       await _loadMoreAfter();
       return;
     }
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOut,
-      );
-    }
+    _scrollToBottom();
   }
 
   void _scrollToPinned() => _jumpToMessage(_pinnedMessageId);
 
+  /// Прыжок по ИНДЕКСУ (без GlobalKey/ensureVisible — эксперимент 12.07):
+  /// грубая позиция = доля индекса от maxScrollExtent. Для ленты переменной
+  /// высоты неточно, но сообщение оказывается на экране/рядом + подсвечено.
+  void _jumpToIndexAndHighlight(String id) {
+    final idx = _messages.indexWhere((m) => m.id == id);
+    if (idx == -1) return;
+    if (_scrollController.hasClients) {
+      final max = _scrollController.position.maxScrollExtent;
+      final frac =
+          _messages.length <= 1 ? 0.0 : idx / (_messages.length - 1);
+      _scrollController.jumpTo((max * frac).clamp(0.0, max));
+    }
+    _highlight(id);
+  }
+
   Future<void> _jumpToMessage(String? id) async {
     if (id == null || id.isEmpty || _isJumping) return;
 
-    // 1) Сообщение отрисовано прямо сейчас — сразу ensureVisible.
-    final ctx = _messageKeys[id]?.currentContext;
-    if (ctx != null) {
-      await Scrollable.ensureVisible(
-        ctx,
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
-        alignment: 0.3,
-      );
-      _highlight(id);
+    // 1) Сообщение в загруженной ленте — прыжок по индексу.
+    if (_messages.any((m) => m.id == id)) {
+      _jumpToIndexAndHighlight(id);
       return;
     }
 
-    // 2) Сообщение есть в загруженной ленте, но его виджет не построен
-    // (ListView.builder рисует только видимые). Прокручиваем к его позиции
-    // по индексу, ждём кадр, затем ensureVisible. Раньше тут зря грузился
-    // контекст с сервера, и переход к закрепу/reply «не срабатывал».
-    final localIndex = _messages.indexWhere((m) => m.id == id);
-    if (localIndex != -1) {
-      // reverse:true → индекс 0 внизу. Грубо прокручиваем к нужному месту,
-      // чтобы виджет успел построиться, потом точная доводка ensureVisible.
-      if (_scrollController.hasClients) {
-        final max = _scrollController.position.maxScrollExtent;
-        final frac = _messages.length <= 1
-            ? 0.0
-            : localIndex / (_messages.length - 1);
-        final target = (max * frac).clamp(0.0, max);
-        _scrollController.jumpTo(target);
-      }
-      await WidgetsBinding.instance.endOfFrame;
-      if (!mounted) return;
-      final c = _messageKeys[id]?.currentContext;
-      if (c != null) {
-        await Scrollable.ensureVisible(
-          c,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          alignment: 0.3,
-        );
-      }
-      _highlight(id);
-      return;
-    }
-
-    // 3) Сообщения нет в ленте — грузим окно контекста с сервера.
+    // 2) Нет в ленте — грузим окно контекста с сервера.
     setState(() => _isJumping = true);
     try {
       final api = ref.read(clubApiServiceProvider);
@@ -526,29 +422,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         _isJumping = false;
       });
 
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        // Сначала грубо прокручиваем к индексу (виджет может быть не построен),
-        // ждём кадр, потом точная доводка.
-        final idx = _messages.indexWhere((m) => m.id == id);
-        if (idx != -1 && _scrollController.hasClients) {
-          final max = _scrollController.position.maxScrollExtent;
-          final frac = _messages.length <= 1
-              ? 0.0
-              : idx / (_messages.length - 1);
-          _scrollController.jumpTo((max * frac).clamp(0.0, max));
-          await WidgetsBinding.instance.endOfFrame;
-        }
-        if (!mounted) return;
-        final c = _messageKeys[id]?.currentContext;
-        if (c != null) {
-          Scrollable.ensureVisible(
-            c,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            alignment: 0.3,
-          );
-        }
-        _highlight(id);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _jumpToIndexAndHighlight(id);
       });
     } on DioException catch (e) {
       if (!mounted) return;
@@ -589,9 +464,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     return m.text;
   }
 
-  /// Отправка текста. mentions — userId упомянутых через @ (из chat_input).
-  /// Оптимистично: вставляем результат POST сразу (sendTextMessage возвращает
-  /// готовое сообщение с реальным id), WS-эхо отсечётся дедупликацией по id.
   Future<void> _sendMessage(String text, List<String> mentions) async {
     if (text.trim().isEmpty) return;
     final replyId = _replyingTo?.id;
@@ -626,8 +498,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// 4.12: отправка голосового (только Анна-admin — кнопка записи показана
-  /// лишь ей). Параметры приходят из VoiceRecorder через ChatInput.onSendVoice.
   Future<void> _sendVoice(
     String filePath,
     int durationSec,
@@ -743,34 +613,17 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Удаление сообщения (как в Telegram, без диалога подтверждения).
-  ///
-  /// Жмёшь «Удалить» → сообщение СРАЗУ исчезает из ленты, внизу SnackBar
-  /// «Сообщение удалено · Отменить». Запрос на сервер отправляется ТОЛЬКО по
-  /// истечении окна (~4 сек). Нажал «Отменить» в это окно → сообщение
-  /// возвращается на место, запрос не уходит.
-  ///
-  /// Почему без AlertDialog: диалог поверх клавиатуры дёргал layout (контент
-  /// прыгал на высоту клавиатуры и обратно). SnackBar этого не вызывает —
-  /// он не перехватывает фокус и не пересчитывает inset.
-  ///
-  /// Если уже идёт отложенное удаление другого сообщения — сначала фиксируем
-  /// его (шлём запрос немедленно), потом начинаем новое.
   void _deleteMessage(String messageId) {
-    // Если есть незавершённое отложенное удаление — завершаем его сразу
-    // (отправляем запрос), чтобы не потерять и не путать состояние.
     _flushPendingDelete();
 
     final idx = _messages.indexWhere((m) => m.id == messageId);
     if (idx == -1) return;
     final message = _messages[idx];
 
-    // Запоминаем для возможного отката.
     _pendingDeleteMessage = message;
     _pendingDeleteIndex = idx;
     _pendingDeleteWasPinned = _pinnedMessageId == messageId;
 
-    // Оптимистично убираем из ленты + снимаем баннер закрепа, если это он.
     setState(() {
       _messages.removeAt(idx);
       if (_pendingDeleteWasPinned) {
@@ -779,14 +632,11 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       }
     });
 
-    // Запускаем окно «Отменить»: через 4 сек шлём запрос на сервер.
     _deleteTimer?.cancel();
     _deleteTimer = Timer(const Duration(seconds: 4), () {
       _commitPendingDelete();
     });
 
-    // SnackBar с «Отменить». Длительность чуть меньше окна таймера, чтобы
-    // не было рассинхрона (исчез — значит окно закрылось).
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -804,7 +654,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       );
   }
 
-  /// Вернуть отложенно-удалённое сообщение на место (нажали «Отменить»).
   void _undoPendingDelete() {
     _deleteTimer?.cancel();
     _deleteTimer = null;
@@ -812,8 +661,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     if (message == null) return;
 
     setState(() {
-      final insertAt =
-          _pendingDeleteIndex.clamp(0, _messages.length);
+      final insertAt = _pendingDeleteIndex.clamp(0, _messages.length);
       _messages.insert(insertAt, message);
       if (_pendingDeleteWasPinned) {
         _pinnedMessageId = message.id;
@@ -826,7 +674,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     _pendingDeleteWasPinned = false;
   }
 
-  /// Окно «Отменить» истекло — отправляем запрос на сервер.
   void _commitPendingDelete() {
     final message = _pendingDeleteMessage;
     _pendingDeleteMessage = null;
@@ -837,8 +684,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     _sendDeleteRequest(message);
   }
 
-  /// Принудительно завершить текущее отложенное удаление (если есть) — шлём
-  /// запрос немедленно. Используется когда начинается новое удаление.
   void _flushPendingDelete() {
     if (_deleteTimer != null && _deleteTimer!.isActive) {
       _deleteTimer!.cancel();
@@ -853,16 +698,12 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Реальный сетевой запрос удаления. При ошибке — возвращаем сообщение и
-  /// показываем причину (сервер фильтрует deletedAt, WS подтвердит остальным).
   Future<void> _sendDeleteRequest(ChatMessage message) async {
     try {
       final api = ref.read(clubApiServiceProvider);
       await api.deleteMessage(message.id);
     } on DioException catch (e) {
       if (!mounted) return;
-      // Не удалось — возвращаем сообщение в ленту (в начало, порядок
-      // восстановится при следующей загрузке истории).
       setState(() {
         if (!_messages.any((m) => m.id == message.id)) {
           _messages.insert(0, message);
@@ -879,8 +720,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// 4.10: закрепить/открепить (только админ — кнопка показывается лишь ему).
-  /// Баннер закрепа обновится по WS (ChatPinChangedEvent).
   Future<void> _togglePin(String messageId, bool pin) async {
     try {
       final api = ref.read(clubApiServiceProvider);
@@ -889,12 +728,10 @@ class _ChatTabState extends ConsumerState<ChatTab> {
         messageId: messageId,
         pinned: pin,
       );
-      // Локально сразу (WS придёт и подтвердит/синхронизирует).
       if (mounted) {
         setState(() {
           _pinnedMessageId = pin ? messageId : null;
           if (pin) {
-            // Берём само сообщение из ленты для баннера.
             ChatMessage? found;
             for (final m in _messages) {
               if (m.id == messageId) {
@@ -1214,12 +1051,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     );
   }
 
-  /// Автор сообщения — админ (Анна)? Для бейджа «АВТОР КЛУБА» и полоски слева.
   bool _authorIsAdmin(ChatMessage m) => _adminIds.contains(m.author.id);
-
-  GlobalKey _keyForMessage(String id) {
-    return _messageKeys.putIfAbsent(id, () => GlobalKey());
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1248,10 +1080,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       );
     }
 
-    // Баннер закрепа — из отдельного поля _pinnedMessage (приходит с сервера
-    // отдельно), чтобы быть видимым сразу при входе, даже если закреплённое
-    // сообщение не в загруженном окне. Если _pinnedMessage пуст, но закреп
-    // есть в ленте — подстрахуемся поиском в _messages.
     ChatMessage? pinned = _pinnedMessage;
     if (pinned == null && _pinnedMessageId != null) {
       for (final m in _messages) {
@@ -1274,10 +1102,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
           Expanded(
             child: Stack(
               children: [
-                // Бумажная фактура фона ленты (редизайн чата 28.06): едва
-                // заметная сетка точек, как в прототипе. База #FAFAF7 даётся
-                // внешним Container, здесь рисуем только точки. Один раз +
-                // RepaintBoundary — прокрутка фон не перерисовывает.
                 const Positioned.fill(
                   child: RepaintBoundary(
                     child: CustomPaint(
@@ -1285,8 +1109,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                     ),
                   ),
                 ),
-                // Тап по области списка закрывает клавиатуру (как в Telegram).
-                // translucent — чтобы тапы по сообщениям/кнопкам тоже работали.
                 GestureDetector(
                   behavior: HitTestBehavior.translucent,
                   onTap: () => FocusScope.of(context).unfocus(),
@@ -1297,9 +1119,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                           reverse: true,
                           keyboardDismissBehavior:
                               ScrollViewKeyboardDismissBehavior.onDrag,
-                          // Строим элементы чуть заранее за краями экрана —
-                          // быстрый скролл не «доезжает» на пустоту
-                          // (оптимизация чат-лага 11.07).
                           cacheExtent: 600,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
@@ -1326,58 +1145,45 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                             }
                             final m = _messages[index];
                             final isMine = m.isMine(_currentUserId);
-                            // Разделитель даты + аватар-серия (редизайн 28.06).
-                            // Лента reverse:true → верх = старые сообщения,
-                            // сосед сверху (старше) = index + 1.
                             final bool isOldest =
                                 index == _messages.length - 1;
-                            // Заголовок даты — над самым старым сообщением
-                            // своего дня (когда день сменился или это самый
-                            // старый загруженный).
                             final bool showDateHeader = isOldest ||
                                 !_sameDay(m.createdAt,
                                     _messages[index + 1].createdAt);
-                            // Сосед сверху — тот же автор и тот же день?
                             final bool prevSameAuthor = !isOldest &&
                                 !showDateHeader &&
                                 _messages[index + 1].author.id ==
                                     m.author.id;
-                            // Аватар показываем только у первого сообщения в
-                            // серии (после смены автора/дня либо у самого
-                            // старого). У остальных — пустой отступ 32px.
                             final bool showAvatar = !prevSameAuthor;
-                            final bubble = KeyedSubtree(
-                              key: _keyForMessage(m.id),
-                              child: ChatMessageBubble(
-                                message: m,
-                                currentUserId: _currentUserId,
-                                isHighlighted:
-                                    _highlightedMessageId == m.id,
-                                isAdmin: _isAdmin,
-                                authorIsAdmin: _authorIsAdmin(m),
-                                showAvatar: showAvatar,
-                                onReactionTap: (emoji) =>
-                                    _toggleReaction(m.id, emoji),
-                                onReply: () => _startReply(m),
-                                onEdit:
-                                    isMine ? () => _editMessage(m) : null,
-                                onDelete: isMine
-                                    ? () => _deleteMessage(m.id)
-                                    : null,
-                                onReplyTap: m.hasReply
-                                    ? () => _jumpToMessage(m.replyToId)
-                                    : null,
-                                onReport: isMine
-                                    ? null
-                                    : () => _reportMessage(m.id),
-                                onPinToggle: _isAdmin
-                                    ? (pin) => _togglePin(m.id, pin)
-                                    : null,
-                              ),
+                            // ЭКСПЕРИМЕНТ 12.07: БЕЗ GlobalKey/KeyedSubtree —
+                            // ключи на каждом элементе списка мешали
+                            // переиспользованию элементов (подозреваемый лага).
+                            final bubble = ChatMessageBubble(
+                              message: m,
+                              currentUserId: _currentUserId,
+                              isHighlighted:
+                                  _highlightedMessageId == m.id,
+                              isAdmin: _isAdmin,
+                              authorIsAdmin: _authorIsAdmin(m),
+                              showAvatar: showAvatar,
+                              onReactionTap: (emoji) =>
+                                  _toggleReaction(m.id, emoji),
+                              onReply: () => _startReply(m),
+                              onEdit:
+                                  isMine ? () => _editMessage(m) : null,
+                              onDelete: isMine
+                                  ? () => _deleteMessage(m.id)
+                                  : null,
+                              onReplyTap: m.hasReply
+                                  ? () => _jumpToMessage(m.replyToId)
+                                  : null,
+                              onReport: isMine
+                                  ? null
+                                  : () => _reportMessage(m.id),
+                              onPinToggle: _isAdmin
+                                  ? (pin) => _togglePin(m.id, pin)
+                                  : null,
                             );
-                            // RepaintBoundary: каждый элемент — отдельный слой
-                            // отрисовки; при прокрутке соседние сообщения не
-                            // перерисовывают друг друга (оптимизация 11.07).
                             if (!showDateHeader) {
                               return RepaintBoundary(child: bubble);
                             }
@@ -1491,8 +1297,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   }
 }
 
-/// Плавающая кнопка «вниз» — возврат к свежим сообщениям (как в Telegram).
-/// Если есть более новые за окном (hasNewer) — маленькая точка-индикатор.
+/// Плавающая кнопка «вниз».
 class _JumpDownButton extends StatelessWidget {
   const _JumpDownButton({required this.onTap, required this.hasNewer});
   final VoidCallback onTap;
@@ -1539,7 +1344,7 @@ class _JumpDownButton extends StatelessWidget {
   }
 }
 
-/// Пустой чат — пока никто не написал в клубе.
+/// Пустой чат.
 class _EmptyChat extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -1575,9 +1380,7 @@ class _EmptyChat extends StatelessWidget {
   }
 }
 
-/// Разделитель даты по центру ленты («Сегодня / Вчера / 5 июня»). Плашка-
-/// пилюля на фоне surfaceMedium, текст textTertiary (редизайн чата 28.06,
-/// как в прототипе).
+/// Разделитель даты по центру ленты.
 class _DateSeparator extends StatelessWidget {
   const _DateSeparator({required this.label});
   final String label;
@@ -1606,12 +1409,8 @@ class _DateSeparator extends StatelessWidget {
   }
 }
 
-/// Бумажная фактура фона ленты чата (редизайн 28.06). Едва заметная сетка
-/// точек, как в прототипе (точки ~1px с шагом 3px). База #FAFAF7 даётся
-/// внешним Container — здесь рисуем только точки цвета rgb(150,130,100).
-/// Прозрачность — в [_paperDotOpacity] наверху файла (единственная ручка).
-/// Рисуется один раз (shouldRepaint=false) и обёрнут в RepaintBoundary, так
-/// что прокрутка ленты фон не перерисовывает.
+/// Бумажная фактура фона ленты чата (точки ~1px шаг 3px). Рисуется один раз
+/// (shouldRepaint=false) в RepaintBoundary — прокрутка её не перерисовывает.
 class _PaperTexturePainter extends CustomPainter {
   const _PaperTexturePainter();
 
