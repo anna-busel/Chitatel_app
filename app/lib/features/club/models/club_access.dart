@@ -33,6 +33,7 @@ class ClubAccess {
     required this.kind,
     required this.canPost,
     this.tier,
+    this.plan,
     this.isMuted = false,
     this.mutedUntil,
   });
@@ -47,11 +48,19 @@ class ClubAccess {
   /// Уровень подписки: 'basic' | 'premium' | 'expired' | 'admin' | null.
   final String? tier;
 
+  /// План подписки: 'monthly' | 'season' | null (12.07.2026).
+  /// Используется, чтобы НЕ показывать плашку «оформите сезон» тем,
+  /// у кого сезон уже куплен. На доступ не влияет.
+  final String? plan;
+
   /// Юзер замьючен в чате.
   final bool isMuted;
 
   /// До какого времени действует мьют (если isMuted=true).
   final DateTime? mutedUntil;
+
+  /// Сезонная подписка уже оформлена.
+  bool get hasSeasonPlan => plan == 'season';
 
   factory ClubAccess.fromJson(Map<String, dynamic> json) {
     final kindRaw = (json['kind'] ?? '').toString();
@@ -73,6 +82,7 @@ class ClubAccess {
       kind: kind,
       canPost: json['canPost'] == true,
       tier: json['tier']?.toString(),
+      plan: json['plan']?.toString(),
       isMuted: json['isMuted'] == true,
       mutedUntil: mutedUntil,
     );
