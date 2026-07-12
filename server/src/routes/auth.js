@@ -76,6 +76,9 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
 /**
  * POST /api/auth/apple
  * MASTER 7.4: { identityToken, authorizationCode, fullName } → { accessToken, refreshToken, user, isNewUser }
+ *
+ * authorizationCode обменивается на refresh-токен Apple (Фаза 6, A2) — он нужен,
+ * чтобы отозвать доступ приложения при удалении аккаунта.
  */
 router.post('/apple', validate(appleSchema), async (req, res, next) => {
   try {
@@ -141,25 +144,22 @@ router.post('/logout', requireAuth, validate(logoutSchema), async (req, res, nex
  * Body: { confirm: 'УДАЛИТЬ' } — защита от случайного вызова.
  *
  * Что делаем:
- * 1. Удаляем ПОЛНОСТЬЮ личный контент: цитаты (Quote), еженедельные ИИ-отчёты
- *    (WeeklyReport), прогресс прослушивания (Progress). Появились в Фазе 5 —
- *    забыть их здесь было бы утечкой персональных данных.
- * 2. Стираем PII в User: email, имя, аватар, пароль, push-токен, ответы опроса,
- *    город, блок-лист, привязки Apple/Google. Имя заменяем на «Удалённый
- *    аккаунт» — это же имя увидят участницы рядом со старыми сообщениями.
- * 3. Сообщения чата НЕ удаляем — на них ссылаются ответы других участниц
+ * 1. Отзываем доступ у Apple (revoke по сохранённому refresh-токену). Требуется
+ *    Apple для приложений с Sign in with Apple. Если токена нет (юзер вошёл до
+ *    того, как мы начали их сохранять) или ключ не настроен — пишем в лог и
+ *    продолжаем: удаление не должно срываться из-за этого.
+ * 2. Удаляем ПОЛНОСТЬЮ личный контент: цитаты (Quote), еженедельные ИИ-отчёты
+ *    (WeeklyReport), прогресс прослушивания (Progress).
+ * 3. Стираем PII в User: email, имя, аватар, пароль, push-токен, ответы опроса,
+ *    город, блок-лист, привязки Apple/Google, apple refresh token. Имя заменяем
+ *    на «Удалённый аккаунт» — это же имя увидят участницы рядом со старыми
+ *    сообщениями.
+ * 4. Сообщения чата НЕ удаляем — на них ссылаются ответы других участниц
  *    (reply-контекст рассыпался бы). Они анонимизируются автоматически: имя
  *    автора берётся из User, а там теперь «Удалённый аккаунт».
- * 4. Purchase НЕ удаляем — это финансовые записи (сверка с Apple, возвраты,
+ * 5. Purchase НЕ удаляем — это финансовые записи (сверка с Apple, возвраты,
  *    налоги). Персональных данных они не содержат: транзакция + продукт.
- * 5. Помечаем isDeleted=true + deletionRequestedAt — вход в аккаунт закрыт.
- *
- * ⚠️ ОТЗЫВ ТОКЕНА APPLE (Sign in with Apple) НЕ ВЫПОЛНЯЕТСЯ: для вызова
- * revoke нужен .p8-ключ Sign in with Apple (config.apple.privateKeyPath —
- * сейчас пуст) И сохранённый refresh-токен Apple, который мы при входе не
- * сохраняем. Если Apple потребует revoke на ревью — нужно (а) выдать ключ,
- * (б) сохранять appleRefreshToken при входе, (в) дёргать здесь revoke.
- * Логируем факт, чтобы это было видно в pm2, а не забылось.
+ * 6. Помечаем isDeleted=true + deletionRequestedAt — вход в аккаунт закрыт.
  */
 const deleteAccountSchema = z.object({
   confirm: z.literal('УДАЛИТЬ', {
@@ -175,17 +175,32 @@ router.delete(
     try {
       const userId = req.user.userId;
 
-      const user = await User.findById(userId).select('authProvider').lean();
+      const user = await User.findById(userId)
+        .select('authProvider appleRefreshToken')
+        .lean();
       if (!user) {
         return success(res, { deleted: true });
       }
 
-      // 1. Личный контент — под нож.
+      // 1. Отзыв доступа у Apple.
+      if (user.authProvider === 'apple') {
+        const revoked = await appleAuthService.revokeAppleAccess(
+          user.appleRefreshToken
+        );
+        if (!revoked) {
+          logger.warn('Apple access NOT revoked on account deletion', {
+            userId,
+            hasToken: Boolean(user.appleRefreshToken),
+          });
+        }
+      }
+
+      // 2. Личный контент — под нож.
       await Quote.deleteMany({ userId });
       await WeeklyReport.deleteMany({ userId });
       await Progress.deleteMany({ userId });
 
-      // 2-5. Обезличиваем аккаунт и закрываем вход.
+      // 3-6. Обезличиваем аккаунт и закрываем вход.
       await User.updateOne(
         { _id: userId },
         {
@@ -194,6 +209,7 @@ router.delete(
             deletionRequestedAt: new Date(),
             name: 'Удалённый аккаунт',
             avatarUrl: null,
+            avatarStoragePath: null,
             passwordHash: null,
             pushToken: null,
             surveyAnswers: null,
@@ -209,16 +225,10 @@ router.delete(
             appleUserId: '',
             googleUserId: '',
             referralCode: '',
+            appleRefreshToken: '',
           },
         }
       );
-
-      if (user.authProvider === 'apple') {
-        logger.warn(
-          'Account deleted for Apple user — Apple token revoke NOT performed',
-          { userId, reason: 'no Sign in with Apple key / no stored refresh token' }
-        );
-      }
 
       logger.info('Account deleted', { userId });
 
