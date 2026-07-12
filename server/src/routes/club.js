@@ -79,6 +79,52 @@ const liveMessagesFilter = (clubMonthId) => ({
   deletedAt: null,
 });
 
+/* ------------------------------------------------------------------ *
+ *              БЛОКИРОВКА УЧАСТНИКОВ (Фаза 6, A1)                     *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Список заблокированных текущим пользователем (Apple Guideline 1.2).
+ *
+ * Блокировка односторонняя: тот, кого заблокировали, продолжает видеть чат;
+ * скрываются только ЕГО сообщения — у того, кто заблокировал.
+ *
+ * Управление списком — POST/DELETE /api/users/:id/block (routes/users.js).
+ */
+async function getBlockedIds(userId) {
+  const me = await User.findById(userId).select('blockedUsers').lean();
+  if (!me || !Array.isArray(me.blockedUsers)) return [];
+  return me.blockedUsers;
+}
+
+/**
+ * Вырезает reply-снапшот, если его автор заблокирован.
+ *
+ * Зачем отдельно: сообщения заблокированного отсекаются фильтром запроса
+ * ($nin по userId), но их текст/картинка могут ПРОТЕЧЬ через превью ответа —
+ * когда кто-то другой ответил на сообщение заблокированного, populated
+ * replyToId несёт его контент. Обнуляем превью (сам ответ остаётся в ленте,
+ * как удалённый родитель — клиент просто не рисует блок цитаты).
+ *
+ * blockedSet — Set строковых id (быстрая проверка без обращений к БД).
+ */
+function stripBlockedReply(message, blockedSet) {
+  if (!message || typeof message !== 'object') return message;
+  if (blockedSet.size === 0) return message;
+
+  const reply = message.replyToId;
+  if (reply && typeof reply === 'object' && reply.userId) {
+    // userId в снапшоте populated ({_id, name, avatarUrl}), но подстрахуемся
+    // и от «сырого» ObjectId.
+    const authorId =
+      reply.userId && reply.userId._id ? reply.userId._id : reply.userId;
+    if (blockedSet.has(String(authorId))) {
+      message.replyToId = null;
+    }
+  }
+  return message;
+}
+
 // Populate-спека для reply: подтягиваем РОДИТЕЛЬСКОЕ сообщение со снапшотом
 // автора. Это устраняет баг «ответы без пользователя»: раньше клиент сам
 // искал родителя среди загруженных сообщений (первые 20) — если родитель
@@ -351,6 +397,11 @@ router.get(
  * строк включая удалённые → после перезахода живых оставалось непредсказуемо
  * мало (часть «пропадала»).
  *
+ * ЗАБЛОКИРОВАННЫЕ (Фаза 6, A1 — Apple Guideline 1.2): сообщения тех, кого
+ * пользователь заблокировал, не отдаются вовсе ($nin по userId), закреп от
+ * заблокированного не показывается, а reply-снапшот на его сообщение
+ * обнуляется (иначе контент протёк бы через превью ответа).
+ *
  * Дополнительно (если это ПЕРВАЯ страница, т.е. before не задан) возвращает
  * pinnedMessage — закреплённое сообщение клуба (populated). Это нужно, чтобы
  * баннер закрепа был виден СРАЗУ при входе в чат, даже если само закреплённое
@@ -374,7 +425,14 @@ router.get(
   async (req, res, next) => {
     try {
       const { limit, before } = req.query;
+
+      const blockedIds = await getBlockedIds(req.user.userId);
+      const blockedSet = new Set(blockedIds.map(String));
+
       const filter = liveMessagesFilter(req.club._id);
+      if (blockedIds.length > 0) {
+        filter.userId = { $nin: blockedIds };
+      }
       if (before) {
         filter.createdAt = { $lt: before };
       }
@@ -388,6 +446,8 @@ router.get(
 
       // Перевыпускаем свежие signed URL медиа (фикс протухших картинок/голосовых).
       messages.forEach(withFreshMedia);
+      // Вырезаем reply-превью на сообщения заблокированных.
+      messages.forEach((m) => stripBlockedReply(m, blockedSet));
 
       // Закреплённое сообщение — отдаём отдельно ТОЛЬКО на первой странице
       // (before не задан), чтобы баннер закрепа был виден сразу при входе.
@@ -395,9 +455,17 @@ router.get(
       let pinnedMessage = null;
       if (!before && req.club.pinnedMessageId) {
         const pinned = await findMessagePopulated(req.club.pinnedMessageId);
-        // Не отдаём если удалено/скрыто (баннер должен исчезнуть).
-        if (pinned && !pinned.deletedAt && !pinned.isHidden) {
-          pinnedMessage = pinned;
+        // Не отдаём если удалено/скрыто (баннер должен исчезнуть) или если
+        // автор закрепа заблокирован этим пользователем.
+        const pinnedAuthorId =
+          pinned && pinned.userId && pinned.userId._id
+            ? pinned.userId._id
+            : pinned && pinned.userId;
+        const pinnedAuthorBlocked =
+          pinnedAuthorId && blockedSet.has(String(pinnedAuthorId));
+
+        if (pinned && !pinned.deletedAt && !pinned.isHidden && !pinnedAuthorBlocked) {
+          pinnedMessage = stripBlockedReply(pinned, blockedSet);
         }
       }
 
@@ -424,6 +492,8 @@ router.get(
  * этот эндпоинт, перестраивает ленту вокруг цели и подсвечивает её.
  *
  * Удалённые/скрытые соседи не отдаются (liveMessagesFilter) — как и в /chat.
+ * Сообщения заблокированных — тоже не отдаются (A1); если заблокирован автор
+ * САМОГО целевого сообщения — 404 (его в ленте для этого юзера не существует).
  *
  * Query: radius (сколько сообщений до и после, 1-30, default 15).
  *
@@ -453,12 +523,16 @@ router.get(
         throw new AppError('NOT_FOUND', 'Неверный messageId', 400);
       }
 
+      const blockedIds = await getBlockedIds(req.user.userId);
+      const blockedSet = new Set(blockedIds.map(String));
+
       const target = await ChatMessage.findById(messageId).lean();
       if (
         !target ||
         target.isHidden ||
         target.deletedAt ||
-        !target.clubMonthId.equals(req.club._id)
+        !target.clubMonthId.equals(req.club._id) ||
+        blockedSet.has(String(target.userId))
       ) {
         throw new AppError(
           'NOT_FOUND',
@@ -468,6 +542,9 @@ router.get(
       }
 
       const baseFilter = liveMessagesFilter(req.club._id);
+      if (blockedIds.length > 0) {
+        baseFilter.userId = { $nin: blockedIds };
+      }
 
       // Соседи СТАРШЕ целевого (createdAt < target) — DESC, берём radius штук.
       const older = await ChatMessage.find({
@@ -503,6 +580,8 @@ router.get(
       // Перевыпускаем свежие signed URL медиа для всех (target уже обновлён
       // в findMessagePopulated, но older/newer — нет; повторный вызов идемпотентен).
       messages.forEach(withFreshMedia);
+      // Вырезаем reply-превью на сообщения заблокированных.
+      messages.forEach((m) => stripBlockedReply(m, blockedSet));
 
       // Есть ли ещё сообщения за пределами этого окна — для догрузки.
       const hasMoreAfter = newerAsc.length === radius;
@@ -1216,6 +1295,9 @@ router.post(
 /**
  * POST /api/club/chat/:messageId/report
  * Жалоба на сообщение. Apple Guideline 1.2.
+ *
+ * Жалоба на ПОЛЬЗОВАТЕЛЯ целиком и блокировка — отдельно, в routes/users.js
+ * (POST /api/users/:id/report, POST/DELETE /api/users/:id/block).
  */
 const reportSchema = z.object({
   reason: z.enum(['spam', 'inappropriate', 'offensive', 'copyright', 'other']),
