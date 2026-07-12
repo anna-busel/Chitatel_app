@@ -56,6 +56,14 @@ const userSchema = new mongoose.Schema(
     isBanned: { type: Boolean, default: false },
     mutedUntil: { type: Date, default: null },
 
+    // Блокировка участников самим пользователем (Фаза 6, A1).
+    // Apple Guideline 1.2 требует, чтобы в приложении с UGC участник мог
+    // заблокировать другого участника — тогда его сообщения не показываются.
+    // Фильтрация на сервере: GET /api/club/chat, /chat/context, pinnedMessage
+    // и reply-снапшоты; на клиенте — входящие сообщения по WebSocket.
+    // Заблокировать администратора (автора клуба) нельзя — см. routes/users.js.
+    blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+
     isDeleted: { type: Boolean, default: false },
     deletionRequestedAt: Date,
   },
