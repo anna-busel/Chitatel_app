@@ -62,6 +62,15 @@ class ApiEndpoints {
   /// clubChatReport.
   static String userReport(String userId) => '/users/$userId/report';
 
+  // — Админ (роль admin — аккаунт Анны) —
+
+  /// POST /api/admin/qa/:questionId/answer — ответить на вопрос Q&A.
+  /// Body: { answerText } (1..5000). Доступно только с ролью admin.
+  /// Используется кнопкой «Ответить» в табе Q&A под аккаунтом Анны —
+  /// чтобы отвечать прямо из приложения, а не только из веб-админки.
+  static String adminQaAnswer(String questionId) =>
+      '/admin/qa/$questionId/answer';
+
   // — Home & Catalog —
   static const String home = '/home';
   static const String books = '/books';
