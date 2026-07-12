@@ -44,38 +44,34 @@ bool _sameDay(DateTime a, DateTime b) {
 
 /// Таб «Чат» клуба.
 ///
-/// ⚠️ 12.07.2026 — ФИКС РЕГРЕССА ЭКСПЕРИМЕНТА 1 («удалённые сообщения/фото
-/// возвращаются»):
-/// В эксперименте 1 (85c02c9) с элементов ленты были сняты ВСЕ ключи, хотя
-/// снять требовалось только GlobalKey. Без ключей ListView.builder сопоставляет
-/// элементы ПО ИНДЕКСУ: при удалении сообщения из середины нижние сдвигаются,
-/// элементы переиспользуются под чужие индексы, и пузыри с внутренним
-/// состоянием (CachedNetworkImage, VoicePlayer) показывают содержимое соседа —
-/// визуально «удалилось и снова появилось». Логи сервера при этом чистые:
-/// DELETE /chat/:messageId отрабатывает, ошибок нет.
-/// ЛЕЧЕНИЕ: `key: ValueKey(m.id)` на каждом элементе. Это НЕ GlobalKey —
-/// нет реестра ключей и reparenting-проверок, на скорость скролла не влияет,
-/// зато сопоставление элементов при удалении/вставке снова корректное.
+/// ⚠️ 12.07.2026 — ФИКС «УДАЛЁННОЕ ФОТО ВОЗВРАЩАЕТСЯ ПОСЛЕ УХОДА С ЭКРАНА».
+/// Причина (подтверждена базой: deletedAt у сообщений ПРОСТАВЛЕН, сервер
+/// удаляет корректно; liveMessagesFilter удалённые из истории не отдаёт):
+/// реальный DELETE уходит на сервер только через 4 с — окно «Отменить». Всё
+/// это время сообщение на сервере ЖИВОЕ. Если в это окно лента перезапрашивает
+/// историю (ушёл на другую вкладку/страницу и вернулся — ChatTab пересоздаётся
+/// и делает _bootstrap), сервер честно отдаёт ещё не удалённое сообщение, и оно
+/// «воскресает» в ленте. DELETE уходит следом (из dispose), поэтому в БД оно
+/// удалено — но в ленте видно до следующего перезахода.
+/// ЛЕЧЕНИЕ: `_locallyDeletedIds` — id, удалённые мной. Фильтруем ими ЛЮБОЙ
+/// входящий источник (история, контекст, WS) в единой точке `_notDeleted`.
+/// Кнопка «Отменить» работает как прежде: id снимается — сообщение возвращается.
+///
+/// ⚠️ 12.07.2026 — КЛЮЧИ ЭЛЕМЕНТОВ ЛЕНТЫ (регресс эксперимента 1, 85c02c9):
+/// убирать надо было только GlobalKey, но были сняты ВСЕ ключи. Без ключей
+/// ListView.builder сопоставляет элементы по индексу → при удалении из середины
+/// элементы с внутренним состоянием переиспользуются под чужие индексы.
+/// Возвращён `key: ValueKey(m.id)` — это НЕ GlobalKey, на скролл не влияет.
 /// ⛔️ НИКОГДА не убирать ключи из itemBuilder ленты чата.
 ///
-/// ⚠️ 12.07.2026 — СНЕКБАР «Сообщение удалено» ЗАКРЫВАЕМ САМИ:
-/// после апгрейда стека (Flutter 3.44) снекбар с кнопкой действия перестал
-/// уходить по `duration` и висел бесконечно. Теперь `_hideDeleteSnackBar()`
-/// вызывается явно — при «Отменить» и при истечении окна отмены (4 с).
+/// ⚠️ 12.07.2026 — СНЕКБАР «Сообщение удалено» ЗАКРЫВАЕМ САМИ: после апгрейда
+/// стека (Flutter 3.44) он перестал уходить по `duration` и висел бесконечно.
 ///
-/// ⚠️ 12.07.2026 — ЭКСПЕРИМЕНТ 2:
-/// 1. ТЕКСТУРА БУМАГИ УБРАНА (по ощущениям юзера скролл стал легче — вклад
-///    текстуры подтверждён): десятки тысяч `drawCircle` на полноэкранном слое.
-/// 2. АВТОСКРОЛЛ ПОСЛЕ ОТПРАВКИ — настоящая причина найдена (баг, не «недоезд»):
-///    в `_insertOwnMessage` первым делом стоял ранний `return` при дубле id.
-///    WS-эхо своего сообщения часто прилетает РАНЬШЕ ответа POST → сообщение
-///    уже в ленте → return → `_scrollToBottom()` НЕ вызывался вообще. Теперь
-///    дедупликация касается ТОЛЬКО вставки, скролл вниз выполняется всегда,
-///    когда сообщение отправила я.
+/// ⚠️ 12.07.2026 — ЭКСПЕРИМЕНТ 2: текстура бумаги убрана (по ощущениям юзера
+/// скролл стал легче — вклад текстуры подтверждён); автоскролл после отправки
+/// починен (ранний `return` при WS-эхе съедал вызов скролла).
 ///
 /// Real-time через Socket.io (singleton; виджет не рвёт сокет — урок #16).
-/// Отправка: своё сообщение вставляется сразу из ответа POST, WS-эхо
-/// отсекается дедупликацией по id. Закреп — из history.pinnedMessage.
 /// Удаление — оптимистично + SnackBar «Отменить» (окно 4с).
 /// ПРОИЗВОДИТЕЛЬНОСТЬ: RepaintBoundary на каждом элементе, cacheExtent 600,
 /// пузыри без теней (рамка), клипы hardEdge — см. chat_message_bubble.
@@ -100,6 +96,11 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   final Set<String> _adminIds = {};
   final Set<String> _readSent = {};
   Timer? _readDebounce;
+
+  /// Id сообщений, удалённых МНОЙ локально (см. шапку файла).
+  /// Живёт только внутри этого экрана: сервер/БД не трогает, умирает вместе
+  /// с State. Снимается при «Отменить» и при ошибке удаления (откат).
+  final Set<String> _locallyDeletedIds = {};
 
   Timer? _deleteTimer;
   ChatMessage? _pendingDeleteMessage;
@@ -152,8 +153,12 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     super.dispose();
   }
 
-  Iterable<ChatMessage> _notDeleted(Iterable<ChatMessage> src) =>
-      src.where((m) => !m.isDeleted);
+  /// Единая точка фильтрации ЛЮБОГО входящего списка сообщений (история,
+  /// контекст). Отсекает: удалённые на сервере (deletedAt) и удалённые мной
+  /// локально, пока идёт окно отмены и DELETE ещё не дошёл до сервера.
+  Iterable<ChatMessage> _notDeleted(Iterable<ChatMessage> src) => src.where(
+        (m) => !m.isDeleted && !_locallyDeletedIds.contains(m.id),
+      );
 
   /// Прокрутка к низу (низ = offset 0 при reverse:true).
   /// Издалека — мгновенный jumpTo (анимация по длинной ленте переменной высоты
@@ -257,6 +262,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     if (!mounted) return;
 
     if (event is ChatNewMessageEvent) {
+      // Удалённое мной не может вернуться даже через WS.
+      if (_locallyDeletedIds.contains(event.message.id)) return;
       if (_messages.any((m) => m.id == event.message.id)) return;
       final isMine = event.message.isMine(_currentUserId);
       setState(() {
@@ -670,6 +677,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     _pendingDeleteMessage = message;
     _pendingDeleteIndex = idx;
     _pendingDeleteWasPinned = _pinnedMessageId == messageId;
+    // Пока DELETE не ушёл на сервер (окно отмены), сообщение не должно
+    // вернуться в ленту ни из истории, ни из WS.
+    _locallyDeletedIds.add(messageId);
 
     setState(() {
       _messages.removeAt(idx);
@@ -717,6 +727,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     final message = _pendingDeleteMessage;
     if (message == null) return;
 
+    // Отмена — снимаем локальную пометку удаления.
+    _locallyDeletedIds.remove(message.id);
+
     setState(() {
       final insertAt = _pendingDeleteIndex.clamp(0, _messages.length);
       _messages.insert(insertAt, message);
@@ -763,6 +776,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       await api.deleteMessage(message.id);
     } on DioException catch (e) {
       if (!mounted) return;
+      // Сервер не принял удаление — снимаем локальную пометку и возвращаем.
+      _locallyDeletedIds.remove(message.id);
       setState(() {
         if (!_messages.any((m) => m.id == message.id)) {
           _messages.insert(0, message);
@@ -1240,8 +1255,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                             // ключей ListView сопоставляет элементы по индексу
                             // → при удалении сообщения элементы с внутренним
                             // состоянием (картинка, голосовое) переиспользуются
-                            // под чужие индексы и «воскрешают» удалённое.
-                            // ValueKey — не GlobalKey: на скролл не влияет.
+                            // под чужие индексы. ValueKey — не GlobalKey.
                             if (!showDateHeader) {
                               return RepaintBoundary(
                                 key: ValueKey(m.id),
