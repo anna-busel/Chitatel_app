@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ЧИТАТЕЛЬ — модерация</title>
+<!--
+  Админка модерации (Фаза 6, блок A5 аудита).
+
+  Зачем: Apple Guideline 1.2 требует реакции на жалобу в течение 24 часов.
+  Серверные эндпоинты (/api/admin/*) существовали с задачи 4.4, но интерфейса
+  не было нигде — разобрать жалобу или ответить на вопрос Q&A можно было только
+  вручную через curl. То есть требование физически не выполнялось.
+
+  Что здесь: одна страница без сборки (никакого React/Vite — не нужно).
+  Раздаётся Express'ом: https://api.chitatel.app/admin
+  Вход — почта и пароль Анны (роль admin), токен живёт только в памяти вкладки.
+
+  Разделы:
+  - Жалобы: список pending → скрыть сообщение / предупредить / мьют / бан / отклонить
+  - Вопросы: неотвеченные Q&A → написать ответ → опубликовать
+-->
+<style>
+  :root {
+    --bg: #FAF8F5;
+    --card: #FFFFFF;
+    --border: #E8E2DA;
+    --text: #2C2825;
+    --muted: #8A8078;
+    --accent: #C4704F;
+    --danger: #C0392B;
+    --ok: #2D7F5E;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+  header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--card);
+  }
+  h1 { font-size: 18px; margin: 0; }
+  main { max-width: 860px; margin: 0 auto; padding: 20px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input, textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font: inherit;
+    background: #fff;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  textarea { min-height: 90px; resize: vertical; }
+  button {
+    font: inherit;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    cursor: pointer;
+  }
+  button:hover { background: #F4EFE9; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .quote {
+    background: #F4EFE9;
+    border-left: 3px solid var(--accent);
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin: 10px 0;
+    white-space: pre-wrap;
+  }
+  .empty { color: var(--muted); text-align: center; padding: 32px 0; }
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: var(--text); color: #fff; padding: 10px 16px; border-radius: 8px;
+    display: none;
+  }
+  .hidden { display: none; }
+  .stats { display: flex; gap: 16px; font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ЧИТАТЕЛЬ · модерация</h1>
+  <div class="stats" id="stats"></div>
+</header>
+
+<main>
+  <!-- Вход -->
+  <section id="login" class="card">
+    <h2 style="margin-top:0;font-size:16px;">Вход</h2>
+    <label>Почта</label>
+    <input id="email" type="email" autocomplete="username" placeholder="anna@chitatel.app" />
+    <label>Пароль</label>
+    <input id="password" type="password" autocomplete="current-password" />
+    <button class="primary" id="loginBtn">Войти</button>
+    <div class="meta" id="loginError" style="color:var(--danger);margin-top:8px;"></div>
+  </section>
+
+  <!-- Рабочая область -->
+  <section id="work" class="hidden">
+    <div class="tabs">
+      <button id="tabReports" class="active">Жалобы</button>
+      <button id="tabQa">Вопросы</button>
+      <button id="refreshBtn" style="margin-left:auto;">Обновить</button>
+    </div>
+    <div id="list"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // Токен живёт только в памяти вкладки: закрыл — вышел. Для админки с одним
+  // пользователем этого достаточно, и токен не лежит в localStorage.
+  let token = null;
+  let tab = 'reports';
+
+  const $ = (id) => document.getElementById(id);
+
+  function toast(text) {
+    const t = $('toast');
+    t.textContent = text;
+    t.style.display = 'block';
+    setTimeout(() => { t.style.display = 'none'; }, 2500);
+  }
+
+  async function api(path, options = {}) {
+    const res = await fetch('/api' + path, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        ...(options.headers || {}),
+      },
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body.success === false) {
+      const message = (body.error && body.error.message) || 'Ошибка запроса';
+      throw new Error(message);
+    }
+    return body.data;
+  }
+
+  async function login() {
+    $('loginError').textContent = '';
+    try {
+      const data = await api('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: $('email').value.trim(),
+          password: $('password').value,
+        }),
+      });
+      if (!data.user || data.user.role !== 'admin') {
+        throw new Error('Этот аккаунт не администратор');
+      }
+      token = data.accessToken;
+      $('login').classList.add('hidden');
+      $('work').classList.remove('hidden');
+      await Promise.all([loadStats(), load()]);
+    } catch (err) {
+      $('loginError').textContent = err.message;
+    }
+  }
+
+  async function loadStats() {
+    try {
+      const data = await api('/admin/stats');
+      $('stats').innerHTML =
+        '<span>Жалоб: ' + data.pendingReports + '</span>' +
+        '<span>Вопросов без ответа: ' + data.unansweredQuestions + '</span>' +
+        '<span>Подписчиц: ' + data.activeSubscribers + '</span>';
+    } catch (_e) {
+      $('stats').textContent = '';
+    }
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
+  const REASONS = {
+    spam: 'Спам',
+    inappropriate: 'Неуместный контент',
+    offensive: 'Оскорбления',
+    copyright: 'Авторские права',
+    other: 'Другое',
+  };
+
+  // — Жалобы —
+  async function loadReports() {
+    const data = await api('/admin/reports?status=pending&limit=50');
+    const reports = data.reports || [];
+    if (reports.length === 0) {
+      $('list').innerHTML = '<div class="empty">Жалоб нет. Всё спокойно.</div>';
+      return;
+    }
+
+    $('list').innerHTML = reports.map((r) => {
+      const target = r.target || {};
+      const isMessage = r.targetType === 'message';
+      const author = isMessage
+        ? (target.userId && target.userId.name) || 'Участница'
+        : target.name || 'Участница';
+      const content = isMessage
+        ? (target.text || (target.type === 'image' ? '[картинка]' : target.type === 'voice' ? '[голосовое]' : ''))
+        : 'Жалоба на участницу целиком';
+
+      return (
+        '<div class="card" data-id="' + r._id + '">' +
+          '<div class="meta">' + fmtDate(r.createdAt) + ' · причина: ' +
+            (REASONS[r.reason] || r.reason) + '</div>' +
+          '<div><b>' + escapeHtml(author) + '</b>' +
+            (isMessage ? '' : ' (жалоба на пользователя)') + '</div>' +
+          '<div class="quote">' + escapeHtml(content) + '</div>' +
+          (r.comment ? '<div class="meta">Комментарий: ' + escapeHtml(r.comment) + '</div>' : '') +
+          '<div class="row">' +
+            (isMessage ? '<button data-action="hide_message">Скрыть сообщение</button>' : '') +
+            '<button data-action="warn_user">Предупредить</button>' +
+            '<button data-action="mute_user">Мьют 7 дней</button>' +
+            '<button class="danger" data-action="ban_user">Забанить</button>' +
+            '<button data-action="dismiss">Отклонить</button>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    $('list').querySelectorAll('button[data-action]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const card = btn.closest('.card');
+        applyAction(card.dataset.id, btn.dataset.action, card);
+      });
+    });
+  }
+
+  async function applyAction(reportId, action, card) {
+    card.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      const payload = { action };
+      if (action === 'mute_user') payload.muteDays = 7;
+      await api('/admin/reports/' + reportId + '/action', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      card.remove();
+      toast('Готово');
+      loadStats();
+      if (!$('list').querySelector('.card')) {
+        $('list').innerHTML = '<div class="empty">Жалоб нет. Всё спокойно.</div>';
+      }
+    } catch (err) {
+      toast(err.message);
+      card.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+    }
+  }
+
+  // — Вопросы Q&A —
+  async function loadQa() {
+    const data = await api('/admin/qa/unanswered?limit=50');
+    const questions = data.questions || [];
+    if (questions.length === 0) {
+      $('list').innerHTML = '<div class="empty">Все вопросы отвечены.</div>';
+      return;
+    }
+
+    $('list').innerHTML = questions.map((q) => {
+      const who = (q.userId && q.userId.name) || 'Участница';
+      return (
+        '<div class="card" data-id="' + q._id + '">' +
+          '<div class="meta">' + fmtDate(q.createdAt) + ' · ' + escapeHtml(who) + '</div>' +
+          '<div class="quote">' + escapeHtml(q.questionText) + '</div>' +
+          '<textarea placeholder="Ваш ответ"></textarea>' +
+          '<button class="primary" data-answer>Опубликовать ответ</button>' +
+        '</div>'
+      );
+    }).join('');
+
+    $('list').querySelectorAll('button[data-answer]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const card = btn.closest('.card');
+        const text = card.querySelector('textarea').value.trim();
+        if (!text) { toast('Ответ пустой'); return; }
+        answer(card.dataset.id, text, card);
+      });
+    });
+  }
+
+  async function answer(questionId, answerText, card) {
+    card.querySelectorAll('button, textarea').forEach((b) => { b.disabled = true; });
+    try {
+      await api('/admin/qa/' + questionId + '/answer', {
+        method: 'POST',
+        body: JSON.stringify({ answerText }),
+      });
+      card.remove();
+      toast('Ответ опубликован');
+      loadStats();
+      if (!$('list').querySelector('.card')) {
+        $('list').innerHTML = '<div class="empty">Все вопросы отвечены.</div>';
+      }
+    } catch (err) {
+      toast(err.message);
+      card.querySelectorAll('button, textarea').forEach((b) => { b.disabled = false; });
+    }
+  }
+
+  async function load() {
+    $('list').innerHTML = '<div class="empty">Загрузка…</div>';
+    try {
+      if (tab === 'reports') await loadReports();
+      else await loadQa();
+    } catch (err) {
+      $('list').innerHTML = '<div class="empty">' + escapeHtml(err.message) + '</div>';
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  $('loginBtn').addEventListener('click', login);
+  $('password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') login();
+  });
+  $('refreshBtn').addEventListener('click', () => { loadStats(); load(); });
+  $('tabReports').addEventListener('click', () => {
+    tab = 'reports';
+    $('tabReports').classList.add('active');
+    $('tabQa').classList.remove('active');
+    load();
+  });
+  $('tabQa').addEventListener('click', () => {
+    tab = 'qa';
+    $('tabQa').classList.add('active');
+    $('tabReports').classList.remove('active');
+    load();
+  });
+</script>
+
+</body>
+</html>
