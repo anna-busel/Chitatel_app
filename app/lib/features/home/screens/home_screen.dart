@@ -4,6 +4,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
 import '../../../shared/widgets/error_view.dart';
+import '../../diary/widgets/quote_sheet.dart';
 import '../../payments/screens/paywall_screen.dart';
 import '../../payments/season_window.dart';
 import '../providers/home_provider.dart';
@@ -26,6 +27,10 @@ import '../widgets/referral_banner.dart';
 /// сезона). Тексты — season_window.dart. Тап → paywall. Вне окон отсутствует.
 /// НЕ карусель и НЕ авторотация (осознанное решение — баннерная слепота).
 ///
+/// FAB-перо (задача 5.3): открывает шторку «Новая цитата» (4.17).
+/// Живёт только на главной и в дневнике — там, где есть текст, который может
+/// зацепить. В каталоге/клубе/профиле его нет (в чате перекрывал бы ленту).
+///
 /// Обновление: pull-to-refresh (invalidate homeProvider).
 /// Ошибка: ErrorView с кнопкой «Попробовать снова».
 class HomeScreen extends ConsumerWidget {
@@ -38,61 +43,113 @@ class HomeScreen extends ConsumerWidget {
 
     return Container(
       color: AppColors.background,
-      child: Column(
+      child: Stack(
         children: [
-          const HomeHeader(),
-          Expanded(
-            child: homeAsync.when(
-              data: (data) => RefreshIndicator(
-                onRefresh: () async {
-                  ref.invalidate(homeProvider);
-                  await ref.read(homeProvider.future);
-                },
-                color: AppColors.terracotta,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.only(top: 8, bottom: 32),
-                  children: [
-                    ClubMonthCard(
-                      book: data.clubBook,
-                      monthLabel: data.clubMonthLabel,
+          Column(
+            children: [
+              const HomeHeader(),
+              Expanded(
+                child: homeAsync.when(
+                  data: (data) => RefreshIndicator(
+                    onRefresh: () async {
+                      ref.invalidate(homeProvider);
+                      await ref.read(homeProvider.future);
+                    },
+                    color: AppColors.terracotta,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      // Нижний отступ увеличен под FAB — чтобы перо не
+                      // перекрывало последний блок ленты.
+                      padding: const EdgeInsets.only(top: 8, bottom: 96),
+                      children: [
+                        ClubMonthCard(
+                          book: data.clubBook,
+                          monthLabel: data.clubMonthLabel,
+                        ),
+                        if (seasonText != null) ...[
+                          const SizedBox(height: 10),
+                          _SeasonHomeBanner(
+                            text: seasonText,
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const PaywallScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                        const SizedBox(height: 20),
+                        if (data.dailyQuote != null) ...[
+                          DailyQuoteCard(quote: data.dailyQuote!),
+                          const SizedBox(height: 24),
+                        ],
+                        FreeBooksSection(books: data.freeBooks),
+                        if (data.freeBooks.isNotEmpty) const SizedBox(height: 24),
+                        const ProgressCard(),
+                        const SizedBox(height: 24),
+                        PopularBooksSection(books: data.popularBooks),
+                        if (data.popularBooks.isNotEmpty)
+                          const SizedBox(height: 24),
+                        const ReferralBanner(),
+                      ],
                     ),
-                    if (seasonText != null) ...[
-                      const SizedBox(height: 10),
-                      _SeasonHomeBanner(
-                        text: seasonText,
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const PaywallScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                    const SizedBox(height: 20),
-                    if (data.dailyQuote != null) ...[
-                      DailyQuoteCard(quote: data.dailyQuote!),
-                      const SizedBox(height: 24),
-                    ],
-                    FreeBooksSection(books: data.freeBooks),
-                    if (data.freeBooks.isNotEmpty) const SizedBox(height: 24),
-                    const ProgressCard(),
-                    const SizedBox(height: 24),
-                    PopularBooksSection(books: data.popularBooks),
-                    if (data.popularBooks.isNotEmpty) const SizedBox(height: 24),
-                    const ReferralBanner(),
-                  ],
+                  ),
+                  loading: () => const HomeShimmer(),
+                  error: (err, _) => ErrorView(
+                    message: 'Не удалось загрузить главную',
+                    onRetry: () => ref.invalidate(homeProvider),
+                  ),
                 ),
               ),
-              loading: () => const HomeShimmer(),
-              error: (err, _) => ErrorView(
-                message: 'Не удалось загрузить главную',
-                onRetry: () => ref.invalidate(homeProvider),
-              ),
+            ],
+          ),
+
+          // FAB «Новая цитата» (перо). Показывается только когда главная
+          // загрузилась — на шиммере и экране ошибки он бессмыслен.
+          if (homeAsync.hasValue)
+            Positioned(
+              right: 20,
+              bottom: 20,
+              child: _QuoteFab(onTap: () => showQuoteSheet(context)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Плавающая кнопка «Новая цитата» (перо) — прототип v4.2.
+class _QuoteFab extends StatelessWidget {
+  const _QuoteFab({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Новая цитата',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(26),
+          child: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: AppColors.terracotta,
+              borderRadius: BorderRadius.circular(26),
+              boxShadow: AppColors.buttonShadow,
+            ),
+            child: const Icon(
+              Icons.edit_outlined,
+              size: 22,
+              color: Colors.white,
             ),
           ),
-        ],
+        ),
       ),
     );
   }
