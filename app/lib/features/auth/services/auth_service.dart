@@ -53,20 +53,28 @@ class AuthService {
   }
 
   /// POST /api/auth/apple
-  /// {identityToken, fullName?} → {accessToken, refreshToken, user, isNewUser}
+  /// {identityToken, authorizationCode?, fullName?} → {accessToken, refreshToken, user, isNewUser}
   ///
   /// Бэкенд (server/src/services/apple-auth.service.js) верифицирует
   /// identityToken через Apple JWKS, извлекает sub→appleUserId и email
   /// (email может отсутствовать — private relay). fullName передаём ТОЛЬКО
   /// при первой авторизации (Apple отдаёт имя один раз; в самом токене его нет).
+  ///
+  /// authorizationCode (Фаза 6, A2): одноразовый код, который сервер обменивает
+  /// на refresh-токен Apple. Он нужен ровно для одного — отозвать доступ
+  /// приложения при удалении аккаунта (этого требует Apple от приложений с
+  /// Sign in with Apple). Без него удаление аккаунта пройдёт, но без revoke.
   Future<Map<String, dynamic>> appleSignIn({
     required String identityToken,
+    String? authorizationCode,
     String? fullName,
   }) async {
     final response = await _apiClient.dio.post(
       ApiEndpoints.apple,
       data: {
         'identityToken': identityToken,
+        if (authorizationCode != null && authorizationCode.isNotEmpty)
+          'authorizationCode': authorizationCode,
         if (fullName != null && fullName.isNotEmpty) 'fullName': fullName,
       },
     );
