@@ -1,8 +1,10 @@
+const fs = require('fs');
 const appleSignin = require('apple-signin-auth');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const config = require('../config');
+const logger = require('../config/logger');
 const { AppError } = require('../middleware/error');
 
 /**
@@ -32,6 +34,7 @@ const sanitizeUser = (user) => {
   const obj = user.toObject();
   delete obj.passwordHash;
   delete obj.refreshTokens;
+  delete obj.appleRefreshToken;
   delete obj.__v;
   return obj;
 };
@@ -44,6 +47,92 @@ const generateReferralCode = () => {
 };
 
 /**
+ * client_secret для серверных запросов к Apple (обмен кода, отзыв доступа).
+ * Подписывается .p8-ключом Sign in with Apple (НЕ ключом покупок!).
+ *
+ * Возвращает null, если ключ не настроен — тогда обмен кода и revoke просто
+ * не выполняются, а вход и удаление аккаунта продолжают работать.
+ */
+const getClientSecret = () => {
+  const { teamId, keyId, privateKeyPath, clientId } = config.apple;
+  if (!teamId || !keyId || !privateKeyPath) return null;
+
+  let privateKey;
+  try {
+    privateKey = fs.readFileSync(privateKeyPath, 'utf8');
+  } catch (_err) {
+    logger.warn('Apple private key file not readable', { privateKeyPath });
+    return null;
+  }
+
+  try {
+    return appleSignin.getClientSecret({
+      clientID: clientId,
+      teamID: teamId,
+      privateKey,
+      keyIdentifier: keyId,
+    });
+  } catch (err) {
+    logger.warn('Failed to build Apple client secret', { message: err.message });
+    return null;
+  }
+};
+
+/**
+ * Обменять authorizationCode (одноразовый, приходит от клиента при входе) на
+ * refresh-токен Apple. Он нужен РОВНО для одного — отозвать доступ приложения
+ * при удалении аккаунта (Apple 5.1.1(v) + требование revoke).
+ *
+ * Ошибки не пробрасываем: если обмен не удался (нет ключа, Apple недоступен),
+ * вход всё равно должен пройти — пользователь не виноват.
+ */
+const exchangeAuthorizationCode = async (authorizationCode) => {
+  if (!authorizationCode) return null;
+
+  const clientSecret = getClientSecret();
+  if (!clientSecret) return null;
+
+  try {
+    const response = await appleSignin.getAuthorizationToken(authorizationCode, {
+      clientID: config.apple.clientId,
+      clientSecret,
+    });
+    return response && response.refresh_token ? response.refresh_token : null;
+  } catch (err) {
+    logger.warn('Apple authorization code exchange failed', {
+      message: err.message,
+    });
+    return null;
+  }
+};
+
+/**
+ * Отозвать доступ приложения у Apple (вызывается при удалении аккаунта).
+ * Возвращает true если отзыв прошёл, false если нечего/нечем отзывать.
+ */
+const revokeAppleAccess = async (appleRefreshToken) => {
+  if (!appleRefreshToken) return false;
+
+  const clientSecret = getClientSecret();
+  if (!clientSecret) {
+    logger.warn('Apple revoke skipped — Sign in with Apple key not configured');
+    return false;
+  }
+
+  try {
+    await appleSignin.revokeAuthorizationToken(appleRefreshToken, {
+      clientID: config.apple.clientId,
+      clientSecret,
+      tokenTypeHint: 'refresh_token',
+    });
+    return true;
+  } catch (err) {
+    logger.warn('Apple token revoke failed', { message: err.message });
+    return false;
+  }
+};
+
+/**
  * POST /api/auth/apple
  * MASTER 7.4: { identityToken, authorizationCode, fullName } → { accessToken, refreshToken, user, isNewUser }
  * MASTER 12.1: верификация identity token через Apple JWKS (public keys)
@@ -53,9 +142,15 @@ const generateReferralCode = () => {
  *    может быть private relay xxx@privaterelay.appleid.com или вовсе отсутствовать)
  * 3. Имя (fullName) приходит от клиента ТОЛЬКО при первой авторизации — в identityToken его нет
  * 4. Найти/создать User с appleUserId = sub
- * 5. Выдать JWT tokens
+ * 5. Обменять authorizationCode на refresh-токен Apple и сохранить его —
+ *    понадобится, чтобы отозвать доступ при удалении аккаунта (Фаза 6, A2)
+ * 6. Выдать JWT tokens
  */
-const authenticateWithApple = async ({ identityToken, fullName }) => {
+const authenticateWithApple = async ({
+  identityToken,
+  authorizationCode,
+  fullName,
+}) => {
   let payload;
   try {
     payload = await appleSignin.verifyIdToken(identityToken, {
@@ -71,6 +166,10 @@ const authenticateWithApple = async ({ identityToken, fullName }) => {
 
   const appleUserId = payload.sub;
   const email = payload.email ? payload.email.toLowerCase() : null;
+
+  // Обмен кода на refresh-токен Apple (для будущего revoke при удалении).
+  // Код одноразовый и живёт 5 минут — обмениваем сразу при входе.
+  const appleRefreshToken = await exchangeAuthorizationCode(authorizationCode);
 
   // Ищем существующего пользователя по appleUserId
   let user = await User.findOne({ appleUserId, isDeleted: false });
@@ -100,6 +199,11 @@ const authenticateWithApple = async ({ identityToken, fullName }) => {
       }
       user = new User(userData);
     }
+  }
+
+  // Свежий refresh-токен Apple перезаписывает старый (если обмен удался).
+  if (appleRefreshToken) {
+    user.appleRefreshToken = appleRefreshToken;
   }
 
   const tokens = generateTokens(user._id || undefined);
@@ -134,4 +238,4 @@ const authenticateWithApple = async ({ identityToken, fullName }) => {
   };
 };
 
-module.exports = { authenticateWithApple };
+module.exports = { authenticateWithApple, revokeAppleAccess };
