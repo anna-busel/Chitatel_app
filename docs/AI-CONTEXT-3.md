@@ -2,27 +2,69 @@
 
 > **ТРЕТИЙ ФАЙЛ КОНТЕКСТА.** Предыдущие: `AI-CONTEXT.md` (база, Фазы 1-2, чат 4.1-4.8, уроки #1-19) и `AI-CONTEXT-2.md` (Фаза 4, задачи 1.3/1.7/1.8, уроки #20-27).
 >
-> **Порядок чтения для AI:** `AI-CONTEXT.md` → `AI-CONTEXT-2.md` → **этот файл** → `docs/AUDIT-2026-07.md` (чек-лист аудита; **[08.07: залит в репо, `90cc47e`, с пометками]**).
+> **Порядок чтения для AI:** `AI-CONTEXT.md` → `AI-CONTEXT-2.md` → **этот файл** → `docs/AUDIT-2026-07.md`.
 >
 > **Прогресс фиксировать ДАЛЕЕ ТОЛЬКО ЗДЕСЬ.** Первые два не редактировать (архив).
->
-> ⚠️ **Юзеру:** добавить упоминание `AI-CONTEXT-3.md` в Project Instructions проекта Claude.
 
 ---
 
-## ТЕКУЩИЙ СТАТУС (на 08.07.2026)
+## ТЕКУЩИЙ СТАТУС (на 12.07.2026)
 
-**✅ ФИНАЛЬНАЯ КАЛЕНДАРНАЯ МОДЕЛЬ ДОСТУПА К КЛУБУ — В `main` (08.07).** Заменяет старую «скользящее окно + 21/31 день». Клуб доступен полноценно (чтение+запись) весь свой календарный месяц + весь СЛЕДУЮЩИЙ календарный месяц (архив; в архиве МОЖНО ПИСАТЬ). Привязка к календарю, не к дате платежа Apple. Детали и коммиты — «СЕССИЯ 08.07».
+**✅ ПЛАТЁЖНЫЙ КОНТУР ПОДПИСОК ЗАКРЫТ ЖИВЫМИ ПОКУПКАМИ (09-12.07):** апгрейд стека починил verify (JWS); куплены вживую monthly И season; продление двигает дату; отмена = доступ до конца периода; restore по кнопке; переходы в клуб без застреваний. Детали — СЕССИЯ 09-12.07.
 
-**✅ ПЕРВАЯ ЖИВАЯ ПОКУПКА (sandbox) ПРОШЛА (08.07):** monthly → verify 200 → Purchase в Mongo → subscriptionStatus=basic (юзер test-expired стал basic) → клуб открылся ПОСЛЕ ручного перезапуска приложения.
+**✅ СТЕК ОБНОВЛЁН:** Flutter 3.44.6 + Xcode 26.4 (codemagic.yaml), in_app_purchase ^3.3.0, record ^6, just_audio ^0.10, go_router ^14, rxdart ^0.28. Билд 10+. Плеер жив; голосовые под Анной НЕ проверены.
 
-**✅ AUDIT-2026-07.md залит в репо (`90cc47e`, с пометками юзера).**
+**✅ СЕЗОНЫ СДЕЛАНЫ:** окна продаж (анонс с 15-го, покупка весь первый месяц), финальные тексты («по цене двух», «в течение сентября»), карточка/анонс на paywall + плашка в клубе + полоска на главной. Тест-ручка: тройной тап по заголовку paywall (⚠️ убрать в Фазе 7).
 
-**⏭️ НЕРЕШЁННЫЕ ЗАДАЧИ (переходить к ним по одной, СПРАШИВАТЬ перед кодом):** (1) доступ к книге текущего клуба для подписчика — править клиент `book_screen.dart`, сервер готов; (2) «сразу в клуб после покупки» (`9c083f9`) — код написан, НЕ проверен на билде; (3) рассинхрон цен подписки 27.99/34.99 — действия в ASC, не код; (4) цены каталога из StoreKit. Полные формулировки — «СЕССИЯ 08.07 → ЗАДАЧИ НЕ РЕШЕНЫ».
+**⚠️ ТЕСТОВАЯ СРЕДА TESTFLIGHT — ПРАВИЛА ПОНЯТЫ (важно!):** sandbox-тестеры из ASC в TestFlight НЕ работают («cannot be used with iTunes Store» — by design, тестеры только для Xcode-билдов). Покупки идут под ЛИЧНЫМ Apple ID тестировщика, молча, деньги не списываются; историю покупок стереть НЕЛЬЗЯ; подписки в Настройках не видны; периоды сжатые. Раздел Sandbox Account не появляется без Developer-режима (нужен мак). Нормальная среда (StoreKit Configuration / sandbox-тестеры) = мак с Xcode; облачный мак ~$30/мес — к этапу доводки.
 
-**ПРИМЕНИТЬ (юзер сделает сам):** сервер `git pull` + `pm2 restart chitatel-api` + `cd server && npm run seed:club`; новый билд Codemagic (клиентские правки клуба+платежей).
+**⏭️ СЛЕДУЮЩЕЕ:** проверки последнего билда (чат-скролл на Impeller, картинки чата, плашка у сезонницы, голосовые под Анной) → скрипт 64 разборов (ждёт: роль ключа UN4ZB8T93H App Manager?, скрины юзера, картинки).
 
-**⚠️ СТРАТЕГИЧЕСКОЕ: аудитория РФ+РБ+Грузия. Apple-оплата в РФ/РБ НЕ работает. Канал №1 по деньгам — САЙТ + КОДЫ АКТИВАЦИИ.**
+**ПРИМЕНИТЬ:** сервер `git pull` + `pm2 restart` (plan в clubAccess, фикс home.js); билд Codemagic (Impeller, клипы, плашка).
+
+**⚠️ СТРАТЕГИЧЕСКОЕ: аудитория РФ+РБ+Грузия. Apple-оплата в РФ/РБ НЕ работает. Канал №1 — САЙТ + КОДЫ АКТИВАЦИИ.**
+
+---
+
+## ✅ СЕССИЯ 09-12.07.2026 — АПГРЕЙД СТЕКА, ПЛАТЕЖИ ЗАКРЫТЫ, СЕЗОНЫ, ЧАТ
+
+### 1. Апгрейд стека (главный блокер решён)
+Verify падал `status:1` (INVALID_JWT_FORMAT): старый in_app_purchase/storekit давал битый JWS. Решение: Flutter 3.22→3.44.6, xcode latest (26.4) в codemagic.yaml; in_app_purchase ^3.3.0, record 5→6, just_audio ^0.10.4, audio_session ^0.2.2, rxdart ^0.28, go_router ^14.6.2, sdk>=3.6. После апгрейда verify проходит. Плеер работает; **голосовые под Анной НЕ проверены** (record менял API).
+
+### 2. Платежи — все сценарии живьём
+- **Покупка monthly** ✅ (paywall→оплата→verify→basic→клуб). **Покупка season** ✅ (в базе `subscriptionPlan:'season'`; срок в TestFlight сжат — норма среды).
+- **Продление** ✅ (дата subscriptionExpiresAt сдвигается). **Отмена** ✅ = автопродление off, доступ до конца периода (норма Apple; повторная покупка только после истечения). **Restore по кнопке** ✅ → клуб.
+- **Авто-restore при запуске УБРАН** (`3cd0c1d`, purchase_provider): StoreKit скармливает старые транзакции в purchaseStream при старте → раньше verify без разбора → подписка «тихо» реанимировалась и привязывалась к ЛЮБОМУ залогиненному юзеру (дыра: один Apple ID раздавал подписку разным аккаунтам; тесты невозможны). Теперь флаг `_restoreRequested`: restored верифицируется ТОЛЬКО после кнопки «Восстановить покупки», иначе только complete(). PaywallStatus: success (покупка) / restored (кнопка) — оба ведут в клуб (`b674636`).
+- **success_screen УДАЛЁН ИЗ ПОТОКА** (застревал, перекрывал Manage): после покупки paywall сам делает invalidate club providers + context.go('/club'). Файл success_screen.dart мёртвый в репо.
+- **Цены:** ASC верны (шторка 34.99 Грузия ✅). Рассинхрон карточек (27.99 US) = storefront-кэш TestFlight-среды; у реальных юзеров не ожидается; страховка PENDING — перезагрузка продуктов при открытии paywall.
+- **ЗАДАЧА НА ПОТОМ (вариант 2):** серверная сверка appAccountToken при verify/restore — чтобы чужую транзакцию нельзя было привязать вовсе.
+
+### 3. Сезоны (согласовано + сделано + проверено тест-ручкой)
+- `season_window.dart` (новый): фазы none/announce/open. Анонс с 15-го числа последнего месяца сезона; окно покупки = весь первый месяц (сен/дек/мар/июн); вне окон сезона нет нигде. Всё автоподстановкой (названия, месяцы, «до 30 сентября»). ⚠️ «по цене двух» честно при ценах 27.99/54.99 — при смене цен перепроверить (коммент в файле). debugNowOverride — тест-подмена даты.
+- Paywall (`d18e896`,`460ce3f`,`ad6709a`): заголовок «Одна книга в месяц, которая меняет» + подзаголовок; карточка Месяц «...отменить можно в любой момент»; карточка «Осенний сезон · 3 месяца» + «Сентябрь, октябрь и ноябрь — по цене двух месяцев. Оформление открыто до 30 сентября. Продлевается автоматически»; плашка-анонс. **Тест-жест: тройной тап по заголовку циклит реальная→20.08→05.09→10.10 (⚠️ УБРАТЬ перед сабмитом, Фаза 7).**
+- Клуб: плашка сезона (анонс/окно) → paywall; админу не показывается; **сезонницам (plan=='season') не показывается** (`3fd02f0` сервер plan в clubAccess + `4788fbe` модель + `78ccffb` условие). Известное ограничение: полоска на главной видна всем (на главной нет данных о плане).
+- Главная: статичная полоска сезона под ClubMonthCard (`113145a`), тап → paywall. НЕ карусель. После смены тест-даты — pull-to-refresh.
+- Проверено юзером: анонс/карточка/пусто по трём датам ✅. Другие сезоны не проверяем — формула общая.
+
+### 4. Фикс главной (сервер)
+`a7964f2` home.js: карточка «Клуб месяца» была пустой — искал книгу по дублирующим полям Book (isPartOfClub+clubMonth), которые seed:club не ставит. Теперь как в клубе: ClubMonth.findOne({year,month}) → Book по bookId. Требует pull+restart. Проверка юзером PENDING.
+
+### 5. Чат-лаг (диагностика + оптимизация, вердикт PENDING)
+Симптом: «стабильно замедленный» скролл, эталон Telegram. Исследование: дёрганый скролл списков с картинками — многолетняя болячка Flutter (issue #61193), НЕ от апгрейда; GlobalKey-гипотеза ослабла (замеры в статьях не показывают вклада ключей). Сделано: `f051b55` пузырь (тень→рамка 1px — тени с blur самое дорогое; AnimatedContainer→foregroundDecoration только при подсветке; RegExp упоминаний только при '@'); `caab29a` лента (RepaintBoundary на каждый элемент, cacheExtent 600); `2b7cc9c`→`0f7735f` Impeller выключен (не помогло) → ВОЗВРАЩЁН на оптимизированном чате; `284b8a6` клипы картинок antiAlias→hardEdge. Если после билда вязко — фиксируем как потолок Flutter на лентах с картинками (НЕ блокер), глубже — после релиза. Текстура бумаги вне подозрений (RepaintBoundary, рисуется один раз).
+
+### 6. База юзеров (все 6)
+anna@ (админ, anna123456); test-premium/test-basic (до 2027, seed, не трогать); test-expired@ (test123456; на нём куплен season); **g.ahmeteli@gmail.com «Georgy Akhmeteli» apple** (`6a3ec7e26c2b91e96d1ffbe9`) — юзер от Apple-входа разработчика (личный Apple ID = g.akhmeteli89@gmail.com, Apple отдал контактный ящик без k/89); **misswoolly@yandex.ru «Анна Бусел» apple/free — настоящая Анна заходила! PENDING: выдать admin-роль.** Чистка подписки: `db.users.updateOne({email:'...'},{$set:{subscriptionStatus:'expired',subscriptionExpiresAt:new Date('2026-06-01'),gracePeriodExpiresAt:null}})`.
+
+### Коммиты сессии
+`3cd0c1d` авто-restore убран · `b674636` restored→клуб · `2b7cc9c`/`0f7735f` Impeller off/on · `d18e896` сезоны v1 (3 файла) · `460ce3f` тексты season_window · `ad6709a` тексты paywall · `113145a` полоска главной · `a7964f2` фикс home.js · `f051b55` пузырь perf · `caab29a` лента perf · `284b8a6` клипы · `3fd02f0` plan сервер · `4788fbe` plan модель · `78ccffb` плашка не сезонницам · `ef07bc7` диаг-лог status (⚠️ убрать) · `15e5e27`+`a8bd5dd` книга клуба подписчику.
+
+### PENDING (по одной, спрашивать перед кодом)
+1. Проверки билда: чат-скролл (Impeller+оптимизации — вердикт!), картинки чата без артефактов, плашка скрыта у сезонницы, обложка клуба на главной (после pull+restart), голосовые под Анной.
+2. **Скрипт 64 разборов + 10 пакетов в ASC.** Ждёт: (а) роль ключа UN4ZB8T93H — ASC→Users and Access→Integrations, нужен App Manager (юзер НЕ проверил!); (б) скрины экрана книги от юзера (Review Screenshot: 1-2 скрина экрана покупки ко всем продуктам, НЕ 64 обложки); (в) юзер решил ждать «все картинки». План: пилот 2-3 → проверка руками → остальные. Цены из Mongo.
+3. Кнопка «Купить» на book_screen — заглушка → к покупке (связка с 2). Цены каталога из StoreKit (связка с 2). Перезагрузка продуктов при открытии paywall (~5 строк).
+4. Вариант 2: серверная сверка appAccountToken при verify/restore.
+5. Убрать перед сабмитом (Фаза 7): тест-жест сезонов, диаг-лог `ef07bc7`, NSUserTrackingUsageDescription (блок A4).
+6. book_screen не перечитывает доступ при возврате (мелочь). Admin-роль misswoolly@yandex.ru. DID_RENEW однажды не обновил базу — проверить B2 на продлениях. Внешний тестер со свежим Apple ID — полный цикл глазами + цены карточек. Review Notes Фазы 7: строка про сезонность; к сабмиту всё без аудио → isPublished=false. Полоска главной для сезонниц (нет данных плана на главной). Проверить в ASC: monthly и season в ОДНОЙ Subscription Group (апгрейд месяц→сезон).
 
 ---
 
@@ -46,32 +88,17 @@
 | `827f81c`→`f6fe9ce` | seed | архив = СЛЕДУЮЩИЙ календарный месяц |
 | `76f1cb78` | `club_access` | + `future` |
 | `a752973`→`1f38994` | `club_screen` | paywall-связка + баннер |
-| `9c083f9` | `success_screen` | invalidate `currentClubProvider` (⚠️ НЕ проверено на билде) |
+| `9c083f9` | `success_screen` | invalidate `currentClubProvider` **[12.07: устарело — success_screen удалён из потока]** |
 | `90cc47e` | docs | AUDIT-2026-07.md залит в репо с пометками |
 
 ### Тест покупок (первый живой, sandbox)
-Покупка monthly прошла вживую: verify 200 → Purchase в Mongo → subscriptionStatus=basic (юзер test-expired стал basic) → клуб открылся ПОСЛЕ ручного перезапуска приложения (автоматическое открытие без перезапуска — см. нерешённую задачу 2).
+Покупка monthly прошла вживую: verify 200 → Purchase в Mongo → subscriptionStatus=basic → клуб открылся после ручного перезапуска. **[09-12.07: весь контур закрыт, см. СЕССИЮ 09-12.07.]**
 
-### ⏭️ ЗАДАЧИ НЕ РЕШЕНЫ (переходить по одной, СПРАШИВАТЬ перед кодом)
-
-1. **Доступ к книге текущего клуба для подписчика — НЕ РЕШЕНО.** Подписка на клуб должна включать аудиоразбор книги текущего месяца (вариант 1). Сервер `books.js` `checkPartAccess` УЖЕ пускает подписчика (basic/premium → доступ). НО клиент `book_screen.dart` показывает кнопку «Купить» вместо «Слушать» — не учитывает подписку. Править КЛИЕНТ (`book_screen`), сервер готов. ⚠️ Заодно в `checkPartAccess` есть `user.hasArchiveAccess` (поле может отсутствовать) и комментарий «21 день» — привести к новой календарной модели. Перед кодом: прочитать `book_screen.dart` + модель `Book`.
-2. **«Сразу в клуб после покупки» — код написан (`9c083f9`), но НЕ проверен на билде.** Invalidate `currentClubProvider` в `success_screen`. Проверяется только новым билдом — подтвердить, что после покупки клуб открывается БЕЗ ручного перезапуска.
-3. **Рассинхрон цен подписки 27.99/34.99 — НЕ РЕШЕНО.** Paywall показывает `product.price` из StoreKit (код верный). 27.99 = базовая US, 34.99 = Грузия + НДС. Причина: кэш StoreKit или цена по Грузии в ASC не раскаталась. Действия (НЕ код): проверить Pricing продукта `club.basic.monthly` в ASC для Грузии; переустановить приложение (сброс кэша). Проверить на новом билде совпадение цены в карточке и при оплате.
-4. **Цены каталога (64 non-consumable разбора) — НЕ РЕШЕНО.** Когда продукты будут заведены в ASC: клиент должен брать `product.price` из StoreKit по `appleProductId`, НЕ из Mongo. Сейчас цены каталога, вероятно, из seed/Mongo. Отдельная задача при заведении продуктов.
+### ⏭️ Задачи сессии — статус на 12.07
+1. Книга текущего клуба подписчику — **СДЕЛАНО** (`15e5e27`+`a8bd5dd`). 2. «Сразу в клуб после покупки» — **РЕШЕНО ИНАЧЕ** (success_screen удалён, paywall сам ведёт в клуб). 3. Рассинхрон цен — **ПОНЯТ** (storefront-кэш TestFlight; страховка PENDING). 4. Цены каталога из StoreKit — PENDING (связка со скриптом разборов).
 
 ### ОТЛОЖЕНО (не трогать пока)
-- Сезонные окна продаж (нет дат/контента от Анны).
-- Весь блок A аудита (Фаза 6: блокировка юзера, account deletion, Privacy/Terms, Info.plist, админка жалоб).
-- Блок C (после релиза).
-- Проверка B2 на продлениях DID_RENEW в sandbox.
-
-### Применить (юзер сделает сам)
-- **Сервер:** `git pull` + `pm2 restart chitatel-api` + `cd server && npm run seed:club`.
-- **Клиент:** новый билд Codemagic (клиентские правки клуба+платежей).
-
-### Подводные камни
-- Flutter вслепую (урок #44) — компиляция клиентских правок подтвердится только билдом.
-- Вид `PaywallScreen` внутри вкладки клуба визуально НЕ проверен.
+- ~~Сезонные окна продаж~~ **[11.07: СДЕЛАНО]**. Блок A аудита (Фаза 6). Блок C (после релиза). Проверка B2 на продлениях DID_RENEW.
 
 ---
 
@@ -95,208 +122,147 @@
 | Коммит | Файл | Что |
 |--------|------|-----|
 | `ca68318` | `server/src/models/User.js` | B4: `subscriptionPlan` enum + `'season'` |
-| `8c1e133` | `server/src/services/purchase.service.js` | B4: `'season'` в SUBSCRIPTION_PLAN_ENUM. B3: новый параметр `gracePeriodExpiresAt` в `applyTransaction` (undefined=не трогать / null=снять / Date=выставить; только для subscription) |
-| `4adfe72` | `server/src/services/webhook.service.js` | B3: `DID_FAIL_TO_RENEW` → декодирует `signedRenewalInfo` (`verifyAndDecodeRenewalInfo`), grace в будущем → `statusOverride='active'` + `gracePeriodExpiresAt=дата`; `DID_RENEW`/`SUBSCRIBED`/`EXPIRED`/`REFUND` → grace снимается (null). B2: fallback-маппинг юзера по `tx.appAccountToken` (`userIdFromAppAccountToken`: UUID → снять дефисы → проверить нулевой хвост `00000000` → первые 24 hex = ObjectId → User существует). Purchase не найден И токена нет → warn+return (200 Apple) |
-| `f1b3408` | `app/.../payments/services/purchase_service.dart` | B2: статик-хелпер `appAccountTokenFromUserId` (ObjectId 24 hex + `00000000` → канонический UUID 8-4-4-4-12; не ObjectId → null); `buy()` принимает `{String? appAccountToken}` → `PurchaseParam.applicationUserName` |
-| `abd5e75` | `app/.../payments/providers/purchase_provider.dart` | B2: `PurchaseNotifier` инжектит `SecureStorage`; `buy()` читает `getUserId()` → строит токен → передаёт в сервис |
+| `8c1e133` | `server/src/services/purchase.service.js` | B4: `'season'` в SUBSCRIPTION_PLAN_ENUM. B3: параметр `gracePeriodExpiresAt` в `applyTransaction` |
+| `4adfe72` | `server/src/services/webhook.service.js` | B3: `DID_FAIL_TO_RENEW` → grace; B2: fallback-маппинг юзера по `tx.appAccountToken` |
+| `f1b3408` | `purchase_service.dart` | B2: `appAccountTokenFromUserId`; `buy()` c `applicationUserName` |
+| `abd5e75` | `purchase_provider.dart` | B2: buy() читает userId → токен |
 
-**Схема appAccountToken (зафиксировано):** Mongo ObjectId = 24 hex (12 байт), UUID = 32 hex (16 байт) → паддинг `00000000` справа, формат 8-4-4-4-12. Детерминированно и обратимо, БЕЗ изменений схемы БД. Сервер принимает только токены с нулевым хвостом (чужой случайный UUID не пройдёт). userId нет/не ObjectId → покупка без токена (как раньше, verify привяжет по JWT).
-
-### Применить фиксы
-- **Сервер** (`ca68318`, `8c1e133`, `4adfe72`): `ssh deploy@161.97.102.73` → `cd /home/deploy/chitatel/Chitatel_app` → `git checkout -- server/package-lock.json` → `git pull origin main` → `pm2 restart chitatel-api`. Зависимости не менялись, npm install не нужен. **[08.07: применено — живая покупка прошла через verify.]**
-- **Клиент** (`f1b3408`, `abd5e75`): ребилд Codemagic (Flutter вслепую, урок #44 — при падении сборки прислать лог). Токен уйдёт в Apple только из НОВОГО билда — тест продлений через webhook делать на нём.
-- ⚠️ Юзеру: добавить `docs/AUDIT-2026-07.md` в репо (передан в чате) и строку о нём в Project Instructions. **[08.07: залит в репо, `90cc47e`, с пометками.]**
+**Схема appAccountToken:** ObjectId 24 hex + паддинг `00000000` → UUID 8-4-4-4-12. Детерминированно, обратимо, сервер принимает только нулевой хвост.
 
 ---
 
 ## 🚨 ТЕХДОЛГ К ФАЗЕ 6 (ПОЛИРОВКА) — НАЙДЕНО ПРИ АУДИТЕ 28.06, РАСШИРЕНО АУДИТОМ 07.07
 
-> **Решение юзера 07.07: весь блок A аудита — единым проходом на Фазе 6.** Полный чек-лист с деталями реализации — `docs/AUDIT-2026-07.md` (блок A). Здесь — краткий список, НЕ потерять.
+> **Решение юзера 07.07: весь блок A аудита — единым проходом на Фазе 6.** Полный чек-лист — `docs/AUDIT-2026-07.md` (блок A).
 
 ### 🔴 БЛОКИРОВКА ПОЛЬЗОВАТЕЛЯ — НЕ РЕАЛИЗОВАНА (MVP + Apple Guideline 1.2, БЛОКЕР РЕВЬЮ)
-**Статус:** жалоба («Пожаловаться») работает и шлёт `Report` (pending) на сервер. А вот **самостоятельной блокировки пользователя участником НЕТ** — ни на сервере, ни в приложении. Подтверждено чтением кода 28.06 (и повторно аудитом 07.07):
-- `server/src/models/User.js` — поля `blockedUsers[]` НЕТ (есть только `isBanned`/`mutedUntil` — это инструменты модератора-Анны, не self-service).
-- `server/src/routes/club.js` — эндпоинтов `POST/DELETE /api/users/:id/block` НЕТ. Socket.io НЕ фильтрует заблокированных.
-- Шторка жалобы во Flutter — toggle «Заблокировать пользователя» отсутствует.
-
-Заложено в: STEP-BY-STEP 4.2/4.3/4.5, MASTER 4.35/4.36/7.4, 6.1 п.8 (галочка там ОШИБОЧНАЯ), секция 8.
-**Из аудита 07.07 (дополнение к объёму):** фильтровать заблокированных надо не только в GET /chat и /context, но И в `pinnedMessage`, И в reply-снапшотах (populated `replyToId`) — иначе контент протечёт через превью. Заодно: клиентский эндпоинт жалобы «на пользователя» (Report model поддерживает `targetType:'user'`, роута из клиента нет).
+Жалоба работает; самостоятельной блокировки участником НЕТ (ни сервер, ни клиент): `blockedUsers[]` нет, эндпоинтов block нет, Socket.io не фильтрует, toggle в шторке отсутствует. Фильтровать заблокированных: GET /chat, /context, pinnedMessage, reply-снапшоты. Заодно: роут жалобы «на пользователя».
 
 ### 🔴 Остальной блок A (Фаза 6, детали в AUDIT блок A):
-- **A2 Account deletion** — серверный флоу отсутствует ПОЛНОСТЬЮ (роута нет). Эндпоинт: isDeleted + вычистка PII + анонимизация сообщений; для Apple Sign In проверить требование revoke токена. Apple 5.1.1(v).
-- **A3 Privacy Policy + Terms/EULA (правила UGC, нулевая терпимость) + Support URL** на chitatel.app — сейчас заглушки.
-- **A4 Info.plist:** УДАЛИТЬ `NSUserTrackingUsageDescription` (стоит ошибочно, ключ про ATT/IDFA); переписать честно PhotoLibrary/Camera (чат, не «фото профиля»); `ITSAppUsesNonExemptEncryption=false`.
-- **A5 Минимальная админка жалоб** (web-страница поверх готовых `/api/admin/reports`) — без неё «реакция ≤24ч» нечем исполнять. Полная React-админка 6.6 — потом.
-- **A6** Убрать заглушки `_Placeholder`. **A7** Privacy labels в ASC.
+- **A2 Account deletion** — серверный флоу отсутствует ПОЛНОСТЬЮ. Apple 5.1.1(v).
+- **A3 Privacy Policy + Terms/EULA + Support URL** на chitatel.app — заглушки.
+- **A4 Info.plist:** УДАЛИТЬ `NSUserTrackingUsageDescription`; честные PhotoLibrary/Camera (чат); `ITSAppUsesNonExemptEncryption=false`.
+- **A5 Минимальная админка жалоб** (web поверх `/api/admin/reports`).
+- **A6** Убрать `_Placeholder`. **A7** Privacy labels в ASC.
 
-### 🟡 ТЁМНАЯ ТЕМА — Post-MVP, НЕ блокер (MASTER 6.2, Apple не требует).
+### 🟡 ТЁМНАЯ ТЕМА — Post-MVP, НЕ блокер.
 
 ---
 
 ## ✅ СЕССИЯ 28.06.2026 — РЕДИЗАЙН ЧАТА ДОВЕДЁН ДО КОНЦА
 
-Все оставшиеся пункты редизайна применены и запушены. Косметика поверх рабочей логики, только чат. Палитра строго из `app_colors.dart`. Claude не компилирует Flutter (урок #44) → ждёт проверки на билде. **[07.07: юзер подтвердил — билд собран, Анна оттестировала.]**
-
-### Что добавлено в этой сессии:
-3. **Бейдж «АВТОР КЛУБА» + полоска слева** у сообщений Анны (автор-админ) — коммиты `34f1824` (`chat_message_bubble.dart`: параметр `authorIsAdmin`, флаг `showAuthorBadge=authorIsAdmin && !isMine`, виджет `_AuthorBadge` terracotta на `terracotta.withOpacity(0.10)` fontSize 9 w700, `adminBorder` левая полоска terracotta 2.5px в обеих ветках inner) + `b0eca94` (`chat_tab.dart`: `Set<String> _adminIds` из `_mentionable.where(isAdmin)` в `_bootstrap`, `_authorIsAdmin(m)`, проброс `authorIsAdmin`).
-4. **Текстура бумаги на фоне** — `649d32a`. ⚠️ РЕАЛИЗОВАНО НЕ PNG (план с PNG-тайлом ОТМЕНён): прототип-HTML показал, что «бумага» = чистый CSS-паттерн из точек (radial-gradient 1px точки, шаг 3px, rgba(150,130,100,0.045)). В Dart сделано `_PaperTexturePainter` (CustomPainter, `canvas.drawCircle` r=0.6, шаг 3.0) внутри `Positioned.fill > RepaintBoundary > CustomPaint` ПОД списком. База фона `#FAFAF7` НЕ менялась. Прозрачность вынесена в ЕДИНУЮ top-level const `_paperDotOpacity = 0.08` вверху `chat_tab.dart` (поднята с прототипных 0.045 — юзер одобрил превышение, чтобы читалось на телефоне). ⚠️ Крутить эту одну цифру если на устройстве слабо/сильно.
-5. **Разделители дат** — пилюля по центру «Сегодня/Вчера/5 июня», фон `surfaceMedium #F0EDE8`, текст `textTertiary` w500, радиус 12. Коммит `1215f7e9` (`chat_tab.dart`). Хелперы top-level `_formatDateLabel(dt)` (Сегодня/Вчера/«D месяц» родит. падеж, +год для прошлых лет, сравнение toLocal) и `_sameDay(a,b)`. В `itemBuilder` (reverse:true → сосед сверху/старше = index+1): `showDateHeader` над самым старым сообщением дня; виджет `_DateSeparator`.
-6. **Аватар без дублей в серии** — коммит `1215f7e9` (тот же, `chat_tab.dart` + `chat_message_bubble.dart`). У чужих сообщений аватар только у первого в серии того же автора (после смены автора/дня/у самого старого); у остальных пустой `SizedBox(width:32)` для выравнивания. Флаг `showAvatar=!prevSameAuthor` считается в `chat_tab`, новый параметр `showAvatar` в `ChatMessageBubble` (default true; имя НЕ дедуплицируется — только аватар, по плану).
-
-⚠️ Мелочь: в коммите `1215f7e9` в ОДНОМ `///`-комментарии `chat_message_bubble.dart` (~стр. 504, доккоммент `_ActionMenuContent`) опечатка при ручном кодировании кириллицы — «применялall к всей» вместо «применялась ко всей». На компиляцию/работу НЕ влияет (комментарий). Поправить при следующей правке этого файла.
-
-### Итог редизайна (все 6 пунктов в коде, подтверждены билдом):
-1. ✅ Закреп кофейный `b3d4c4e`. 2. ✅ Скругления 18px + хвостики + компактные реакции `9d9d04c`. 3. ✅ Бейдж «Автор клуба» + полоска `34f1824`+`b0eca94`. 4. ✅ Текстура (CSS-точки CustomPainter, НЕ PNG) `649d32a`. 5. ✅ Разделители дат `1215f7e9`. 6. ✅ Аватар-серия `1215f7e9`.
-**ОТМЕНЕНО:** галочки прочтения; кофейный/коричневый в пузырях (только закреп); книжный паттерн иконками; смена базового фона.
-
-### Состояние файлов чата в репо (sha на 28.06, после редизайна):
-- `pinned_message_banner.dart` — кофейная плашка (`b3d4c4e`).
-- `chat_message_bubble.dart` — HEAD после `1215f7e9` (скругления+реакции+бейдж+showAvatar). До этого `34f1824`.
-- `chat_tab.dart` — HEAD после `1215f7e9` (удаление SnackBar, закреп, _adminIds/бейдж, текстура `_PaperTexturePainter`+`_paperDotOpacity`, даты `_DateSeparator`, аватар-серия). До этого `649d32a`.
-- `chat_message.dart` (модель) — `cb9e5318`, у `ChatAuthor` есть `id`/`name`/`avatarUrl`, `MessageReaction.containsUser`, `message.isMine`.
-- `app_colors.dart` — `744f38803`.
+Все пункты редизайна применены и подтверждены билдом (Анна оттестировала).
+1. ✅ Закреп кофейный `b3d4c4e`. 2. ✅ Скругления 18px + хвостики + компактные реакции `9d9d04c`. 3. ✅ Бейдж «Автор клуба» + полоска `34f1824`+`b0eca94`. 4. ✅ Текстура бумаги (CSS-точки CustomPainter `_PaperTexturePainter`, `_paperDotOpacity=0.08`, RepaintBoundary) `649d32a`. 5. ✅ Разделители дат `1215f7e9`. 6. ✅ Аватар-серия `1215f7e9`.
+**ОТМЕНЕНО:** галочки прочтения; кофейный в пузырях; книжный паттерн; смена базового фона.
+**[11-12.07: chat_message_bubble и chat_tab переписаны оптимизацией — тень→рамка, foregroundDecoration, RepaintBoundary на элементы, cacheExtent; опечатка «применялall» исправлена попутно.]**
 
 ---
 
 ## ✅ СЕССИЯ 27-28.06.2026 — ВТОРАЯ ОТЛАДКА ЧАТА
 
-Роль ассистента: исполнитель, читает код а не гадает, СПРАШИВАЕТ перед правками/откатами (юзер резко против действий без спроса).
-
-### 🔴 БАГ A: ИСЧЕЗАЮЩИЕ СООБЩЕНИЯ (серверный) — РЕШЁН `ea18610`
-**Симптом:** «то 3, то 5, то 6 из 9» после перезахода. Юзер сам нащупал связь с УДАЛЕНИЕМ.
-**Причина:** в `GET /chat` фильтр без `deletedAt`, `.limit(20)` к строкам ВКЛЮЧАЯ удалённые (soft-delete) → клиент `_notDeleted` их выбрасывал → непредсказуемо мало живых.
-**Фикс:** `server/src/routes/club.js` — `liveMessagesFilter = (clubMonthId) => ({clubMonthId, isHidden:{$ne:true}, deletedAt:null})` в `GET /chat` и `/context`. **БЕЗ РЕБИЛДА — `git pull` + `pm2 restart`.**
-
-### 🔴 БАГ B: КАРТИНКИ НЕ КЭШИРУЮТСЯ + СКАЧОК — РЕШЁН (сервер `dfd19f9` + клиент `d0df5f3`)
-**Причина кэша:** `audio.service.js`: `exp = Date.now()/1000 + ttl` — плавает → URL меняется → кэш мимо.
-**Фикс сервера** (`dfd19f9`, `image.service.js`): `IMAGE_URL_FIXED_EXP = Math.floor(Date.UTC(2099,0,1)/1000)` + `generateImageSignedUrl` с фикс. exp. Аудио НЕ тронуто (TTL 1ч).
-**Фикс клиента** (`d0df5f3`, `_ChatImage`): `progressIndicatorBuilder` + minWidth/minHeight. **Ребилд.** Проверять на НОВОЙ картинке после рестарта.
-
-### 🔴 БАГ C: ДЁРГАНЬЕ КЛАВИАТУРЫ ПРИ УДАЛЕНИИ — РЕШЁН `d3a8f23`
-**Причина:** AlertDialog — overlay поверх ещё-живой клавиатуры → layout прыгает.
-**Решение (путь А):** убрать AlertDialog. `_deleteMessage`: оптимистичный `removeAt` + SnackBar «Сообщение удалено · Отменить» (floating, textPrimary, терракота, 3800мс). Запрос через `Timer(4 сек)` → `_commitPendingDelete`. «Отменить» → `_undoPendingDelete`. Поля `_deleteTimer/_pendingDelete*`. В `dispose` дослать pending. **Ребилд. ✅ Юзер подтвердил.**
-
-### ✅ СВЯЗКА ЗАКРЕПА
-Сервер `12714b3` + сервис `5c826fe` + клиент `7966ccc`. **Подтверждено юзером.**
-
-### ⏭️ Применить фиксы
-- **Сервер** (`ea18610`, `dfd19f9`): `git checkout -- server/package-lock.json` → `git pull` → `pm2 restart chitatel-api`. **[07.07: применено — шаг 0 закрыт со слов юзера.]**
-- **Приложение:** новый билд Codemagic. **[07.07: собран, Анна оттестировала.]**
+- **БАГ A исчезающие сообщения** — `ea18610` (liveMessagesFilter: deletedAt:null ДО limit).
+- **БАГ B картинки не кэшируются** — `dfd19f9` (IMAGE_URL_FIXED_EXP 2099) + `d0df5f3` (progressIndicatorBuilder).
+- **БАГ C дёрганье клавиатуры при удалении** — `d3a8f23` (без AlertDialog: оптимистично + SnackBar «Отменить» + Timer 4с).
+- Связка закрепа: `12714b3`+`5c826fe`+`7966ccc`. Всё подтверждено, применено.
 
 ---
 
 ## ✅ СЕССИЯ 27.06.2026 — ПОЛИРОВКА ЧАТА + БАГ БЕЛОГО ЭКРАНА КЛУБА
 
-### 🔴 ГЛАВНЫЙ БАГ: белый экран клуба после перезахода (`60f3f4a`)
-**Причина:** `main.dart` НЕ вызывал `checkAuth()` при старте → authProvider навсегда `initial` → GuestGate вечно крутит → ClubScreen не строится. Каталог работал (не в GuestGate).
-**Фикс:** `await checkAuth()` в `main()` до runApp. **✅ Проверено юзером.**
-
-### Баги чата (исправлены)
-1. Удалённые исчезают (`f25c7a3`). 2. Перемотка к закрепу/reply (`f25c7a3`). 3. Дёрганье скролла — гистерезис 300/120px (`f25c7a3`). 4. Оптимистичная отправка (`3c235a3`). 5. Клавиатура закрывается (`3c235a3`). 6. Телеграм-меню long-press `showGeneralDialog`+Scale/Fade (`644f487`). 7. Эмодзи крупнее (`644f487`). 8. Фото после перезахода — `withFreshMedia()` (`bc2fdeb`, СЕРВЕРНОЕ, pm2 restart).
-
-### Серверные фиксы
-- `trust proxy` (`7b8228f`). Graceful shutdown async/await (`742e676`). Очередь 401 → один refresh (`d13370`). Debug убраны (`171af17`,`d13370`).
+- **Белый экран клуба:** main.dart не вызывал `checkAuth()` → фикс `60f3f4a`. ✅
+- Чат: удалённые исчезают, перемотка к закрепу/reply, гистерезис кнопки «вниз» 300/120px (`f25c7a3`); оптимистичная отправка, клавиатура (`3c235a3`); телеграм-меню long-press (`644f487`); фото после перезахода `withFreshMedia()` (`bc2fdeb`).
+- Сервер: `trust proxy` (`7b8228f`), graceful shutdown (`742e676`), очередь 401 (`d13370`).
 
 ---
 
 ## ✅ CODEMAGIC + TESTFLIGHT (26.06)
 
-⚠️ **Аккаунт Анны Individual** → локальная Xcode-подпись приглашённым недостижима (команда Анны `3GS6F87RKZ` не появляется в Xcode у `g.akhmeteli89@gmail.com`). Путь — Codemagic + ASC API key.
-- **ASC API key:** Team Keys, Key ID `UN4ZB8T93H`, в Codemagic `chitatel-key`. ⚠️ Для верификации покупок нужен ОТДЕЛЬНЫЙ ключ (In-App Purchase key, Users and Access → Integrations → In-App Purchase; возможно только Анна-Account Holder).
-- **Codemagic:** Individual, GitHub App в `anna-busel`. `codemagic.yaml` в КОРНЕ (`working_directory: app`, `79fa03d`). workflow `ios-testflight`: mac_mini_m2, Flutter 3.22.3, fetch-signing-files --create → build ipa. submit=false. groups `appstore_credentials`.
-- ⚠️ **CERTIFICATE_PRIVATE_KEY** RSA в env. НЕ в репо.
-- Грабли (решены): No matching profiles → --create; Cannot save certs → CERTIFICATE_PRIVATE_KEY; 90474 iPad-ориентации → `TARGETED_DEVICE_FAMILY "1,2"→"1"` (`a1e4c6e`).
-- TestFlight: билд 1.0.0(1), Export Compliance exempt. Группа Internal Testing. **[07.07: шаг 0 закрыт — билд с редизайном собран, Анна оттестировала.]**
+⚠️ **Аккаунт Анны Individual** → локальная Xcode-подпись приглашённым недостижима. Путь — Codemagic + ASC API key.
+- **ASC API key:** Team Keys, Key ID `UN4ZB8T93H`, в Codemagic `chitatel-key`. ⚠️ Для верификации покупок ОТДЕЛЬНЫЙ In-App Purchase key.
+- **Codemagic:** GitHub App в `anna-busel`, `codemagic.yaml` в КОРНЕ (`working_directory: app`). workflow `ios-testflight`: mac_mini_m2, **[10.07: Flutter 3.44.6, xcode latest]**, fetch-signing-files --create → build ipa. groups `appstore_credentials`. CERTIFICATE_PRIVATE_KEY в env.
+- Грабли (решены): No matching profiles → --create; 90474 iPad → TARGETED_DEVICE_FAMILY="1" (`a1e4c6e`).
 - Пересобрать: Codemagic → Start new build → `ios-testflight`, main.
 
 ---
 
 ## ✅ ПОДКЛЮЧЕНИЕ К БОЕВОМУ СЕРВЕРУ (26.06)
-- `api_endpoints.dart` (`b79eb68`): baseUrl через `String.fromEnvironment('API_BASE', defaultValue:'https://api.chitatel.app')`. Локально `--dart-define=API_BASE=http://localhost:3000`.
-- Ручные шаги 3.2: `flutter pub add in_app_purchase url_launcher`+pod install; роутер `367fe48`; Xcode capabilities IAP+Sign in, `Runner.entitlements` (`03086a6`); DEVELOPMENT_TEAM Personal `669ZY8S56N`; bundle `app.chitatel.ios`. Push с мака — PAT (`g1orgi89`).
-- ⚠️ **TODO .gitignore:** `audio-storage/`, `.env*`; удалить мусор `app/-H app/-d`. На сервере перед pull `git checkout -- server/package-lock.json`.
+- `api_endpoints.dart` (`b79eb68`): baseUrl `String.fromEnvironment('API_BASE', default 'https://api.chitatel.app')`.
+- Xcode capabilities IAP+Sign in, `Runner.entitlements` (`03086a6`); DEVELOPMENT_TEAM `669ZY8S56N`; bundle `app.chitatel.ios`.
+- ⚠️ **TODO .gitignore:** `audio-storage/`, `.env*`; удалить `app/-H app/-d`.
 
 ---
 
 ## ✅ ДЕПЛОЙ СЕРВЕРА (26.06)
-VPS Contabo (общий с reader-bot), **строго изолированно**. SSH `deploy@161.97.102.73` (с мака по паролю). ⚠️ Чужие сайты/Node18/глобальный PM2 не трогать.
-- Домен `chitatel.app` (Namecheap), A-записи api+@+www → 161.97.102.73. Node 20.20.2 nvm. Mongo Docker `chitatel-mongodb` mongo:8.0 `127.0.0.1:27018` root `chitatel_admin`. Бэкенд `/home/deploy/chitatel/Chitatel_app` (`npm audit fix --force` НЕ запускать). `.env` 600: есть PORT/MONGO_URI/секреты/APPLE_TEAM_ID=3GS6F87RKZ/BUNDLE=app.chitatel.ios; пусто APPLE_*_IAP/GOOGLE/OPENAI/APNS. AUDIO_BASE_PATH `/var/audio/chitatel`. PM2 `ecosystem.config.js` interpreter nvm node20, процесс `chitatel-api`. **⚠️ Ограничение из аудита (блок D): PM2 строго FORK MODE, 1 инстанс — cluster mode сломает доставку Socket.io-эмитов (io в памяти процесса). Redis-адаптер — только при онлайне >2-3k.** nginx `api.chitatel.app` proxy→3000, WebSocket, client_max_body_size 12M. certbot до 24.09.2026. seed+seed:club прошли.
-- **Тест-аккаунты прод:** anna@chitatel.app/anna123456 (admin), test-premium@chitatel.app/test123456 (premium), test-basic, test-expired (test123456). **[08.07: test-expired после живой покупки стал basic.]**
-- ХВОСТЫ: Mongo-пароль в логах seed; заглушка «Нет описания» 3 книги; факультативы 7 разборов+обложка отсутствуют; ~~seed-club +21→+31 не менять~~ **[08.07: УСТАРЕЛО — seed теперь архив=следующий календарный месяц, `827f81c`→`f6fe9ce`; после pull выполнить `npm run seed:club`]**.
+VPS Contabo (общий с reader-bot), **строго изолированно**. SSH `deploy@161.97.102.73`. Чужие сайты/Node18/глобальный PM2 не трогать.
+- Домен `chitatel.app`. Node 20 nvm. Mongo Docker `chitatel-mongodb` mongo:8.0 `127.0.0.1:27018` root `chitatel_admin` (пароль в server/.env MONGO_URI). База chitatel. Бэкенд `/home/deploy/chitatel/Chitatel_app`. PM2 `chitatel-api` **строго FORK MODE 1 инстанс** (Socket.io). nginx api.chitatel.app→3000, WS, 12M. certbot до 24.09.2026.
+- **Тест-аккаунты:** anna@chitatel.app/anna123456 (admin), test-premium, test-basic, test-expired (test123456). **[12.07: полный список юзеров — СЕССИЯ 09-12.07 п.6.]**
 ```bash
 ssh deploy@161.97.102.73
 cd /home/deploy/chitatel/Chitatel_app
 git checkout -- server/package-lock.json
 git pull origin main
-cd server && npm install   # если менялись зависимости
-pm2 restart chitatel-api   # ТОЛЬКО если менялся server/
+pm2 restart chitatel-api
 pm2 logs chitatel-api
-curl -s https://api.chitatel.app/api/health
 ```
+Mongo: `docker exec -it chitatel-mongodb mongosh -u chitatel_admin -p --authenticationDatabase admin` → `use chitatel`.
 
 ---
 
-## КАТАЛОГ (14.06) — 54 разбора + 10 пакетов. seed.js `2c893cd`, json `c8a2ccb`. Дослать (Анна): обложки #44-54+facultativ_tolstoy, описания 3, 7 факультативов, аудио. appleProductId=book.{slug}/package.{slug}.
+## КАТАЛОГ (14.06) — 54 разбора + 10 пакетов. seed.js `2c893cd`, json `c8a2ccb`. Дослать (Анна): обложки #44-54+facultativ_tolstoy, описания 3, 7 факультативов, аудио (⚠️ скоро 10 аудио для платных). appleProductId=book.{slug}/package.{slug}.
 
-## ✅ ЗАДАЧА 3.1 ASC (16.06) — Hanna Busel ИП Тбилиси, Paid Apps/W-8BEN/банк активны. SBP (15%) подана. Приложение «Читатель: книжный клуб» Apple ID 6779357856, bundle app.chitatel.ios. Продукты (group 22166930): club.basic.monthly (6781739637, $27.99), club.basic.season (3мес ~$54.99). 64 разбора non-consumable — позже скриптом.
+## ✅ ЗАДАЧА 3.1 ASC (16.06) — Hanna Busel ИП Тбилиси, Paid Apps/W-8BEN/банк активны. Приложение «Читатель: книжный клуб» Apple ID 6779357856, bundle app.chitatel.ios. Продукты (group 22166930): club.basic.monthly ($27.99), club.basic.season (~$54.99). Цены = цена покупателя (США base), НДС сверху сам, Анне ~85%; в ASC не менять. 64 разбора — скриптом (PENDING).
 
-## 🔑 МОДЕЛЬ ПОДПИСОК (15.06): беспл+IAP, в iOS только Apple. Месяц club.basic.monthly ~$28, Сезон 3мес club.basic.season ~$54 (ОДИН продукт автопродление). Сезонный тариф на paywall только в начале сезона. ~~Доступ активного = скользящее окно «текущий+предыдущий месяц». Деньги по дате Apple/контент по календарю.~~ **[08.07: правило доступа ЗАМЕНЕНО финальной КАЛЕНДАРНОЙ моделью — текущий календарный месяц + следующий (архив, писать МОЖНО); см. СЕССИЮ 08.07.]**
+## 🔑 МОДЕЛЬ ПОДПИСОК (15.06): беспл+IAP. Месяц ~$28, Сезон 3мес ~$54 (ОДИН продукт автопродление). Сезон на витрине только в окно (СДЕЛАНО 11.07). Доступ — КАЛЕНДАРНАЯ модель (08.07).
 
-## 🧩 КОДЫ АКТИВАЦИИ (РФ/РБ) — ПРИОРИТЕТ ВЫСОКИЙ, КАНАЛ №1. Оплата на сайте→код→нейтральное поле в приложении→сервер открывает доступ. ⚠️ Apple: только нейтральное поле, БЕЗ рекламы внешней покупки (красные линии — AUDIT B5: ни слова «купите на сайте», без ссылок на лендинг с ценами, paywall сайт не упоминает). Модель `ActivationCode`.
+## 🧩 КОДЫ АКТИВАЦИИ (РФ/РБ) — ПРИОРИТЕТ ВЫСОКИЙ, КАНАЛ №1. Только нейтральное поле, БЕЗ рекламы внешней покупки (AUDIT B5). Модель `ActivationCode`.
 
-## ЗАДАЧИ 3.3/3.4/3.2 ✅ ГОТОВО: верификация Purchase.js/purchases.js/purchase.service.js (+@apple/app-store-server-library 3.1.0), webhook `/api/webhooks/apple`, paywall purchase_service/provider/success/paywall screens. **07.07: + фиксы B2 (appAccountToken), B3 (grace), B4 ('season' enum) — см. СЕССИЮ 07.07. 08.07: первая живая покупка sandbox прошла (verify 200 → Mongo → basic).** Terms/Privacy заглушки.
+## ЗАДАЧИ 3.2/3.3/3.4 ✅: верификация+webhook+paywall. 07.07: B2/B3/B4. 09-12.07: контур закрыт живыми покупками (месяц+сезон), авто-restore убран, сезоны сделаны.
 
 ---
 
 ## ДАЛЬШЕ ПО ПЛАНУ
 ```
-✅ Сервер, приложение против прода, Codemagic+TestFlight+Apple Sign In
-✅ Полировка чата + баг белого экрана [27.06]; вторая отладка чата [27-28.06]; редизайн чата 6/6 [28.06]
-✅ Шаг 0 закрыт [07.07 со слов юзера]: серверные фиксы применены, билд с редизайном собран, Анна оттестировала
-✅ АУДИТ проекта [07.07] → docs/AUDIT-2026-07.md + фиксы B2/B3/B4 в main [08.07: AUDIT залит в репо, 90cc47e]
-✅ КАЛЕНДАРНАЯ МОДЕЛЬ ДОСТУПА К КЛУБУ [08.07] — заменила «скользящее окно+21/31 день» (коммиты — СЕССИЯ 08.07)
-✅ ТЕСТ ПОКУПОК — БАЗОВЫЙ ПУТЬ ПРОШЁЛ [08.07]: monthly sandbox → verify 200 → Purchase в Mongo → basic → клуб открыт (после ручного перезапуска). Продления DID_RENEW (проверка B2) — ОТЛОЖЕНЫ.
-ПРИМЕНИТЬ (юзер): сервер pull + pm2 restart + npm run seed:club; новый билд Codemagic (правки клуба+платежей).
-СЛЕДУЮЩЕЕ — НЕРЕШЁННЫЕ ЗАДАЧИ СЕССИИ 08.07 (по одной, СПРАШИВАТЬ перед кодом):
-  1. Доступ к книге текущего клуба для подписчика — клиент book_screen.dart (сервер checkPartAccess готов); заодно привести checkPartAccess к календарной модели (hasArchiveAccess, комментарий «21 день»). Сначала прочитать book_screen.dart + модель Book.
-  2. «Сразу в клуб после покупки» (9c083f9) — подтвердить на НОВОМ билде, что клуб открывается без перезапуска.
-  3. Рассинхрон цен 27.99/34.99 — действия в ASC (Pricing club.basic.monthly для Грузии) + переустановка приложения; проверить на новом билде. НЕ код.
-  4. Цены каталога (64 non-consumable) из StoreKit по appleProductId, не из Mongo — при заведении продуктов в ASC.
-ЗАТЕМ:
-  - Privacy+Terms+Support на chitatel.app (ревью Apple) — можно раньше Фазы 6, контент от Анны.
-  - Сезонные окна продаж — ОТЛОЖЕНО (нет дат/контента от Анны).
-  - Коды активации (РФ/РБ — КАНАЛ №1). ⚠️ При написании — красные линии AUDIT B5.
-  - Продукты-разборы в Apple (64 non-consumable) + задача 4 выше.
-  - Проверка B2 на продлениях DID_RENEW в sandbox (на билде с appAccountToken).
-  - Фаза 5 (ИИ-дневник).
-  - Фаза 6 (полировка) = ЕДИНЫЙ ПРОХОД ПО AUDIT БЛОКУ A (решение юзера 07.07): БЛОКИРОВКА пользователя, account deletion, Privacy/Terms/EULA, Info.plist (убрать NSUserTracking + честные descriptions + ITSAppUsesNonExemptEncryption), мини-админка жалоб, _Placeholder, privacy labels. + профиль, пуши, онбординг, accessibility, error states. Блок A ≈ 3-4 дня, НЕ «вечер перед сабмитом».
-  - Фаза 7 (публикация, Codemagic).
-ПОСЛЕ РЕЛИЗА (AUDIT блок C): rate limiting контент-эндпоинтов; resolveClubAccess на reaction; хэш refresh-токенов; magic-bytes upload; readBy вне выдачи; индексы; json-лимит; nginx X-Accel для аудио.
-ХВОСТЫ: .gitignore (audio-storage/, .env*, удалить app/-H app/-d); seed.js пароль; опечатка в комментарии chat_message_bubble.dart стр.~504; индикатор печатает (по желанию). Тёмная тема — Post-MVP.
+✅ Фазы 0-4 (код) + инфра + TestFlight + редизайн чата + аудит/B2-B4 + календарная модель
+✅ АПГРЕЙД СТЕКА [09-10.07]: Flutter 3.44.6 + Xcode 26.4 — verify починен
+✅ ПЛАТЕЖИ ЗАКРЫТЫ ЖИВЬЁМ [10-12.07]: monthly+season куплены, продление/отмена/restore/переходы ✅;
+   авто-restore убран (только кнопка); success_screen удалён из потока; тестовая среда TestFlight понята
+✅ СЕЗОНЫ [11.07]: окна+финальные тексты+карточка/анонс/плашка клуба/полоска главной+тест-ручка
+✅ Фикс главной (книга через ClubMonth.bookId, a7964f2) + plan в clubAccess (плашка не сезонницам)
+✅ ЧАТ-ОПТИМИЗАЦИЯ [11-12.07]: тень→рамка, RepaintBoundary, cacheExtent, клипы, Impeller возвращён — ВЕРДИКТ PENDING
+ПРИМЕНИТЬ: сервер pull+pm2 restart; билд Codemagic.
+СЛЕДУЮЩЕЕ (по одной, СПРАШИВАТЬ перед кодом):
+  1. Проверки билда: чат-скролл (вердикт!), картинки чата, плашка у сезонницы, обложка на главной, голосовые под Анной.
+  2. СКРИПТ 64 разборов+10 пакетов в ASC. Ждёт: роль ключа UN4ZB8T93H (App Manager? юзер НЕ проверил),
+     скрины экрана книги (Review Screenshot: 1-2 скрина ко всем, не 64 обложки), картинки (решение юзера ждать).
+     План: пилот 2-3 → руками проверить → остальные. Цены из Mongo как есть.
+  3. Кнопка «Купить» на book_screen (заглушка→покупка) + цены каталога из StoreKit (связка со скриптом).
+  4. Перезагрузка продуктов при открытии paywall (страховка цен, ~5 строк).
+  5. Вариант 2: серверная сверка appAccountToken при verify/restore.
+  6. Мелочи: admin-роль misswoolly@yandex.ru; book_screen перечитка доступа при возврате; полоска главной для
+     сезонниц; проверить в ASC одну Subscription Group у monthly+season; B2 на DID_RENEW; внешний тестер.
+ЗАТЕМ: Privacy+Terms+Support на chitatel.app; коды активации (КАНАЛ №1, красные линии B5); Фаза 5 (ИИ);
+  Фаза 6 = AUDIT блок A единым проходом (+ убрать тест-жест сезонов, диаг-лог ef07bc7, NSUserTracking);
+  Фаза 7 (сабмит; Review Notes про сезонность; всё без аудио → isPublished=false).
+ПОСЛЕ РЕЛИЗА (блок C): rate limiting; resolveClubAccess на reaction; хэш refresh; magic-bytes; индексы;
+  X-Accel; чат-лаг глубокая оптимизация (если вердикт «вязко» — потолок Flutter, не блокер).
+ОПЦИЯ: облачный мак ~$30/мес к доводке (StoreKit Configuration File, профилировщик, скриншоты Фазы 7).
 ```
-**БЛОКЕРЫ РЕВЬЮ APPLE (= AUDIT блок A, Фаза 6):** блокировка пользователя; account deletion (5.1.1(v)); Privacy+Terms/EULA+Support URL; Info.plist (A4); реакция ≤24ч (мини-админка); убрать `_Placeholder`; privacy labels.
-**От Анны:** In-App Purchase key (тип/доступ); $28 цена клиента или доход; наполнение Базовый/Премиум; реальные описания/обложки; контент Privacy/Terms; даты/контент сезонных окон продаж.
-⚠️ Сделаны Фазы 0-4 (код)+инфра+TestFlight+редизайн чата+фиксы платежей B2/B3/B4+календарная модель доступа+первая живая покупка. НЕ начато: Фаза 5 (ИИ), бóльшая часть Фазы 6 (см. блок A), вся Фаза 7. + вне плана (коды активации, лендинг, сезонные окна, продукты-разборы). «✅ по коду» ≠ протестировано вживую.
+**БЛОКЕРЫ РЕВЬЮ APPLE (= AUDIT блок A, Фаза 6):** блокировка пользователя; account deletion; Privacy+Terms/EULA+Support; Info.plist A4; админка жалоб ≤24ч; `_Placeholder`; privacy labels.
+**От Анны:** 10 аудио платных разборов (скоро); недостающие обложки; описания; контент Privacy/Terms; In-App Purchase key.
 
 ---
 
 ## УРОКИ (#28+; #1-27 в AC/AC-2)
-**#28** формат пакета по registry. **#29** Apple-подписка старт=покупка. **#30** активация извне легальна только нейтральное поле. **#31 ⚠️** Apple-оплата НЕ в РФ/РБ → сайт+коды №1. **#32** ценообразование Apple. **#33** продукты-разборы через ASC API капризны. **#34 ⚠️** AI-CONTEXT обновлять ПОЛНЫМ файлом. **#35 ⚠️** общий сервер — изоляция. **#36 ⚠️** секреты в логах маскировать. **#37 ⚠️** Apple Individual — локальная подпись недостижима → Codemagic+ASC key. **#38 ⚠️** Codemagic автоподпись — CERTIFICATE_PRIVATE_KEY, yaml в КОРНЕ. **#39 ⚠️** .ipa iPad-ориентации (90474) → TARGETED_DEVICE_FAMILY="1".
+**#28** формат пакета по registry. **#29** Apple-подписка старт=покупка. **#30** активация извне — только нейтральное поле. **#31 ⚠️** Apple-оплата НЕ в РФ/РБ → сайт+коды №1. **#32** ценообразование Apple. **#33** продукты-разборы через ASC API капризны. **#34 ⚠️** AI-CONTEXT обновлять ПОЛНЫМ файлом. **#35 ⚠️** общий сервер — изоляция. **#36 ⚠️** секреты в логах маскировать. **#37 ⚠️** Apple Individual — Codemagic+ASC key. **#38 ⚠️** CERTIFICATE_PRIVATE_KEY, yaml в КОРНЕ. **#39 ⚠️** TARGETED_DEVICE_FAMILY="1". **#40 ⚠️** логи важнее догадок. **#41 ⚠️** checkAuth() при старте. **#42 ⚠️** trust proxy. **#43 ⚠️** перевыпуск signed URL при отдаче. **#44** Flutter вслепую. **#45 ⚠️⚠️** soft-delete фильтровать ДО limit. **#46 ⚠️⚠️** стабильность signed URL = фикс. exp. **#47 ⚠️** overlay на клавиатуре → дёрганье. **#48** дизайн через прототипы. **#49 ⚠️** аудит плана против кода. **#50 ⚠️** тест платежей — весь жизненный цикл, не happy-path.
 
-**#40 ⚠️ ЛОГИ ВАЖНЕЕ ДОГАДОК (27.06).** Прорыв по белому экрану — debug-print HTTP. Сначала инструментировать.
-**#41 ⚠️ checkAuth() ПРИ СТАРТЕ (27.06).** main.dart не вызывал → GuestGate вечно крутил.
-**#42 ⚠️ trust proxy (27.06).** express-rate-limit за nginx без `app.set('trust proxy', 1)` падает.
-**#43 ⚠️ ПЕРЕВЫПУСК SIGNED URL ПРИ ОТДАЧЕ (27.06).** Хранить `*StoragePath`, перевыпускать на КАЖДОЙ отдаче (`withFreshMedia`), рекурсивно для reply.
-**#44 (процесс) FLUTTER ВСЛЕПУЮ (27.06).** Claude не компилирует Flutter → малые коммиты, юзер проверяет билд.
-**#45 ⚠️⚠️ SOFT-DELETE + LIMIT (28.06).** Фильтровать `deletedAt:null` В ЗАПРОСЕ (ДО лимита), во ВСЕХ эндпоинтах. При «данные пропадают непредсказуемо» сразу спросить про удаление. Без ребилда.
-**#46 ⚠️⚠️ СТАБИЛЬНОСТЬ SIGNED URL = СТАБИЛЬНОСТЬ exp, НЕ ДЛИНА TTL (28.06).** Иммутабельный контент — exp ФИКС. КОНСТАНТОЙ (2099). Аудио TTL 1ч.
-**#47 ⚠️ ДЁРГАНЬЕ LAYOUT ОТ OVERLAY НА КЛАВИАТУРЕ (28.06).** AlertDialog поверх живой клавиатуры → прыжок. Убрать диалог (оптимистично + SnackBar «Отменить»).
-**#48 (процесс) ДИЗАЙН ЧЕРЕЗ ПРОТОТИПЫ (28.06).** Прототипы через visualize до кода. НЕ рисовать иконки/паттерны кодом. Дизайн по одному элементу с проверкой на билде. Минимум цветов. Не менять базовый фон. СПРАШИВАТЬ перед правкой/откатом.
+**#51 ⚠️⚠️ TESTFLIGHT ≠ SANDBOX (09-11.07).** Sandbox-тестеры из ASC в TestFlight НЕ работают (только для Xcode-билдов); TestFlight покупает под ЛИЧНЫМ Apple ID тестера, молча, бесплатно; историю покупок стереть нельзя; подписки не видны в Настройках. Отладка IAP в TestFlight = слепота; нормальная среда (StoreKit Configuration File / sandbox-тестеры) требует мак. Не гонять юзера за несуществующими экранами — сначала выяснить правила среды.
 
-**#49 ⚠️ АУДИТ ПЛАНА ПРОТИВ КОДА — ВСПЛЫВАЮТ НЕДОДЕЛКИ (28.06).** Вопрос Анны «куда идёт жалоба» вскрыл: «Пожаловаться» есть, а **блокировка пользователя (MVP + Apple 1.2) НЕ реализована** — хотя в STEP-BY-STEP 4.2/4.3/4.5 и MASTER 4.36/7.4/6.1 заложена (галочка в MASTER 6.1 п.8 стояла ОШИБОЧНО). Вывод: статус-галочки в доках ≠ факт в коде; периодически сверять «обязательные требования Apple» со СБОРКОЙ, особенно UGC (report+block+24ч+EULA), account deletion, Privacy/Support URL. При вопросе юзера про требования — проверять по коду (get_file_contents), а не по памяти.
+**#52 ⚠️⚠️ АВТО-RESTORE ПРИ ЗАПУСКЕ — ДЫРА И ХАОС (11.07).** StoreKit при старте сам скармливает старые транзакции; verify без разбора привязывает их к ЛЮБОМУ залогиненному юзеру (один Apple ID раздаёт подписку разным аккаунтам) и делает тестовую среду неуправляемой (чистка базы «не прилипает»). Правильно: restore только по явной кнопке; авто-выданные транзакции — только complete(). Плюс серверная сверка appAccountToken (задача).
 
-**#50 ⚠️ ТЕСТ ПЛАТЕЖЕЙ ПРОВЕРЯЕТ ТОЛЬКО ВИДИМЫЕ ПУТИ (07.07).** Базовая покупка (verify по JWT) прошла бы и с дырами B2/B3 — они проявляются только на ПРОДЛЕНИЯХ через webhook (переустановка, billing retry), недели спустя. Правило: перед тестом платёжного контура сверять покрытие сценариев жизненного цикла подписки (покупка/продление/grace/истечение/refund/restore), а не только happy-path покупки. Дыры в маппинге webhook→юзер чинить ДО теста, sandbox умеет ускоренно гонять продления — тест тогда проверяет и их.
+**#53 ⚠️ ПРИ «НЕПОБЕДИМОМ» ДОСТУПЕ — СНАЧАЛА find ПО ВСЕМ ЮЗЕРАМ (11.07).** Час чистили подписку test-expired, а доступ давал ДРУГОЙ юзер (g.ahmeteli от Apple-входа; email отличается от Apple ID — Apple отдаёт контактный ящик). Прежде чем чинить «баг доступа»: `db.users.find({subscriptionStatus:'basic'})` и сверить, под кем реально залогинен клиент (Профиль).
+
+**#54 ⚠️ ПЕРФ-ОПТИМИЗАЦИЯ СПИСКОВ — СНАЧАЛА ДОРОГИЕ ВЕЩИ ПО ЧЕК-ЛИСТУ (12.07).** Тени (blur) на элементах, clip antiAlias, отсутствие RepaintBoundary, анимационная обвязка «на всякий случай» — официально самое дорогое в лентах. GlobalKey в списке — вопреки интуиции — по замерам почти не влияет на скролл. Дёрганый скролл лент с картинками — многолетняя болячка Flutter (issue #61193), потолок ниже нативного; сравнение с Telegram некорректно.
 
 ---
 
-*Обновлён 08.07.2026. **✅ ФИНАЛЬНАЯ КАЛЕНДАРНАЯ МОДЕЛЬ ДОСТУПА К КЛУБУ в `main`** (заменяет «скользящее окно + 21/31 день»): текущий календарный месяц + следующий (архив; в архиве МОЖНО ПИСАТЬ); привязка к календарю, не к дате платежа Apple; нет подписки → paywall; старше архива → закрыто всем кроме админа; будущий клуб → read-only анонс подписчику. Коммиты: `45a24d1` (PM2 fork), `53b661c`→`022e85f` (subscription.js), `880d6ac` (club.js /list), `827f81c`→`f6fe9ce` (seed архив=след.месяц), `76f1cb78` (club_access +future), `a752973`→`1f38994` (club_screen paywall+баннер), `9c083f9` (success_screen invalidate, НЕ проверен на билде), `90cc47e` (AUDIT залит). **✅ Первая живая покупка sandbox:** monthly → verify 200 → Mongo → basic → клуб открылся после ручного перезапуска. **⏭️ Нерешённые задачи (по одной, спрашивать перед кодом):** книга текущего клуба для подписчика (клиент book_screen.dart + привести checkPartAccess к календарной модели), проверить 9c083f9 на билде, рассинхрон цен 27.99/34.99 (ASC/кэш, не код), цены каталога из StoreKit. **ОТЛОЖЕНО:** сезонные окна продаж, AUDIT блок A (Фаза 6), блок C, DID_RENEW в sandbox. **ПРИМЕНИТЬ:** сервер pull+pm2 restart+seed:club; новый билд Codemagic. Подводные камни: Flutter вслепую; PaywallScreen во вкладке клуба визуально не проверен. Прогресс фиксировать далее ТОЛЬКО здесь.*
+*Обновлён 12.07.2026 (сессия 09-12.07). **✅ Платёжный контур подписок ЗАКРЫТ живыми покупками** (апгрейд Flutter 3.44.6+Xcode 26.4 починил verify; monthly+season куплены; продление/отмена/restore/переходы ✅; авто-restore убран `3cd0c1d`, success_screen удалён из потока). **✅ Сезоны** (окна+тексты «по цене двух»+карточка/анонс/плашка/полоска+тест-ручка тройной тап — убрать в Фазе 7). **✅ Фикс главной** `a7964f2` (книга через ClubMonth.bookId). **✅ plan в clubAccess** (плашка не сезонницам). **Чат-оптимизация** (тень→рамка, RepaintBoundary, cacheExtent, клипы hardEdge, Impeller возвращён) — вердикт по билду PENDING. **⚠️ Тестовая среда:** TestFlight ≠ sandbox (урок #51). **Следующее:** проверки билда → скрипт 64 разборов (ждёт роль ключа+скрины+картинки). Прогресс фиксировать далее ТОЛЬКО здесь.*
