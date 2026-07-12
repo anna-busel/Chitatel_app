@@ -6,8 +6,6 @@ import 'routes.dart';
 import '../../shared/widgets/app_bottom_bar.dart';
 import '../../shared/widgets/guest_gate.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_typography.dart';
-import '../../core/constants/app_spacing.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/email_login_screen.dart';
 import '../../features/auth/screens/email_register_screen.dart';
@@ -24,12 +22,27 @@ import '../../features/payments/screens/paywall_screen.dart';
 import '../../features/diary/screens/diary_screen.dart';
 import '../../features/diary/screens/analysis_screen.dart';
 import '../../features/diary/screens/weekly_report_screen.dart';
+import '../../features/profile/screens/profile_screen.dart';
+import '../../features/profile/screens/edit_profile_screen.dart';
+import '../../features/profile/screens/my_purchases_screen.dart';
+import '../../features/profile/screens/my_progress_screen.dart';
+import '../../features/profile/screens/manage_sub_screen.dart';
+import '../../features/profile/screens/notification_settings_screen.dart';
+import '../../features/profile/screens/support_screen.dart';
+import '../../features/profile/screens/blocked_users_screen.dart';
+import '../../features/profile/screens/delete_account_screen.dart';
 
 // — Key для ShellRoute navigator —
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
-// — Provider для GoRouter —
+/// Роутер приложения.
+///
+/// ⚠️ 12.07.2026 (Фаза 6, A6): все заглушки `_Placeholder` УДАЛЕНЫ — Apple
+/// отклоняет сборки с экранами «в разработке». Профиль и его подэкраны теперь
+/// настоящие (задача 6.2). Онбординг, опрос и экран разрешения push — волна 6Б
+/// (задачи 6.1/6.3); до тех пор эти маршруты не объявлены вовсе, чтобы на них
+/// нельзя было попасть и упереться в пустоту.
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
@@ -39,16 +52,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       final onboardingSeen = prefs.getBool('onboarding_seen') ?? false;
       final location = state.matchedLocation;
 
-      // Если онбординг не пройден — на экран входа
-      // (онбординг слайды будут в задаче 6.3, пока сразу на login)
+      // Первый запуск — на экран входа (слайды онбординга и опрос — волна 6Б).
       if (!onboardingSeen &&
           location != Routes.login &&
           location != Routes.emailLogin &&
           location != Routes.register &&
           location != Routes.forgotPassword &&
-          location != Routes.survey &&
-          location != Routes.aiConsent &&
-          location != Routes.pushConsent) {
+          location != Routes.aiConsent) {
         return Routes.login;
       }
 
@@ -72,22 +82,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.forgotPassword,
         builder: (context, state) => const ForgotPasswordScreen(),
       ),
-      GoRoute(
-        path: Routes.onboarding,
-        builder: (context, state) => const _Placeholder('Онбординг'),
-      ),
-      GoRoute(
-        path: Routes.survey,
-        builder: (context, state) => const _Placeholder('Опрос'),
-      ),
       // Согласие на ИИ (4.7, задача 5.3) — шаг онбординга после опроса.
       GoRoute(
         path: Routes.aiConsent,
         builder: (context, state) => const AiConsentScreen(),
-      ),
-      GoRoute(
-        path: Routes.pushConsent,
-        builder: (context, state) => const _Placeholder('Разрешение push'),
       ),
 
       // — Главные табы (ShellRoute с bottom bar + mini-player) —
@@ -130,7 +128,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 title: 'Профиль',
                 message:
                     'Войдите, чтобы открыть профиль, дневник и историю покупок.',
-                child: _ProfilePlaceholder(),
+                child: ProfileScreen(),
               ),
             ),
           ),
@@ -179,11 +177,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const PaywallScreen(),
       ),
-      GoRoute(
-        path: Routes.notifications,
-        parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _Placeholder('Уведомления'),
-      ),
 
       // — Дневник (задача 5.3) —
       GoRoute(
@@ -205,45 +198,48 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const WeeklyReportScreen(),
       ),
 
+      // — Профильная зона (задача 6.2) —
       GoRoute(
         path: Routes.editProfile,
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _Placeholder('Редактирование профиля'),
+        builder: (context, state) => const EditProfileScreen(),
       ),
       GoRoute(
         path: Routes.myPurchases,
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _Placeholder('Мои покупки'),
+        builder: (context, state) => const MyPurchasesScreen(),
       ),
       GoRoute(
         path: Routes.myProgress,
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _Placeholder('Мой прогресс'),
+        builder: (context, state) => const MyProgressScreen(),
       ),
       GoRoute(
         path: Routes.manageSub,
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _Placeholder('Управление подпиской'),
-      ),
-      GoRoute(
-        path: Routes.deleteAccount,
-        parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _Placeholder('Удаление аккаунта'),
+        builder: (context, state) => const ManageSubScreen(),
       ),
       GoRoute(
         path: Routes.notificationSettings,
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _Placeholder('Настройки уведомлений'),
+        builder: (context, state) => const NotificationSettingsScreen(),
       ),
       GoRoute(
         path: Routes.support,
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _Placeholder('Поддержка'),
+        builder: (context, state) => const SupportScreen(),
       ),
+      // Заблокированные участницы (A1) — единственный способ снять блокировку.
       GoRoute(
-        path: Routes.referral,
+        path: Routes.blockedUsers,
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _Placeholder('Пригласить подругу'),
+        builder: (context, state) => const BlockedUsersScreen(),
+      ),
+      // Удаление аккаунта (4.34, Apple 5.1.1(v)).
+      GoRoute(
+        path: Routes.deleteAccount,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const DeleteAccountScreen(),
       ),
     ],
   );
@@ -300,105 +296,5 @@ class _ScaffoldWithBottomBar extends StatelessWidget {
       case 3:
         context.go(Routes.profile);
     }
-  }
-}
-
-/// Профиль — временная заглушка до задачи 6.2.
-///
-/// ⚠️ Здесь только вход в «Мой дневник» (Фаза 5). Полный профиль (аватар, меню,
-/// тумблер ИИ, покупки, прогресс, выход, удаление аккаунта) — задача 6.2,
-/// этот экран будет заменён целиком.
-class _ProfilePlaceholder extends StatelessWidget {
-  const _ProfilePlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.screenPadding),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Профиль',
-                style: AppTypography.serifSectionTitle,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text('Экран в разработке', style: AppTypography.caption),
-              const SizedBox(height: 24),
-              GestureDetector(
-                onTap: () => context.push(Routes.diary),
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.cardBackground,
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.menu_book_outlined,
-                        size: 18,
-                        color: AppColors.terracotta,
-                      ),
-                      const SizedBox(width: 10),
-                      Text('Мой дневник', style: AppTypography.bodyMedium),
-                      const SizedBox(width: 8),
-                      const Icon(
-                        Icons.chevron_right,
-                        size: 18,
-                        color: AppColors.textMetadata,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// — Placeholder экран (заменится реальными экранами в следующих задачах) —
-class _Placeholder extends StatelessWidget {
-  const _Placeholder(this.title);
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.screenPadding),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                style: AppTypography.serifSectionTitle,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Экран в разработке',
-                style: AppTypography.caption,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
