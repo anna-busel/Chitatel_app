@@ -12,13 +12,16 @@
   не было нигде — разобрать жалобу или ответить на вопрос Q&A можно было только
   вручную через curl. То есть требование физически не выполнялось.
 
-  Что здесь: одна страница без сборки (никакого React/Vite — не нужно).
-  Раздаётся Express'ом: https://api.chitatel.app/admin
-  Вход — почта и пароль Анны (роль admin), токен живёт только в памяти вкладки.
+  Одна страница без сборки. Раздаётся Express'ом: https://api.chitatel.app/admin/
+  Вход — почта и пароль админа. Токен живёт только в памяти вкладки.
 
-  Разделы:
-  - Жалобы: список pending → скрыть сообщение / предупредить / мьют / бан / отклонить
-  - Вопросы: неотвеченные Q&A → написать ответ → опубликовать
+  ⚠️ 13.07.2026 — ДИАГНОСТИКА ВХОДА. Была жалоба «Невалидные данные»: это ответ
+  Zod-валидатора сервера (VALIDATION_ERROR), то есть не «пароль неверный», а
+  «поля не прошли проверку» — например, пустой пароль или email с опечаткой.
+  Теперь страница: (а) проверяет поля до отправки, (б) показывает КОНКРЕТНУЮ
+  причину из error.details, а не общую фразу.
+  Вход по почте и паролю — аккаунты Apple/Google сюда не подходят (у них нет
+  пароля). Для входа нужен email-аккаунт с ролью admin.
 -->
 <style>
   :root {
@@ -121,6 +124,9 @@
     <input id="password" type="password" autocomplete="current-password" />
     <button class="primary" id="loginBtn">Войти</button>
     <div class="meta" id="loginError" style="color:var(--danger);margin-top:8px;"></div>
+    <div class="meta" style="margin-top:6px;">
+      Вход по почте и паролю. Аккаунт должен иметь роль администратора.
+    </div>
   </section>
 
   <!-- Рабочая область -->
@@ -137,8 +143,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-  // Токен живёт только в памяти вкладки: закрыл — вышел. Для админки с одним
-  // пользователем этого достаточно, и токен не лежит в localStorage.
+  // Токен живёт только в памяти вкладки: закрыл — вышел.
   let token = null;
   let tab = 'reports';
 
@@ -162,7 +167,15 @@
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok || body.success === false) {
-      const message = (body.error && body.error.message) || 'Ошибка запроса';
+      const err = body.error || {};
+      let message = err.message || 'Ошибка запроса';
+      // Zod возвращает подробности по полям — показываем их, иначе «Невалидные
+      // данные» ничего не объясняет.
+      if (err.details && Object.keys(err.details).length > 0) {
+        const parts = Object.entries(err.details)
+          .map(([field, msg]) => field + ': ' + msg);
+        message += ' (' + parts.join('; ') + ')';
+      }
       throw new Error(message);
     }
     return body.data;
@@ -170,16 +183,28 @@
 
   async function login() {
     $('loginError').textContent = '';
+
+    const email = $('email').value.trim().toLowerCase();
+    const password = $('password').value;
+
+    // Проверяем до отправки — сервер на пустых полях вернёт «Невалидные данные»,
+    // что выглядит как ошибка пароля и путает.
+    if (!email) {
+      $('loginError').textContent = 'Введите почту';
+      return;
+    }
+    if (!password) {
+      $('loginError').textContent = 'Введите пароль';
+      return;
+    }
+
     try {
       const data = await api('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({
-          email: $('email').value.trim(),
-          password: $('password').value,
-        }),
+        body: JSON.stringify({ email, password }),
       });
       if (!data.user || data.user.role !== 'admin') {
-        throw new Error('Этот аккаунт не администратор');
+        throw new Error('У этого аккаунта нет прав администратора');
       }
       token = data.accessToken;
       $('login').classList.add('hidden');
@@ -352,6 +377,9 @@
   }
 
   $('loginBtn').addEventListener('click', login);
+  $('email').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') login();
+  });
   $('password').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') login();
   });
