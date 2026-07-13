@@ -3,28 +3,45 @@ const { optionalAuth } = require('../middleware/auth');
 const { success } = require('../utils/response');
 const Book = require('../models/Book');
 const ClubMonth = require('../models/ClubMonth');
+const Progress = require('../models/Progress');
 
 const router = Router();
 
 /**
  * GET /api/home
- * MASTER 7.4: данные для главной страницы
- * { clubMonth, dailyQuote, freeBooks, popularBooks }
+ * Данные для главной страницы.
+ * { clubMonth, dailyQuote, freeBooks, popularBooks, continueListening }
  *
- * Поля `.select()` соответствуют расширенной схеме Book (см. AI-CONTEXT →
- * РАСХОЖДЕНИЯ С MASTER.md): coverImageUrl, bookSlug, priceUsd/Rub/Byn, isFree.
+ * ⚠️ ФИКС 11.07.2026: книга клуба берётся через ClubMonth.bookId — тем же путём,
+ * что и сам клуб (единый источник истины).
  *
- * ⚠️ ФИКС 11.07.2026: книга клуба берётся через ClubMonth.bookId — тем же
- * путём, что и сам клуб (единый источник истины). Раньше главная искала по
- * дублирующим полям книги (isPartOfClub + Book.clubMonth), которые seed:club
- * не проставляет → рассинхрон, карточка клуба на главной без книги/обложки.
+ * ⚠️ ФИКС 13.07.2026 — «ПОПУЛЯРНЫЕ НЕ ГРУЗЯТСЯ С ПЕРВОГО РАЗА».
+ * Симптом: после холодного старта (или на свежем аккаунте) блок «Популярные»
+ * пуст, а после pull-to-refresh появляется и больше не пропадает.
+ * ПРИЧИНА: популярные отдавались ТОЛЬКО авторизованным (`if (req.user)`).
+ * При первом запросе access-токен часто уже протух → `optionalAuth` молча не
+ * опознаёт юзера (он на то и optional) → popularBooks приходил пустым. После
+ * рефреша токен уже обновлён интерцептором → блок появляется.
+ * ЛЕЧЕНИЕ: популярные — это обычный каталог, скрывать их от гостя незачем
+ * (гость и так видит каталог целиком). Отдаём всем.
+ *
+ * ⚠️ 13.07.2026 — «ПРОДОЛЖИТЬ СЛУШАТЬ» (continueListening).
+ * На главной была мёртвая карточка «Мой прогресс» из Фазы 2: она НИЧЕГО не
+ * показывала (всегда «Начните слушать первый разбор») и вела в каталог.
+ * Теперь сервер отдаёт последний начатый разбор: книга + часть + позиция.
+ * Клиент рисует компактную строку «Продолжить слушать» с кнопкой ▶.
+ * Если ничего не начато — поле null, и блок на главной НЕ показывается вовсе
+ * (лучше пустота, чем мёртвая карточка).
+ * Статистика (минуты/книги/цитаты) на главную НЕ выносится — она в профиле
+ * («Мой прогресс», GET /api/progress/stats). Главная должна звать слушать,
+ * а не отчитываться.
  */
 router.get('/', optionalAuth, async (req, res, next) => {
   try {
     const bookFields =
       'title author coverImageUrl coverGradientColors coverLabel bookSlug ' +
       'durationTotal rating reviewCount priceUsd priceRub priceByn isFree isPartOfClub ' +
-      'categories';
+      'categories parts';
 
     // Бесплатные разборы
     const freeBooks = await Book.find({ isPublished: true, isFree: true })
@@ -49,21 +66,51 @@ router.get('/', optionalAuth, async (req, res, next) => {
         .lean();
     }
 
-    // Популярные разборы (для авторизованных)
-    let popularBooks = [];
+    // Популярные разборы — ВСЕМ (см. фикс выше).
+    const popularBooks = await Book.find({
+      isPublished: true,
+      isFree: false,
+      isPartOfClub: false,
+    })
+      .select(bookFields)
+      .sort({ rating: -1, reviewCount: -1 })
+      .limit(4)
+      .lean();
+
+    // Продолжить слушать — только для авторизованных (у гостя прогресса нет).
+    let continueListening = null;
     if (req.user) {
-      popularBooks = await Book.find({
-        isPublished: true,
-        isFree: false,
-        isPartOfClub: false,
-      })
-        .select(bookFields)
-        .sort({ rating: -1, reviewCount: -1 })
-        .limit(4)
+      const progress = await Progress.findOne({ userId: req.user.userId })
+        .sort({ lastListenedAt: -1 })
+        .select('bookId currentPartNumber positionSeconds lastListenedAt')
         .lean();
+
+      if (progress && progress.lastListenedAt) {
+        const book = await Book.findOne({
+          _id: progress.bookId,
+          isPublished: true,
+        })
+          .select(bookFields)
+          .lean();
+
+        // Книгу могли снять с публикации — тогда блок не показываем.
+        if (book) {
+          const part = (book.parts || []).find(
+            (p) => p.number === progress.currentPartNumber
+          );
+          continueListening = {
+            book,
+            currentPartNumber: progress.currentPartNumber,
+            positionSeconds: progress.positionSeconds,
+            partTitle: part && part.title ? part.title : null,
+            partDuration: part && part.duration ? part.duration : null,
+            lastListenedAt: progress.lastListenedAt,
+          };
+        }
+      }
     }
 
-    // Мысль дня (пока статичная, задача 6.6 — из админки)
+    // Мысль дня (пока статичная — управление из админки появится позже)
     const dailyQuote = {
       text: 'Все счастливые семьи похожи друг на друга, каждая несчастливая семья несчастлива по-своему.',
       author: 'Лев Толстой',
@@ -77,6 +124,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
       dailyQuote,
       freeBooks,
       popularBooks,
+      continueListening,
     });
   } catch (err) {
     return next(err);
