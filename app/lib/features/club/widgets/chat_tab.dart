@@ -52,43 +52,43 @@ class _ReportResult {
 
 /// Таб «Чат» клуба.
 ///
+/// ⚠️ 13.07.2026 — ТОЧНЫЙ ПЕРЕХОД К ЗАКРЕПУ / ОТВЕТУ (жалоба юзера: «доезжает
+/// не до конца, приходится жать дважды»).
+/// ИСТОРИЯ: эксперимент 1 (`85c02c9`) снял GlobalKey со ВСЕХ сообщений, и
+/// переход стал считаться «по доле индекса от maxScrollExtent». В ленте
+/// переменной высоты (картинки, голосовые, многострочные) эта оценка врёт, и
+/// сообщение оказывается рядом, но не на месте — отсюда «жму дважды».
+/// ЛЕЧЕНИЕ: GlobalKey вешаем РОВНО НА ОДНО сообщение — то, к которому прыгаем
+/// (`_jumpTargetId` + `_jumpKey`), и доводим `Scrollable.ensureVisible`.
+/// Лента при этом остаётся на ValueKey — то есть лаг от «GlobalKey на каждом
+/// элементе» (из-за чего их и снимали) НЕ возвращается.
+/// Порядок: грубый jumpTo по индексу (чтобы цель попала в build-диапазон) →
+/// два кадра → ensureVisible по ключу → подсветка.
+///
 /// ⚠️ 12.07.2026 — БЛОКИРОВКА УЧАСТНИЦ (Фаза 6, A1 — Apple Guideline 1.2).
-/// Блокировка живёт в шторке жалобы: выбираешь причину + тумблер «Заблокировать».
-/// После блокировки: сообщения автора мгновенно убираются из ленты, новые не
-/// принимаются из WebSocket, история с сервера приходит уже без них (фильтр в
-/// club.js), превью ответов на его сообщения сервер обнуляет.
-/// Заблокировать ведущую клуба (admin) нельзя — тумблер не показывается.
+/// Блокировка живёт в шторке жалобы: причина + тумблер «Заблокировать».
+/// Сообщения заблокированной: убираются из ленты мгновенно, не принимаются из
+/// WebSocket, не приходят из истории (фильтр в club.js), не протекают через
+/// reply-превью и закреп. Ведущую клуба заблокировать нельзя.
 /// Разблокировать — экран «Заблокированные» в профиле.
 ///
 /// ⚠️ 12.07.2026 — ФИКС «УДАЛЁННОЕ ФОТО ВОЗВРАЩАЕТСЯ ПОСЛЕ УХОДА С ЭКРАНА».
-/// Причина (подтверждена базой: deletedAt у сообщений ПРОСТАВЛЕН, сервер
-/// удаляет корректно; liveMessagesFilter удалённые из истории не отдаёт):
-/// реальный DELETE уходит на сервер только через 4 с — окно «Отменить». Всё
-/// это время сообщение на сервере ЖИВОЕ. Если в это окно лента перезапрашивает
-/// историю (ушёл на другую вкладку/страницу и вернулся — ChatTab пересоздаётся
-/// и делает _bootstrap), сервер честно отдаёт ещё не удалённое сообщение, и оно
-/// «воскресает» в ленте. DELETE уходит следом (из dispose), поэтому в БД оно
-/// удалено — но в ленте видно до следующего перезахода.
-/// ЛЕЧЕНИЕ: `_locallyDeletedIds` — id, удалённые мной. Фильтруем ими ЛЮБОЙ
-/// входящий источник (история, контекст, WS) в единой точке `_visible`.
-/// Кнопка «Отменить» работает как прежде: id снимается — сообщение возвращается.
+/// Реальный DELETE уходит на сервер через 4 с (окно «Отменить») — всё это время
+/// сообщение на сервере ЖИВОЕ, и перезапрос истории «воскрешал» его.
+/// ЛЕЧЕНИЕ: `_locallyDeletedIds` фильтрует ЛЮБОЙ входящий источник в `_visible`.
 ///
-/// ⚠️ 12.07.2026 — КЛЮЧИ ЭЛЕМЕНТОВ ЛЕНТЫ (регресс эксперимента 1, 85c02c9):
-/// убирать надо было только GlobalKey, но были сняты ВСЕ ключи. Без ключей
-/// ListView.builder сопоставляет элементы по индексу → при удалении из середины
-/// элементы с внутренним состоянием переиспользуются под чужие индексы.
-/// Возвращён `key: ValueKey(m.id)` — это НЕ GlobalKey, на скролл не влияет.
+/// ⚠️ 12.07.2026 — КЛЮЧИ ЭЛЕМЕНТОВ ЛЕНТЫ: `ValueKey(m.id)` обязателен. Без
+/// ключей ListView сопоставляет элементы по индексу → при удалении из середины
+/// состояние (картинка, голосовое) переиспользуется под чужим индексом.
 /// ⛔️ НИКОГДА не убирать ключи из itemBuilder ленты чата.
 ///
 /// ⚠️ 12.07.2026 — СНЕКБАР «Сообщение удалено» ЗАКРЫВАЕМ САМИ: после апгрейда
-/// стека (Flutter 3.44) он перестал уходить по `duration` и висел бесконечно.
+/// стека (Flutter 3.44) он перестал уходить по `duration`.
 ///
-/// ⚠️ 12.07.2026 — ЭКСПЕРИМЕНТ 2: текстура бумаги убрана (по ощущениям юзера
-/// скролл стал легче — вклад текстуры подтверждён); автоскролл после отправки
-/// починен (ранний `return` при WS-эхе съедал вызов скролла).
+/// ⚠️ 12.07.2026 — ЭКСПЕРИМЕНТ 2: текстура бумаги убрана; автоскролл после
+/// отправки починен (ранний `return` при WS-эхе съедал вызов скролла).
 ///
 /// Real-time через Socket.io (singleton; виджет не рвёт сокет — урок #16).
-/// Удаление — оптимистично + SnackBar «Отменить» (окно 4с).
 /// ПРОИЗВОДИТЕЛЬНОСТЬ: RepaintBoundary на каждом элементе, cacheExtent 600,
 /// пузыри без теней (рамка), клипы hardEdge — см. chat_message_bubble.
 class ChatTab extends ConsumerStatefulWidget {
@@ -114,8 +114,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   Timer? _readDebounce;
 
   /// Id сообщений, удалённых МНОЙ локально (см. шапку файла).
-  /// Живёт только внутри этого экрана: сервер/БД не трогает, умирает вместе
-  /// с State. Снимается при «Отменить» и при ошибке удаления (откат).
   final Set<String> _locallyDeletedIds = {};
 
   Timer? _deleteTimer;
@@ -125,6 +123,12 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
   String? _highlightedMessageId;
   Timer? _highlightTimer;
+
+  /// Сообщение, к которому сейчас прыгаем. РОВНО ОДНО за раз — только на него
+  /// вешается GlobalKey (`_jumpKey`), чтобы довести скролл через ensureVisible.
+  /// Вся остальная лента живёт на ValueKey (см. шапку файла).
+  String? _jumpTargetId;
+  final GlobalKey _jumpKey = GlobalKey();
 
   bool _isLoading = true;
   bool _hasError = false;
@@ -172,12 +176,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   /// Заблокированные мной (локальный блок-лист, blockedIdsProvider).
   Set<String> get _blockedIds => ref.read(blockedIdsProvider);
 
-  /// Единая точка фильтрации ЛЮБОГО входящего списка сообщений (история,
-  /// контекст, WS). Отсекает:
-  /// - удалённые на сервере (deletedAt);
-  /// - удалённые мной локально, пока идёт окно отмены и DELETE ещё не дошёл;
-  /// - сообщения заблокированных участниц (A1) — подстраховка к серверному
-  ///   фильтру: свежий блок применяется мгновенно, не дожидаясь перезагрузки.
+  /// Единая точка фильтрации ЛЮБОГО входящего списка сообщений.
   Iterable<ChatMessage> _visible(Iterable<ChatMessage> src) {
     final blocked = _blockedIds;
     return src.where(
@@ -189,8 +188,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   }
 
   /// Прокрутка к низу (низ = offset 0 при reverse:true).
-  /// Издалека — мгновенный jumpTo (анимация по длинной ленте переменной высоты
-  /// «не доезжает» и заодно тормозит), вблизи — короткая плавная анимация.
   void _scrollToBottom() {
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
@@ -206,10 +203,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     }
   }
 
-  /// Уйти вниз после отправки. Два кадра подряд: на первом новый пузырь уже
-  /// вставлен, но его окончательная высота (картинка, многострочный текст,
-  /// reply-превью) может измениться после layout — тогда первый скролл
-  /// оказывается «недокрученным». Второй кадр добивает остаток jumpTo.
+  /// Уйти вниз после отправки (два кадра — высота пузыря может дорасти).
   void _scrollToBottomAfterSend() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -225,10 +219,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   }
 
   /// Вставить своё отправленное сообщение (из ответа POST) и уйти вниз.
-  ///
-  /// ФИКС 12.07: раньше при дубле (WS-эхо успело прийти раньше ответа POST)
-  /// метод делал ранний return — и скролл вниз НЕ выполнялся. Теперь дубль
-  /// пропускает только ВСТАВКУ; вниз уходим в любом случае.
   void _insertOwnMessage(ChatMessage message) {
     final alreadyThere = _messages.any((m) => m.id == message.id);
     if (!alreadyThere) {
@@ -295,16 +285,13 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     if (event is ChatNewMessageEvent) {
       // Удалённое мной не может вернуться даже через WS.
       if (_locallyDeletedIds.contains(event.message.id)) return;
-      // Сообщения заблокированных не показываем (сокет вещает всем в комнате —
-      // персонализировать эмиты на сервере дороже, чем отсечь на входе).
+      // Сообщения заблокированных не показываем.
       if (_blockedIds.contains(event.message.author.id)) return;
       if (_messages.any((m) => m.id == event.message.id)) return;
       final isMine = event.message.isMine(_currentUserId);
       setState(() {
         _messages.insert(0, event.message);
       });
-      // Своё сообщение могло прийти по WS раньше ответа POST — тогда вниз
-      // уводим прямо здесь (ответ POST потом увидит дубль и тоже дожмёт).
       if (isMine) _scrollToBottomAfterSend();
       _scheduleMarkRead();
     } else if (event is ChatMessageHiddenEvent) {
@@ -466,27 +453,55 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
   void _scrollToPinned() => _jumpToMessage(_pinnedMessageId);
 
-  /// Прыжок по ИНДЕКСУ (без GlobalKey/ensureVisible — эксперимент 1, 12.07):
-  /// грубая позиция = доля индекса от maxScrollExtent. Для ленты переменной
-  /// высоты неточно, но сообщение оказывается на экране/рядом + подсвечено.
-  void _jumpToIndexAndHighlight(String id) {
+  /// ТОЧНЫЙ переход к сообщению, которое уже есть в ленте.
+  ///
+  /// Два этапа (иначе не работает):
+  /// 1. Грубый `jumpTo` по доле индекса — цель может быть далеко за пределами
+  ///    build-диапазона ListView, и тогда её элемент вообще не построен,
+  ///    а значит `_jumpKey.currentContext == null` и доводить нечего.
+  /// 2. После кадра элемент построен → `Scrollable.ensureVisible` по GlobalKey
+  ///    доводит точно. Повторяем дважды: высота соседей могла дорасти
+  ///    (картинки/голосовые), и первая доводка чуть промахивается.
+  ///
+  /// Это и лечит жалобу «доезжает не до конца, надо жать два раза».
+  Future<void> _scrollToTarget(String id) async {
     final idx = _messages.indexWhere((m) => m.id == id);
     if (idx == -1) return;
+
+    // Вешаем GlobalKey на цель (ровно одну).
+    setState(() => _jumpTargetId = id);
+
+    // 1) Грубая подводка — чтобы элемент попал в build-диапазон.
     if (_scrollController.hasClients) {
       final max = _scrollController.position.maxScrollExtent;
       final frac =
           _messages.length <= 1 ? 0.0 : idx / (_messages.length - 1);
       _scrollController.jumpTo((max * frac).clamp(0.0, max));
     }
+
+    // 2) Точная доводка по ключу.
+    for (var attempt = 0; attempt < 2; attempt++) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      final ctx = _jumpKey.currentContext;
+      if (ctx == null) continue;
+      await Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.4, // цель чуть выше центра — видно контекст под ней
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+    }
+
     _highlight(id);
   }
 
   Future<void> _jumpToMessage(String? id) async {
     if (id == null || id.isEmpty || _isJumping) return;
 
-    // 1) Сообщение в загруженной ленте — прыжок по индексу.
+    // 1) Сообщение уже в ленте — прыгаем.
     if (_messages.any((m) => m.id == id)) {
-      _jumpToIndexAndHighlight(id);
+      await _scrollToTarget(id);
       return;
     }
 
@@ -511,7 +526,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       });
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _jumpToIndexAndHighlight(id);
+        _scrollToTarget(id);
       });
     } on DioException catch (e) {
       if (!mounted) return;
@@ -534,7 +549,12 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     _highlightTimer?.cancel();
     setState(() => _highlightedMessageId = id);
     _highlightTimer = Timer(const Duration(milliseconds: 1800), () {
-      if (mounted) setState(() => _highlightedMessageId = null);
+      if (!mounted) return;
+      setState(() {
+        _highlightedMessageId = null;
+        // Ключ больше не нужен — снимаем, чтобы он не висел на элементе ленты.
+        _jumpTargetId = null;
+      });
     });
   }
 
@@ -711,8 +731,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     _pendingDeleteMessage = message;
     _pendingDeleteIndex = idx;
     _pendingDeleteWasPinned = _pinnedMessageId == messageId;
-    // Пока DELETE не ушёл на сервер (окно отмены), сообщение не должно
-    // вернуться в ленту ни из истории, ни из WS.
     _locallyDeletedIds.add(messageId);
 
     setState(() {
@@ -745,11 +763,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       );
   }
 
-  /// Убрать снекбар «Сообщение удалено» руками.
-  ///
-  /// ФИКС 12.07: на автозакрытие по `duration` полагаться нельзя — после
-  /// апгрейда стека (Flutter 3.44) снекбар с кнопкой действия остаётся висеть
-  /// бесконечно. Закрываем сами: при «Отменить» и при истечении окна отмены.
+  /// Убрать снекбар «Сообщение удалено» руками (после Flutter 3.44 он перестал
+  /// уходить по `duration` и висел бесконечно).
   void _hideDeleteSnackBar() {
     if (!mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -761,7 +776,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     final message = _pendingDeleteMessage;
     if (message == null) return;
 
-    // Отмена — снимаем локальную пометку удаления.
     _locallyDeletedIds.remove(message.id);
 
     setState(() {
@@ -810,7 +824,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       await api.deleteMessage(message.id);
     } on DioException catch (e) {
       if (!mounted) return;
-      // Сервер не принял удаление — снимаем локальную пометку и возвращаем.
       _locallyDeletedIds.remove(message.id);
       setState(() {
         if (!_messages.any((m) => m.id == message.id)) {
@@ -1094,11 +1107,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   }
 
   /// Пожаловаться на сообщение (+ по желанию заблокировать автора).
-  ///
-  /// Apple Guideline 1.2: жалоба и блокировка должны быть доступны прямо из
-  /// контента. Мы объединили их в одну шторку: причина + тумблер «Заблокировать
-  /// участницу». Тумблер не показываем для ведущей клуба (её блокировать нельзя)
-  /// и для своих сообщений (на свои жаловаться нельзя — пункт меню не выводится).
   Future<void> _reportMessage(ChatMessage m) async {
     final canBlock = !_authorIsAdmin(m) && !m.isMine(_currentUserId);
 
@@ -1128,15 +1136,14 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       ));
     }
 
-    // Блокировка — независимо от исхода жалобы (жалоба могла быть дублем,
-    // но заблокировать человека всё равно нужно).
+    // Блокировка — независимо от исхода жалобы (она могла быть дублем).
     if (result.block && mounted) {
       await _blockAuthor(m.author.id, m.author.name);
     }
   }
 
   /// Заблокировать участницу: сервер + локальный блок-лист + мгновенная
-  /// чистка ленты (её сообщения исчезают сразу, не дожидаясь перезагрузки).
+  /// чистка ленты.
   Future<void> _blockAuthor(String userId, String name) async {
     try {
       await ref.read(blockedIdsProvider.notifier).block(userId);
@@ -1291,8 +1298,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
           Expanded(
             child: Stack(
               children: [
-                // ТЕКСТУРА БУМАГИ УБРАНА (эксперимент 2, 12.07) — фон чата
-                // теперь чистый AppColors.background.
+                // ТЕКСТУРА БУМАГИ УБРАНА (эксперимент 2, 12.07).
                 GestureDetector(
                   behavior: HitTestBehavior.translucent,
                   onTap: () => FocusScope.of(context).unfocus(),
@@ -1367,29 +1373,35 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                                   ? (pin) => _togglePin(m.id, pin)
                                   : null,
                             );
-                            // ⛔️ КЛЮЧ ОБЯЗАТЕЛЕН (фикс регресса 12.07): без
-                            // ключей ListView сопоставляет элементы по индексу
-                            // → при удалении сообщения элементы с внутренним
-                            // состоянием (картинка, голосовое) переиспользуются
-                            // под чужие индексы. ValueKey — не GlobalKey.
-                            if (!showDateHeader) {
-                              return RepaintBoundary(
-                                key: ValueKey(m.id),
-                                child: bubble,
-                              );
-                            }
+
+                            final Widget content = showDateHeader
+                                ? Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      _DateSeparator(
+                                        label:
+                                            _formatDateLabel(m.createdAt),
+                                      ),
+                                      bubble,
+                                    ],
+                                  )
+                                : bubble;
+
+                            // ⛔️ ValueKey ОБЯЗАТЕЛЕН на каждом элементе (иначе
+                            // ListView путает элементы при удалении из середины).
+                            // GlobalKey — РОВНО НА ОДНОМ элементе: том, к
+                            // которому сейчас прыгаем. Это даёт точный
+                            // ensureVisible и НЕ возвращает лаг (лаг давали
+                            // GlobalKey на КАЖДОМ сообщении).
                             return RepaintBoundary(
                               key: ValueKey(m.id),
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.stretch,
-                                children: [
-                                  _DateSeparator(
-                                    label: _formatDateLabel(m.createdAt),
-                                  ),
-                                  bubble,
-                                ],
-                              ),
+                              child: m.id == _jumpTargetId
+                                  ? KeyedSubtree(
+                                      key: _jumpKey,
+                                      child: content,
+                                    )
+                                  : content,
                             );
                           },
                         ),
