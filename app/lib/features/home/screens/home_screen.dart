@@ -10,42 +10,42 @@ import '../../payments/season_window.dart';
 import '../providers/home_provider.dart';
 import '../widgets/home_header.dart';
 import '../widgets/club_month_card.dart';
+import '../widgets/continue_listening_card.dart';
 import '../widgets/daily_quote_card.dart';
 import '../widgets/free_books_section.dart';
 import '../widgets/popular_books_section.dart';
-import '../widgets/progress_card.dart';
 
 /// Главная страница. MASTER 4.9.
 ///
 /// Структура (сверху вниз):
 ///   Шапка → Клуб месяца → [Полоска сезона] → Мысль дня → Бесплатные разборы →
-///   Мой прогресс → Популярные
+///   [Продолжить слушать] → Популярные
 ///
-/// ⚠️ 12.07.2026 (Фаза 6): баннер «Пригласите подругу» УБРАН. Реферальной
-/// программы нет ни на сервере (кода начисления бонусов не существует), ни в
-/// профиле — баннер обещал «месяц клуба в подарок» и вёл на пустой экран.
-/// Обещать то, чего нет, нельзя ни перед пользователем, ни перед ревью Apple.
-/// Виджет referral_banner.dart остался в репозитории, но больше не используется;
-/// вернём вместе с реальной реферальной механикой.
+/// ⚠️ 13.07.2026 — «МОЙ ПРОГРЕСС» ЗАМЕНЁН НА «ПРОДОЛЖИТЬ СЛУШАТЬ».
+/// Старая карточка (ProgressCard, Фаза 2) была МЁРТВОЙ: всегда писала «Начните
+/// слушать первый разбор» — данных у неё не было вовсе — и вела в каталог.
+/// Теперь на её месте компактная строка: обложка последнего начатого разбора,
+/// часть, сколько осталось, полоска прогресса и кнопка ▶ — тап продолжает с
+/// сохранённой секунды. Ничего не начато → блок не показывается вовсе.
+/// Статистика (минуты/книги/цитаты) осталась в профиле → «Мой прогресс»:
+/// главная должна звать слушать, а не отчитываться.
+/// Файл progress_card.dart больше не используется.
+///
+/// ⚠️ 12.07.2026 (Фаза 6): баннер «Пригласите подругу» УБРАН — реферальной
+/// механики нет ни на сервере, ни в профиле, а баннер обещал «месяц клуба в
+/// подарок» и вёл на пустой экран.
 ///
 /// Полоска сезона (11.07.2026): статичная, под карточкой клуба, только в фазы
-/// анонса (15-е — конец месяца перед сезоном) и окна покупки (первый месяц
-/// сезона). Тексты — season_window.dart. Тап → paywall. Вне окон отсутствует.
+/// анонса и окна покупки. Тексты — season_window.dart. Тап → paywall.
 /// НЕ карусель и НЕ авторотация (осознанное решение — баннерная слепота).
 ///
-/// FAB-перо (задача 5.3): открывает шторку «Новая цитата» (4.17).
+/// FAB-перо (задача 5.3): открывает шторку «Новая цитата» (4.17). Иконка —
+/// `Icons.history_edu` (гусиное перо; в прототипе перо было из lucide-react,
+/// во Flutter не подключается без flutter_svg — взяли ближайший штатный аналог).
 /// Живёт только на главной и в дневнике — там, где есть текст, который может
-/// зацепить. В каталоге/клубе/профиле его нет (в чате перекрывал бы ленту).
-///
-/// ⚠️ 12.07.2026 — ИКОНКА FAB: была `Icons.edit_outlined` (карандаш), стала
-/// `Icons.history_edu` — ГУСИНОЕ ПЕРО над строкой. В прототипе v4.2 стояло
-/// перо (иконка из lucide-react), но lucide во Flutter не подключается: нужен
-/// был бы SVG + пакет flutter_svg (в спеке его нет). history_edu — штатная
-/// иконка Material (вшита во фреймворк, без зависимостей) и единственная в
-/// наборе, которая реально читается как перо, а не как стилус.
+/// зацепить.
 ///
 /// Обновление: pull-to-refresh (invalidate homeProvider).
-/// Ошибка: ErrorView с кнопкой «Попробовать снова».
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -99,8 +99,11 @@ class HomeScreen extends ConsumerWidget {
                         ],
                         FreeBooksSection(books: data.freeBooks),
                         if (data.freeBooks.isNotEmpty) const SizedBox(height: 24),
-                        const ProgressCard(),
-                        const SizedBox(height: 24),
+                        // Показывается только если есть начатый разбор.
+                        if (data.continueListening != null) ...[
+                          ContinueListeningCard(item: data.continueListening),
+                          const SizedBox(height: 24),
+                        ],
                         PopularBooksSection(books: data.popularBooks),
                       ],
                     ),
@@ -129,7 +132,7 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-/// Плавающая кнопка «Новая цитата» (перо) — прототип v4.2.
+/// Плавающая кнопка «Новая цитата» (перо).
 class _QuoteFab extends StatelessWidget {
   const _QuoteFab({required this.onTap});
 
@@ -154,7 +157,6 @@ class _QuoteFab extends StatelessWidget {
               boxShadow: AppColors.buttonShadow,
             ),
             child: const Icon(
-              // Гусиное перо (см. комментарий у HomeScreen).
               Icons.history_edu,
               size: 24,
               color: Colors.white,
@@ -167,7 +169,6 @@ class _QuoteFab extends StatelessWidget {
 }
 
 /// Статичная полоска сезона на главной (фазы анонса и окна покупки).
-/// Тот же визуальный стиль, что плашка сезона в клубе — консистентность.
 class _SeasonHomeBanner extends StatelessWidget {
   const _SeasonHomeBanner({required this.text, required this.onTap});
 
