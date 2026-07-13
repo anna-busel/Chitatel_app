@@ -12,6 +12,7 @@ import '../../../shared/widgets/error_view.dart';
 import '../models/chat_message.dart';
 import '../models/club_access.dart';
 import '../models/club_month.dart';
+import '../providers/club_provider.dart';
 import '../services/block_service.dart';
 import '../services/club_api_service.dart';
 import '../services/club_socket_service.dart';
@@ -52,41 +53,35 @@ class _ReportResult {
 
 /// Таб «Чат» клуба.
 ///
-/// ⚠️ 13.07.2026 — ТОЧНЫЙ ПЕРЕХОД К ЗАКРЕПУ / ОТВЕТУ (жалоба юзера: «доезжает
-/// не до конца, приходится жать дважды»).
-/// ИСТОРИЯ: эксперимент 1 (`85c02c9`) снял GlobalKey со ВСЕХ сообщений, и
-/// переход стал считаться «по доле индекса от maxScrollExtent». В ленте
-/// переменной высоты (картинки, голосовые, многострочные) эта оценка врёт, и
-/// сообщение оказывается рядом, но не на месте — отсюда «жму дважды».
-/// ЛЕЧЕНИЕ: GlobalKey вешаем РОВНО НА ОДНО сообщение — то, к которому прыгаем
-/// (`_jumpTargetId` + `_jumpKey`), и доводим `Scrollable.ensureVisible`.
-/// Лента при этом остаётся на ValueKey — то есть лаг от «GlobalKey на каждом
-/// элементе» (из-за чего их и снимали) НЕ возвращается.
-/// Порядок: грубый jumpTo по индексу (чтобы цель попала в build-диапазон) →
-/// два кадра → ensureVisible по ключу → подсветка.
+/// ⚠️ 13.07.2026 — ФОТО БОЛЬШЕ НЕ ВОСКРЕСАЕТ. Удаление оптимистичное: сообщение
+/// исчезает сразу, реальный DELETE уходит через 4 с (окно «Отменить») — всё это
+/// время на сервере оно ЖИВОЕ. Раньше список «удалённых мной» жил в State этого
+/// экрана: уходишь на другую страницу и возвращаешься → ChatTab пересоздан →
+/// список умер → история перезапрошена → сервер отдал ещё не удалённое фото →
+/// оно вернулось в ленту. Теперь список живёт в `locallyDeletedMessageIdsProvider`
+/// (переживает пересоздание экрана), и `_visible` отсекает такие сообщения из
+/// ЛЮБОГО источника: истории, контекста и WebSocket.
+///
+/// ⚠️ 13.07.2026 — ТОЧНЫЙ ПЕРЕХОД К ЗАКРЕПУ / ОТВЕТУ. Эксперимент 1 (`85c02c9`)
+/// снял GlobalKey со ВСЕХ сообщений, и переход считался «по доле индекса» — в
+/// ленте переменной высоты это врёт, приходилось жать дважды. Теперь GlobalKey
+/// вешается РОВНО НА ОДНО сообщение — цель прыжка (`_jumpTargetId` + `_jumpKey`),
+/// и скролл доводится `Scrollable.ensureVisible`. Лента остаётся на ValueKey,
+/// поэтому лаг (из-за которого ключи и снимали) НЕ возвращается.
 ///
 /// ⚠️ 12.07.2026 — БЛОКИРОВКА УЧАСТНИЦ (Фаза 6, A1 — Apple Guideline 1.2).
 /// Блокировка живёт в шторке жалобы: причина + тумблер «Заблокировать».
-/// Сообщения заблокированной: убираются из ленты мгновенно, не принимаются из
-/// WebSocket, не приходят из истории (фильтр в club.js), не протекают через
-/// reply-превью и закреп. Ведущую клуба заблокировать нельзя.
-/// Разблокировать — экран «Заблокированные» в профиле.
+/// Сообщения заблокированной: убираются мгновенно, не принимаются из WebSocket,
+/// не приходят из истории (фильтр в club.js), не протекают через reply-превью и
+/// закреп. Ведущую клуба заблокировать нельзя. Разблокировать — в профиле.
 ///
-/// ⚠️ 12.07.2026 — ФИКС «УДАЛЁННОЕ ФОТО ВОЗВРАЩАЕТСЯ ПОСЛЕ УХОДА С ЭКРАНА».
-/// Реальный DELETE уходит на сервер через 4 с (окно «Отменить») — всё это время
-/// сообщение на сервере ЖИВОЕ, и перезапрос истории «воскрешал» его.
-/// ЛЕЧЕНИЕ: `_locallyDeletedIds` фильтрует ЛЮБОЙ входящий источник в `_visible`.
-///
-/// ⚠️ 12.07.2026 — КЛЮЧИ ЭЛЕМЕНТОВ ЛЕНТЫ: `ValueKey(m.id)` обязателен. Без
-/// ключей ListView сопоставляет элементы по индексу → при удалении из середины
-/// состояние (картинка, голосовое) переиспользуется под чужим индексом.
+/// ⚠️ КЛЮЧИ ЭЛЕМЕНТОВ ЛЕНТЫ: `ValueKey(m.id)` обязателен. Без ключей ListView
+/// сопоставляет элементы по индексу → при удалении из середины состояние
+/// (картинка, голосовое) переиспользуется под чужим индексом.
 /// ⛔️ НИКОГДА не убирать ключи из itemBuilder ленты чата.
 ///
-/// ⚠️ 12.07.2026 — СНЕКБАР «Сообщение удалено» ЗАКРЫВАЕМ САМИ: после апгрейда
-/// стека (Flutter 3.44) он перестал уходить по `duration`.
-///
-/// ⚠️ 12.07.2026 — ЭКСПЕРИМЕНТ 2: текстура бумаги убрана; автоскролл после
-/// отправки починен (ранний `return` при WS-эхе съедал вызов скролла).
+/// ⚠️ СНЕКБАР «Сообщение удалено» ЗАКРЫВАЕМ САМИ: после Flutter 3.44 он перестал
+/// уходить по `duration`.
 ///
 /// Real-time через Socket.io (singleton; виджет не рвёт сокет — урок #16).
 /// ПРОИЗВОДИТЕЛЬНОСТЬ: RepaintBoundary на каждом элементе, cacheExtent 600,
@@ -113,9 +108,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   final Set<String> _readSent = {};
   Timer? _readDebounce;
 
-  /// Id сообщений, удалённых МНОЙ локально (см. шапку файла).
-  final Set<String> _locallyDeletedIds = {};
-
   Timer? _deleteTimer;
   ChatMessage? _pendingDeleteMessage;
   int _pendingDeleteIndex = -1;
@@ -126,7 +118,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
   /// Сообщение, к которому сейчас прыгаем. РОВНО ОДНО за раз — только на него
   /// вешается GlobalKey (`_jumpKey`), чтобы довести скролл через ensureVisible.
-  /// Вся остальная лента живёт на ValueKey (см. шапку файла).
   String? _jumpTargetId;
   final GlobalKey _jumpKey = GlobalKey();
 
@@ -162,6 +153,9 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       _deleteTimer!.cancel();
       final pending = _pendingDeleteMessage;
       if (pending != null) {
+        // Экран умирает, но удаление должно дойти до сервера. Id остаётся в
+        // провайдере — поэтому даже если история успеет вернуть это сообщение,
+        // фильтр `_visible` его не покажет.
         ref
             .read(clubApiServiceProvider)
             .deleteMessage(pending.id)
@@ -176,13 +170,18 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   /// Заблокированные мной (локальный блок-лист, blockedIdsProvider).
   Set<String> get _blockedIds => ref.read(blockedIdsProvider);
 
+  /// Удалённые мной, пока идёт окно «Отменить» (живут в провайдере — см. шапку).
+  Set<String> get _locallyDeletedIds =>
+      ref.read(locallyDeletedMessageIdsProvider);
+
   /// Единая точка фильтрации ЛЮБОГО входящего списка сообщений.
   Iterable<ChatMessage> _visible(Iterable<ChatMessage> src) {
     final blocked = _blockedIds;
+    final deleted = _locallyDeletedIds;
     return src.where(
       (m) =>
           !m.isDeleted &&
-          !_locallyDeletedIds.contains(m.id) &&
+          !deleted.contains(m.id) &&
           !blocked.contains(m.author.id),
     );
   }
@@ -455,23 +454,16 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
   /// ТОЧНЫЙ переход к сообщению, которое уже есть в ленте.
   ///
-  /// Два этапа (иначе не работает):
   /// 1. Грубый `jumpTo` по доле индекса — цель может быть далеко за пределами
-  ///    build-диапазона ListView, и тогда её элемент вообще не построен,
-  ///    а значит `_jumpKey.currentContext == null` и доводить нечего.
-  /// 2. После кадра элемент построен → `Scrollable.ensureVisible` по GlobalKey
-  ///    доводит точно. Повторяем дважды: высота соседей могла дорасти
-  ///    (картинки/голосовые), и первая доводка чуть промахивается.
-  ///
-  /// Это и лечит жалобу «доезжает не до конца, надо жать два раза».
+  ///    build-диапазона, и тогда её элемент не построен (ключа нет).
+  /// 2. После кадра элемент построен → `ensureVisible` доводит точно.
+  ///    Повторяем дважды: высота соседей могла дорасти (картинки/голосовые).
   Future<void> _scrollToTarget(String id) async {
     final idx = _messages.indexWhere((m) => m.id == id);
     if (idx == -1) return;
 
-    // Вешаем GlobalKey на цель (ровно одну).
     setState(() => _jumpTargetId = id);
 
-    // 1) Грубая подводка — чтобы элемент попал в build-диапазон.
     if (_scrollController.hasClients) {
       final max = _scrollController.position.maxScrollExtent;
       final frac =
@@ -479,7 +471,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       _scrollController.jumpTo((max * frac).clamp(0.0, max));
     }
 
-    // 2) Точная доводка по ключу.
     for (var attempt = 0; attempt < 2; attempt++) {
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted) return;
@@ -487,7 +478,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       if (ctx == null) continue;
       await Scrollable.ensureVisible(
         ctx,
-        alignment: 0.4, // цель чуть выше центра — видно контекст под ней
+        alignment: 0.4, // чуть выше центра — виден контекст под сообщением
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
       );
@@ -552,8 +543,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       if (!mounted) return;
       setState(() {
         _highlightedMessageId = null;
-        // Ключ больше не нужен — снимаем, чтобы он не висел на элементе ленты.
-        _jumpTargetId = null;
+        _jumpTargetId = null; // ключ больше не нужен
       });
     });
   }
@@ -731,7 +721,10 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     _pendingDeleteMessage = message;
     _pendingDeleteIndex = idx;
     _pendingDeleteWasPinned = _pinnedMessageId == messageId;
-    _locallyDeletedIds.add(messageId);
+
+    // Пометка живёт в ПРОВАЙДЕРЕ — переживёт уход с экрана и обратно, поэтому
+    // сообщение не «воскреснет» из истории, пока DELETE в пути.
+    ref.read(locallyDeletedMessageIdsProvider.notifier).add(messageId);
 
     setState(() {
       _messages.removeAt(idx);
@@ -764,7 +757,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   }
 
   /// Убрать снекбар «Сообщение удалено» руками (после Flutter 3.44 он перестал
-  /// уходить по `duration` и висел бесконечно).
+  /// уходить по `duration`).
   void _hideDeleteSnackBar() {
     if (!mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -776,7 +769,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     final message = _pendingDeleteMessage;
     if (message == null) return;
 
-    _locallyDeletedIds.remove(message.id);
+    // Отмена — снимаем пометку, сообщение снова видно.
+    ref.read(locallyDeletedMessageIdsProvider.notifier).remove(message.id);
 
     setState(() {
       final insertAt = _pendingDeleteIndex.clamp(0, _messages.length);
@@ -824,7 +818,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       await api.deleteMessage(message.id);
     } on DioException catch (e) {
       if (!mounted) return;
-      _locallyDeletedIds.remove(message.id);
+      // Сервер не принял удаление — снимаем пометку и возвращаем сообщение.
+      ref.read(locallyDeletedMessageIdsProvider.notifier).remove(message.id);
       setState(() {
         if (!_messages.any((m) => m.id == message.id)) {
           _messages.insert(0, message);
@@ -1136,14 +1131,12 @@ class _ChatTabState extends ConsumerState<ChatTab> {
       ));
     }
 
-    // Блокировка — независимо от исхода жалобы (она могла быть дублем).
     if (result.block && mounted) {
       await _blockAuthor(m.author.id, m.author.name);
     }
   }
 
-  /// Заблокировать участницу: сервер + локальный блок-лист + мгновенная
-  /// чистка ленты.
+  /// Заблокировать участницу: сервер + локальный блок-лист + чистка ленты.
   Future<void> _blockAuthor(String userId, String name) async {
     try {
       await ref.read(blockedIdsProvider.notifier).block(userId);
@@ -1251,6 +1244,11 @@ class _ChatTabState extends ConsumerState<ChatTab> {
 
   @override
   Widget build(BuildContext context) {
+    // Подписка на блок-лист и на список удалённых мной: если они изменились
+    // (например, разблокировали в профиле) — лента перерисуется.
+    ref.watch(blockedIdsProvider);
+    ref.watch(locallyDeletedMessageIdsProvider);
+
     if (_isLoading) {
       return Container(
         color: AppColors.background,
@@ -1298,7 +1296,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
           Expanded(
             child: Stack(
               children: [
-                // ТЕКСТУРА БУМАГИ УБРАНА (эксперимент 2, 12.07).
                 GestureDetector(
                   behavior: HitTestBehavior.translucent,
                   onTap: () => FocusScope.of(context).unfocus(),
@@ -1365,7 +1362,6 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                               onReplyTap: m.hasReply
                                   ? () => _jumpToMessage(m.replyToId)
                                   : null,
-                              // Жалоба + блокировка автора (A1) — одна шторка.
                               onReport: isMine
                                   ? null
                                   : () => _reportMessage(m),
@@ -1388,12 +1384,8 @@ class _ChatTabState extends ConsumerState<ChatTab> {
                                   )
                                 : bubble;
 
-                            // ⛔️ ValueKey ОБЯЗАТЕЛЕН на каждом элементе (иначе
-                            // ListView путает элементы при удалении из середины).
-                            // GlobalKey — РОВНО НА ОДНОМ элементе: том, к
-                            // которому сейчас прыгаем. Это даёт точный
-                            // ensureVisible и НЕ возвращает лаг (лаг давали
-                            // GlobalKey на КАЖДОМ сообщении).
+                            // ⛔️ ValueKey ОБЯЗАТЕЛЕН на каждом элементе.
+                            // GlobalKey — РОВНО НА ОДНОМ: цель прыжка.
                             return RepaintBoundary(
                               key: ValueKey(m.id),
                               child: m.id == _jumpTargetId
