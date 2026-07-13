@@ -14,15 +14,19 @@ import 'ask_question_sheet.dart';
 
 /// Таб «Q&A» — список вопросов к Анне.
 ///
-/// Загружает вопросы клуба, рендерит ExpansionTile-карточки.
-/// Кнопка «Задать вопрос» внизу — открывает AskQuestionSheet, после успешной
-/// отправки рефрешим список.
+/// Это ОТДЕЛЬНАЯ рубрика, не чат: вопрос задаётся кнопкой внизу, ответ Анны
+/// появляется внутри карточки вопроса (статус меняется «Ждёт» → «Отвечен»).
+/// В чат ответы не попадают и не должны.
 ///
-/// ⚠️ 12.07.2026 (Фаза 6): у АННЫ (role=admin, access.kind == admin) в карточке
+/// ⚠️ 12.07.2026 (Фаза 6): у АННЫ (access.kind == admin) в карточке
 /// неотвеченного вопроса появилась кнопка «Ответить» — раньше ответить можно
 /// было только curl'ом по /api/admin/qa/:id/answer, UI не существовало нигде,
-/// и Q&A по факту не работал. Ответ уходит на тот же админский эндпоинт;
-/// карточка сразу перерисовывается как отвеченная.
+/// и Q&A по факту не работал.
+///
+/// ⚠️ 13.07.2026 — ФИКС ВЁРСТКИ: короткий ответ («да») съёживался по ширине
+/// текста и вставал по ЦЕНТРУ карточки. Причина: ExpansionTile по умолчанию
+/// центрирует раскрытое содержимое (expandedCrossAxisAlignment = center).
+/// Ставим stretch — блок ответа всегда во всю ширину, как и длинный.
 class QATab extends ConsumerStatefulWidget {
   const QATab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -293,6 +297,11 @@ class _QuestionCard extends StatelessWidget {
           childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
           iconColor: AppColors.terracotta,
           collapsedIconColor: AppColors.textSecondary,
+          // ⚠️ БЕЗ ЭТИХ ДВУХ СТРОК короткий ответ («да») сжимался по ширине
+          // текста и вставал по центру карточки — ExpansionTile центрирует
+          // раскрытое содержимое по умолчанию.
+          expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+          expandedAlignment: Alignment.centerLeft,
           title: Row(
             children: [
               Expanded(
@@ -322,27 +331,27 @@ class _QuestionCard extends StatelessWidget {
                 answeredBy: question.answeredBy?.name ?? 'Анна Бусел',
               )
             else ...[
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Анна отвечает по пятницам — следите за уведомлениями',
-                  style: AppTypography.caption.copyWith(
-                    fontStyle: FontStyle.italic,
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Анна отвечает по пятницам — следите за уведомлениями',
+                    style: AppTypography.caption.copyWith(
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
                 ),
               ),
               if (onAnswer != null) ...[
                 const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.terracotta,
-                    ),
-                    onPressed: onAnswer,
-                    icon: const Icon(Icons.reply, size: 18),
-                    label: const Text('Ответить'),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.terracotta,
                   ),
+                  onPressed: onAnswer,
+                  icon: const Icon(Icons.reply, size: 18),
+                  label: const Text('Ответить'),
                 ),
               ],
             ],
@@ -389,6 +398,7 @@ class _StatusBadge extends StatelessWidget {
 }
 
 /// Блок ответа Анны внутри развёрнутой карточки.
+/// Всегда во всю ширину карточки — короткий ответ не должен «съёживаться».
 class _AnswerBlock extends StatelessWidget {
   const _AnswerBlock({
     required this.answer,
@@ -402,6 +412,7 @@ class _AnswerBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.surfaceLight,
