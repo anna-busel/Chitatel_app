@@ -16,12 +16,15 @@
   Вход — почта и пароль админа. Токен живёт только в памяти вкладки.
 
   ⚠️ 13.07.2026 — ДИАГНОСТИКА ВХОДА. Была жалоба «Невалидные данные»: это ответ
-  Zod-валидатора сервера (VALIDATION_ERROR), то есть не «пароль неверный», а
-  «поля не прошли проверку» — например, пустой пароль или email с опечаткой.
-  Теперь страница: (а) проверяет поля до отправки, (б) показывает КОНКРЕТНУЮ
-  причину из error.details, а не общую фразу.
-  Вход по почте и паролю — аккаунты Apple/Google сюда не подходят (у них нет
-  пароля). Для входа нужен email-аккаунт с ролью admin.
+  Zod-валидатора сервера, то есть «поля не прошли проверку» (пустой пароль,
+  опечатка в почте), а не «пароль неверный». Теперь страница проверяет поля до
+  отправки и показывает КОНКРЕТНУЮ причину из error.details.
+  ⚠️ Вход только по почте+паролю: аккаунты Apple/Google сюда не подходят (у них
+  нет пароля). Нужен email-аккаунт с ролью admin.
+
+  ⚠️ 13.07.2026 — у вопросов Q&A теперь видно, К КАКОМУ КЛУБУ они относятся
+  («Клуб июля» + книга). Сервер отдавал это поле и раньше (populate clubMonthId),
+  но страница его не показывала — Анна не понимала, о какой книге вопрос.
 -->
 <style>
   :root {
@@ -89,6 +92,16 @@
   .tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
   .meta { color: var(--muted); font-size: 13px; }
+  .club {
+    display: inline-block;
+    background: #F4EFE9;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-bottom: 6px;
+  }
   .quote {
     background: #F4EFE9;
     border-left: 3px solid var(--accent);
@@ -149,6 +162,11 @@
 
   const $ = (id) => document.getElementById(id);
 
+  const MONTHS = [
+    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+  ];
+
   function toast(text) {
     const t = $('toast');
     t.textContent = text;
@@ -187,8 +205,6 @@
     const email = $('email').value.trim().toLowerCase();
     const password = $('password').value;
 
-    // Проверяем до отправки — сервер на пустых полях вернёт «Невалидные данные»,
-    // что выглядит как ошибка пароля и путает.
     if (!email) {
       $('loginError').textContent = 'Введите почту';
       return;
@@ -231,6 +247,14 @@
     if (!iso) return '';
     const d = new Date(iso);
     return d.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
+  /** «Клуб июля · Гроздья гнева» — из populated clubMonthId. */
+  function clubLabel(club) {
+    if (!club || typeof club !== 'object') return '';
+    const month = MONTHS[(club.month || 1) - 1] || '';
+    const name = 'Клуб ' + month;
+    return club.title ? name + ' · ' + club.title : name;
   }
 
   const REASONS = {
@@ -319,8 +343,10 @@
 
     $('list').innerHTML = questions.map((q) => {
       const who = (q.userId && q.userId.name) || 'Участница';
+      const club = clubLabel(q.clubMonthId);
       return (
         '<div class="card" data-id="' + q._id + '">' +
+          (club ? '<div class="club">' + escapeHtml(club) + '</div>' : '') +
           '<div class="meta">' + fmtDate(q.createdAt) + ' · ' + escapeHtml(who) + '</div>' +
           '<div class="quote">' + escapeHtml(q.questionText) + '</div>' +
           '<textarea placeholder="Ваш ответ"></textarea>' +
