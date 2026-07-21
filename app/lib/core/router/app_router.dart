@@ -20,6 +20,7 @@ import '../../features/search/screens/search_screen.dart';
 import '../../features/player/screens/player_screen.dart';
 import '../../features/player/widgets/mini_player.dart';
 import '../../features/payments/screens/paywall_screen.dart';
+import '../../features/notifications/screens/notifications_screen.dart';
 import '../../features/diary/screens/diary_screen.dart';
 import '../../features/diary/screens/analysis_screen.dart';
 import '../../features/diary/screens/weekly_report_screen.dart';
@@ -41,10 +42,9 @@ final _shellNavigatorKey = GlobalKey<NavigatorState>();
 ///
 /// ⚠️ 12.07.2026 (Фаза 6, A6): все заглушки `_Placeholder` УДАЛЕНЫ — Apple
 /// отклоняет сборки с экранами «в разработке». Профиль и его подэкраны теперь
-/// настоящие (задача 6.2). Онбординг и опрос — волна 6Б (задача 6.3);
-/// до тех пор эти маршруты не объявлены вовсе, чтобы на них нельзя было
-/// попасть и упереться в пустоту. Экран разрешения push (4.8) — задача 6.1,
-/// теперь зарегистрирован (на него ведёт экран согласия на ИИ).
+/// настоящие (задача 6.2). Онбординг и опрос — волна 6Б (задача 6.3).
+/// Экран разрешения push (4.8) и лента уведомлений (4.30) — задача 6.1,
+/// теперь зарегистрированы.
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
@@ -184,6 +184,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.paywall,
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const PaywallScreen(),
+      ),
+      // Лента уведомлений (4.30, задача 6.1) — открывается с колокольчика.
+      GoRoute(
+        path: Routes.notifications,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const NotificationsScreen(),
       ),
 
       // — Дневник (задача 5.3) —

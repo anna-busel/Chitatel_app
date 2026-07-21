@@ -7,21 +7,19 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../notifications/providers/notification_provider.dart';
 import '../../profile/providers/profile_provider.dart';
 
 /// Шапка главного экрана.
 ///
-/// Структура: [аватар] [ЧИТАТЕЛЬ (лого, центр)] [балансир]
+/// Структура: [аватар] [ЧИТАТЕЛЬ (лого, центр)] [колокольчик]
 ///
 /// ⚠️ 12.07.2026 (Фаза 6): в кружке слева теперь ФОТО ПРОФИЛЯ, если оно
-/// загружено (раньше всегда был безликий человечек, хотя аватар уже был).
-/// У гостя (без аккаунта) профиль НЕ запрашивается — показываем иконку:
-/// иначе при каждом открытии главной уходил бы заведомо неуспешный запрос.
+/// загружено. У гостя (без аккаунта) профиль НЕ запрашивается.
 ///
-/// ⚠️ КОЛОКОЛЬЧИК УБРАН (A6): он вёл на экран «Уведомления» (лента пушей, 4.30),
-/// которого не существует. Вернём в волне 6Б вместе с push. Настройки
-/// уведомлений доступны: Профиль → Уведомления. Справа оставлен пустой блок
-/// той же ширины — чтобы логотип остался ровно по центру.
+/// КОЛОКОЛЬЧИК (задача 6.1, заход 2): возвращён — ведёт на ленту 4.30,
+/// красная точка при непрочитанных. У гостя — прежний пустой балансир
+/// (логотип остаётся по центру).
 class HomeHeader extends ConsumerWidget {
   const HomeHeader({super.key});
 
@@ -77,12 +75,61 @@ class HomeHeader extends ConsumerWidget {
             ),
           ),
 
-          // Балансир вместо колокольчика — держит логотип по центру.
-          const SizedBox(
-            width: AppSpacing.minTapTarget,
-            height: AppSpacing.minTapTarget,
-          ),
+          // Колокольчик (только для авторизованных) / балансир у гостя.
+          if (isAuthenticated)
+            const _NotificationBell()
+          else
+            const SizedBox(
+              width: AppSpacing.minTapTarget,
+              height: AppSpacing.minTapTarget,
+            ),
         ],
+      ),
+    );
+  }
+}
+
+/// Колокольчик с красной точкой при наличии непрочитанных.
+class _NotificationBell extends ConsumerWidget {
+  const _NotificationBell();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unread = ref.watch(notificationsProvider).maybeWhen(
+          data: (d) => d.unreadCount,
+          orElse: () => 0,
+        );
+
+    return InkResponse(
+      onTap: () => context.push(Routes.notifications),
+      radius: AppSpacing.minTapTarget / 2,
+      child: SizedBox(
+        width: AppSpacing.minTapTarget,
+        height: AppSpacing.minTapTarget,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            const Icon(
+              Icons.notifications_none,
+              color: AppColors.textPrimary,
+              size: 24,
+            ),
+            if (unread > 0)
+              Positioned(
+                top: 11,
+                right: 11,
+                child: Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: AppColors.error,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.background, width: 1.5),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
