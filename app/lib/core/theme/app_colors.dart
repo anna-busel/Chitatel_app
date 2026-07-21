@@ -4,15 +4,13 @@ import 'package:flutter/material.dart';
 ///
 /// ⚠️ 21.07.2026 — ПАЛИТРА ПЕРЕВЕДЕНА НА БРЕНД САЙТА annabusel.org:
 /// белый · чёрный · беж (#E6E3D8) · винный (#750009) · холодный серый (#DDDDDD).
-/// Винный подтверждён по странице клуба сайта (тёмно-бордовый, не яркий).
+/// КОРИЧНЕВОГО (кофейного) В БРЕНДЕ НЕТ.
 ///
-/// Имена полей СОХРАНЕНЫ (terracotta/coral/…) НАМЕРЕННО — чтобы не править
-/// десятки экранов, которые на них ссылаются. Поменялись только ЗНАЧЕНИЯ:
-/// `terracotta` теперь винный, `coral` — светлее винный (для градиента).
-///
-/// Кофейный тёмный слой (darkCoffee/lightCoffee — чат-закреп, плеер) пока
-/// оставлен: по бренду чёрный — акцент/текст, а не крупные плиты, поэтому
-/// эти места смягчаются отдельно (беж/белый вместо тёмных плит).
+/// Имена полей СОХРАНЕНЫ (terracotta/coral/darkCoffee/…) НАМЕРЕННО — чтобы
+/// не править десятки экранов, которые на них ссылаются. Поменялись только ЗНАЧЕНИЯ:
+/// `terracotta` — винный, `coral` — светлее винный, `darkCoffee`/`lightCoffee` —
+/// теперь нейтральный тёмный (были коричневыми), чтобы коричневый ушёл
+/// из всех мест (плеер, градиенты) без правки каждого виджета.
 ///
 /// НИКОГДА не используй хардкод цветов — только через AppColors.
 class AppColors {
@@ -21,8 +19,9 @@ class AppColors {
   // ── Основные (акцент — винный) ──
   static const Color terracotta = Color(0xFF750009); // бренд: винный акцент
   static const Color coral = Color(0xFF9B1C24);      // светлее винный (градиент)
-  static const Color darkCoffee = Color(0xFF1A0E08);
-  static const Color lightCoffee = Color(0xFF3A2018);
+  // Были кофейными (#1A0E08/#3A2018) — теперь нейтральный тёмный, без коричневого.
+  static const Color darkCoffee = Color(0xFF1E1B18);
+  static const Color lightCoffee = Color(0xFF2C2824);
   static const Color background = Color(0xFFFAFAF7);
   static const Color cardBackground = Color(0xFFFFFFFF);
 
@@ -52,6 +51,7 @@ class AppColors {
   static const Color border = Color(0xFFE8E5E0);
 
   // ── Градиенты (используются в обложках, плеере, клубе) ──
+  // Был кофейный — теперь нейтральный тёмный градиент (без коричневого).
   static const LinearGradient coffeeGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
