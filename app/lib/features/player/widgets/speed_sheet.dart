@@ -1,22 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../providers/player_provider.dart';
 
-/// Шторка выбора скорости воспроизведения (MASTER 4.18, прототип v4.2).
+/// Шторка выбора скорости воспроизведения (MASTER 4.18).
 ///
-/// Цвета — точный матч прототипа (строка 1066):
-/// - background: AppColors.darkCoffee (#1A0E08)
-/// - текст: белый
-/// - drag-handle: rgba(255,255,255,0.2)
-/// - кнопки невыбранные: rgba(255,255,255,0.08)
-/// - кнопка выбранная: terracotta (#C73E28)
+/// ⚠️ 21.07.2026 — СВЕТЛАЯ под бренд (была тёмная кофейная):
+/// белый фон, чёрный текст, невыбранные кнопки светлые, выбранная — винная.
 ///
 /// 5 вариантов: 0.75× / 1.0× / 1.25× / 1.5× / 2.0×.
-/// Скорость сохраняется между сессиями (через playerSpeedProvider →
-/// SharedPreferences). Стандарт как у Apple Books, Audible.
 class SpeedSheet extends ConsumerWidget {
   const SpeedSheet({super.key});
 
@@ -27,7 +20,7 @@ class SpeedSheet extends ConsumerWidget {
     return SafeArea(
       child: Container(
         decoration: const BoxDecoration(
-          color: AppColors.darkCoffee,
+          color: AppColors.cardBackground,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -41,7 +34,7 @@ class SpeedSheet extends ConsumerWidget {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                color: Colors.white,
+                color: AppColors.textPrimary,
               ),
             ),
             const SizedBox(height: 20),
@@ -80,7 +73,7 @@ class _DragHandle extends StatelessWidget {
         width: 36,
         height: 4,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.2),
+          color: AppColors.coldGray,
           borderRadius: BorderRadius.circular(2),
         ),
       ),
@@ -102,9 +95,9 @@ class _SpeedButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = _formatSpeed(speed);
-    final backgroundColor = isSelected
-        ? AppColors.terracotta
-        : Colors.white.withOpacity(0.08);
+    final backgroundColor =
+        isSelected ? AppColors.terracotta : AppColors.surfaceLight;
+    final textColor = isSelected ? Colors.white : AppColors.textPrimary;
 
     return Semantics(
       label: 'Скорость $label, ${isSelected ? "выбрана" : "не выбрана"}',
@@ -121,10 +114,10 @@ class _SpeedButton extends StatelessWidget {
             alignment: Alignment.center,
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
-                color: Colors.white,
+                color: textColor,
               ),
             ),
           ),

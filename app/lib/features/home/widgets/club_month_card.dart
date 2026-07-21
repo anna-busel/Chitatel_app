@@ -8,7 +8,11 @@ import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 
 /// Карточка «Клуб месяца» на главной.
-/// Большой баннер с обложкой книги, названием клуба, кнопкой «Подробнее».
+/// Баннер с обложкой книги, названием клуба, кнопкой «Подробнее».
+///
+/// ⚠️ 21.07.2026 — РЕДИЗАЙН ПОД БРЕНД: был тёмный кофейный градиент —
+/// теперь бежевая карточка, чёрный текст, винный бейдж «КЛУБ МЕСЯЦА»,
+/// кнопка «Подробнее» — винным по белому.
 ///
 /// Если clubBook == null (в БД нет книги клуба текущего месяца) —
 /// показываем нейтральный плейсхолдер-баннер с приглашением в клуб.
@@ -32,7 +36,7 @@ class ClubMonthCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
         child: Container(
           decoration: BoxDecoration(
-            gradient: AppColors.coffeeGradient,
+            color: AppColors.beige,
             borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
             boxShadow: AppColors.cardShadow,
           ),
@@ -73,7 +77,7 @@ class ClubMonthCard extends StatelessWidget {
                     Text(
                       book?.title ?? 'Присоединяйтесь к клубу',
                       style: AppTypography.serifBookTitle.copyWith(
-                        color: Colors.white,
+                        color: AppColors.textPrimary,
                         fontSize: 20,
                       ),
                       maxLines: 2,
@@ -85,7 +89,7 @@ class ClubMonthCard extends StatelessWidget {
                           ? book!.author
                           : 'Узнайте книгу месяца',
                       style: AppTypography.caption.copyWith(
-                        color: Colors.white.withOpacity(0.75),
+                        color: AppColors.textSecondary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -97,16 +101,14 @@ class ClubMonthCard extends StatelessWidget {
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.12),
+                        color: AppColors.cardBackground,
                         borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.3),
-                        ),
+                        border: Border.all(color: AppColors.border),
                       ),
-                      child: const Text(
+                      child: Text(
                         'Подробнее →',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: AppColors.terracotta,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                         ),

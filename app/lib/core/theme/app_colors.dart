@@ -7,10 +7,9 @@ import 'package:flutter/material.dart';
 /// КОРИЧНЕВОГО (кофейного) В БРЕНДЕ НЕТ.
 ///
 /// Имена полей СОХРАНЕНЫ (terracotta/coral/darkCoffee/…) НАМЕРЕННО — чтобы
-/// не править десятки экранов, которые на них ссылаются. Поменялись только ЗНАЧЕНИЯ:
+/// не править десятки экранов. Поменялись только ЗНАЧЕНИЯ:
 /// `terracotta` — винный, `coral` — светлее винный, `darkCoffee`/`lightCoffee` —
-/// теперь нейтральный тёмный (были коричневыми), чтобы коричневый ушёл
-/// из всех мест (плеер, градиенты) без правки каждого виджета.
+/// нейтральный тёмный, `border` — холодный серый (был тёплый).
 ///
 /// НИКОГДА не используй хардкод цветов — только через AppColors.
 class AppColors {
@@ -48,9 +47,10 @@ class AppColors {
   // ── Фоновые поверхности ──
   static const Color surfaceLight = Color(0xFFF5F3EF);
   static const Color surfaceMedium = Color(0xFFF0EDE8);
-  static const Color border = Color(0xFFE8E5E0);
+  // Рамки/разделители — холодный серый (был тёплый #E8E5E0).
+  static const Color border = Color(0xFFDDDDDD);
 
-  // ── Градиенты (используются в обложках, плеере, клубе) ──
+  // ── Градиенты ──
   // Был кофейный — теперь нейтральный тёмный градиент (без коричневого).
   static const LinearGradient coffeeGradient = LinearGradient(
     begin: Alignment.topLeft,
@@ -71,7 +71,7 @@ class AppColors {
     colors: [successLight, Color(0xFF4CC98A)],
   );
 
-  // ── Тени (из прототипа) ──
+  // ── Тени ──
   static List<BoxShadow> get cardShadow => [
     const BoxShadow(
       color: Color(0x0A000000),
@@ -85,7 +85,7 @@ class AppColors {
     ),
   ];
 
-  // Тень кнопки — винная (была терракотовая).
+  // Тень кнопки — винная.
   static List<BoxShadow> get buttonShadow => [
     const BoxShadow(
       color: Color(0x33750009),

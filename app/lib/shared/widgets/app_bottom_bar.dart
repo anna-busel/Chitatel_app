@@ -6,7 +6,8 @@ import '../../core/constants/app_sizes.dart';
 /// Источник: MASTER.md секция 4.47, прототип
 ///
 /// 4 вкладки: Главная, Каталог, Клуб, Профиль.
-/// Активный таб: терракота. Неактивный: #1A1A1A с opacity 0.35.
+/// Активный таб: винный. Неактивный: #1A1A1A с opacity 0.35.
+/// Верхняя линия — холодный серый (coldGray).
 class AppBottomBar extends StatelessWidget {
   const AppBottomBar({
     super.key,
@@ -23,7 +24,7 @@ class AppBottomBar extends StatelessWidget {
       decoration: const BoxDecoration(
         color: AppColors.background,
         border: Border(
-          top: BorderSide(color: Color(0xFFECEAE5), width: 1),
+          top: BorderSide(color: AppColors.coldGray, width: 1),
         ),
       ),
       padding: const EdgeInsets.only(

@@ -42,8 +42,9 @@ class AppTheme {
         fontWeight: FontWeight.w500,
       ),
     ),
+    // Разделители — холодный серый (бренд сайта).
     dividerTheme: const DividerThemeData(
-      color: AppColors.surfaceMedium,
+      color: AppColors.coldGray,
       thickness: 1,
       space: 0,
     ),

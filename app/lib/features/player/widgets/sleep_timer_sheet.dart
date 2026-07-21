@@ -5,14 +5,10 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../providers/player_provider.dart';
 
-/// Шторка таймера сна (MASTER 4.19, прототип v4.2).
+/// Шторка таймера сна (MASTER 4.19).
 ///
-/// Цвета — точный матч прототипа (строка 1075):
-/// - background: AppColors.darkCoffee (#1A0E08)
-/// - текст: белый
-/// - drag-handle: rgba(255,255,255,0.2)
-/// - кнопки: rgba(255,255,255,0.08)
-/// - акцент: terracotta
+/// ⚠️ 21.07.2026 — СВЕТЛАЯ под бренд (была тёмная кофейная):
+/// белый фон, чёрный текст, светлые кнопки, винный акцент.
 ///
 /// 5 опций: 15 / 30 / 45 / 60 мин / Конец части.
 /// Если таймер уже активен — показывается счётчик и кнопка «Отменить».
@@ -30,7 +26,7 @@ class SleepTimerSheet extends ConsumerWidget {
     return SafeArea(
       child: Container(
         decoration: const BoxDecoration(
-          color: AppColors.darkCoffee,
+          color: AppColors.cardBackground,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -44,7 +40,7 @@ class SleepTimerSheet extends ConsumerWidget {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                color: Colors.white,
+                color: AppColors.textPrimary,
               ),
             ),
             const SizedBox(height: 20),
@@ -111,7 +107,7 @@ class _DragHandle extends StatelessWidget {
         width: 36,
         height: 4,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.2),
+          color: AppColors.coldGray,
           borderRadius: BorderRadius.circular(2),
         ),
       ),
@@ -142,7 +138,7 @@ class _ActiveTimerCard extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
+            color: AppColors.surfaceLight,
             borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
           ),
           child: Column(
@@ -155,7 +151,7 @@ class _ActiveTimerCard extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ],
@@ -277,7 +273,7 @@ class _TimerButton extends StatelessWidget {
       label: 'Таймер сна: $label',
       button: true,
       child: Material(
-        color: Colors.white.withOpacity(0.08),
+        color: AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
         child: InkWell(
           onTap: onTap,
@@ -291,7 +287,7 @@ class _TimerButton extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: Colors.white,
+                color: AppColors.textPrimary,
               ),
             ),
           ),
