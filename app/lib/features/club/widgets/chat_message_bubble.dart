@@ -81,7 +81,7 @@ Border? _bubbleBorder({required bool isMine, required bool adminAuthor}) {
 ///
 /// Логика стиля:
 /// - Своё сообщение — справа, terracotta фон, белый текст, без аватара
-/// - Чужое — слева, белый фон + тонкая рамка (без тени — оптимизация 11.07),
+/// - Чужое — слева, бежевый фон + тонкая рамка (без тени — оптимизация 11.07),
 ///   тёмный текст, с круглым аватаром-инициалом
 /// - Удалённое (deletedAt != null) — серый курсив «Сообщение удалено»
 /// - Reply preview — компактная полоска (1 строка) сверху bubble с цитатой
@@ -210,7 +210,7 @@ class ChatMessageBubble extends StatelessWidget {
     final bareImage = isImage && !hasCaption;
 
     final bubbleColor =
-        isMine ? AppColors.terracotta : AppColors.cardBackground;
+        isMine ? AppColors.terracotta : AppColors.beige;
     final textColor = isMine ? Colors.white : AppColors.textPrimary;
     final metaColor = isMine ? Colors.white70 : AppColors.textTertiary;
 
@@ -894,13 +894,14 @@ class _Avatar extends StatelessWidget {
 
   static const double _size = 32;
 
+  // Цвета аватарок-инициалов — бренд-акценты (без оранжевого/коричневого).
   static const List<Color> _palette = [
-    Color(0xFFC73E28),
-    Color(0xFFE8734A),
+    AppColors.terracotta,
+    AppColors.coral,
     Color(0xFF7B61FF),
     Color(0xFF2D9F6E),
-    Color(0xFFD9A33A),
-    Color(0xFF3A2018),
+    AppColors.gold,
+    AppColors.brandBlack,
   ];
 
   Color _colorForName(String n) {
