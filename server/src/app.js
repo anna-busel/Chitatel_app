@@ -21,6 +21,8 @@ const quoteRoutes = require('./routes/quotes');
 const reportRoutes = require('./routes/reports');
 const profileRoutes = require('./routes/profile');
 const userRoutes = require('./routes/users');
+const notificationRoutes = require('./routes/notifications');
+const adminPushRoutes = require('./routes/admin-push');
 
 const app = express();
 
@@ -72,6 +74,13 @@ app.use('/api/profile', profileRoutes);
 // Пользователи (Фаза 6, A1): блокировка участника участником, список
 // заблокированных, жалоба на пользователя. Apple Guideline 1.2 (UGC).
 app.use('/api/users', userRoutes);
+
+// Push-уведомления (Фаза 6, 6.1): регистрация APNs-токена устройства.
+app.use('/api/notifications', notificationRoutes);
+
+// Ручная отправка push из админки (MASTER 9): POST /api/admin/push/send.
+// Отдельный роут-файл, чтобы не раздувать admin.js; та же защита requireAdmin.
+app.use('/api/admin/push', adminPushRoutes);
 
 /* ------------------------------------------------------------------ *
  *              СТАТИКА: АДМИНКА И ЮРИДИЧЕСКИЕ СТРАНИЦЫ               *

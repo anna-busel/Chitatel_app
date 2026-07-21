@@ -42,6 +42,23 @@ const config = {
     rootCertsPath: process.env.APPLE_ROOT_CERTS_PATH || '',
   },
 
+  // APNs для push-уведомлений (задача 6.1). Token-based (.p8), отдельный ключ —
+  // НЕ тот, что для Sign in with Apple (apple.keyId). Создаётся в Apple Developer
+  // → Keys → Apple Push Notification service (APNs). Файл .p8 лежит вне репо,
+  // chmod 600. teamId можно переиспользовать из APPLE_TEAM_ID.
+  apns: {
+    keyId: process.env.APNS_KEY_ID || '',
+    teamId: process.env.APNS_TEAM_ID || process.env.APPLE_TEAM_ID || '',
+    keyPath: process.env.APNS_KEY_PATH || '',
+    bundleId:
+      process.env.APNS_BUNDLE_ID ||
+      process.env.APPLE_BUNDLE_ID ||
+      process.env.APPLE_CLIENT_ID ||
+      'app.chitatel.ios',
+    // true → продовый шлюз APNs. Для TestFlight/разработки — false (sandbox).
+    production: process.env.APNS_PRODUCTION === 'true',
+  },
+
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
   },

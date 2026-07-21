@@ -6,6 +6,7 @@ const config = require('./config');
 const logger = require('./config/logger');
 const { setupSocket } = require('./socket');
 const { scheduleWeeklyReports } = require('./jobs/weekly-report');
+const { schedulePushJobs } = require('./jobs/push-scheduler');
 
 const server = http.createServer(app);
 
@@ -34,6 +35,9 @@ const start = async () => {
     // Cron еженедельного ИИ-отчёта (задача 5.1).
     // ⚠️ PM2 — строго fork mode, 1 инстанс, иначе cron задвоится.
     scheduleWeeklyReports();
+
+    // Cron push-уведомлений (задача 6.1). Тот же принцип: 1 инстанс.
+    schedulePushJobs();
 
     server.listen(config.port, () => {
       logger.info(`Server running on port ${config.port} [${config.nodeEnv}]`);
