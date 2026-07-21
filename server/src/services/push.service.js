@@ -1,6 +1,7 @@
 const config = require('../config');
 const logger = require('../config/logger');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 
 /**
  * Отправка push через APNs (MASTER 7.9), token-based (.p8).
@@ -25,6 +26,15 @@ try {
 
 let provider = null;
 let providerInitTried = false;
+
+// Типы, которые сохраняются в ленту уведомлений (4.30) при отправке.
+// Персональные события — да; массовые рассылки/напоминания — нет (шум).
+const PERSIST_TYPES = new Set([
+  'ai_ready',
+  'weekly_report',
+  'chat_reply',
+  'new_audio',
+]);
 
 /**
  * Ленивая инициализация APNs-провайдера. Возвращает null, если apn не
@@ -130,11 +140,29 @@ const deliver = async (user, payload) => {
 
 /**
  * Отправить одному пользователю по id.
+ * Значимые персональные типы (PERSIST_TYPES) сохраняются в ленту 4.30
+ * НЕЗАВИСИМО от push-разрешения и наличия токена (лента = история).
+ *
  * @param {string} userId
  * @param {{title:string, body:string, data?:object}} payload
  * @param {string|null} settingKey - ключ pushSettings или null
  */
 const sendToUser = async (userId, payload, settingKey = null) => {
+  const type = payload.data && payload.data.type;
+  if (type && PERSIST_TYPES.has(type)) {
+    try {
+      await Notification.create({
+        userId,
+        type,
+        title: payload.title,
+        body: payload.body,
+        data: payload.data || {},
+      });
+    } catch (err) {
+      logger.warn('Не удалось сохранить уведомление в ленту', { message: err.message });
+    }
+  }
+
   const user = await User.findById(userId)
     .select('pushToken pushSettings isDeleted')
     .lean();
@@ -143,7 +171,7 @@ const sendToUser = async (userId, payload, settingKey = null) => {
 };
 
 /**
- * Рассылка сегменту.
+ * Рассылка сегменту (в ленту НЕ пишется).
  * @param {{audience?: 'all'|'subscribers'}} opts
  * @param {{title:string, body:string, data?:object}} payload
  * @param {string|null} settingKey
