@@ -4,6 +4,7 @@ const logger = require('../config/logger');
 const { AppError } = require('../middleware/error');
 const Quote = require('../models/Quote');
 const Book = require('../models/Book');
+const pushService = require('./push.service');
 const {
   AI_MODEL,
   AI_TEMPERATURE,
@@ -179,6 +180,21 @@ const analyzeQuote = async (quote, user) => {
     ).lean();
 
     logger.info('AI quote analysis ready', { quoteId: String(quote._id) });
+
+    // Push °Анализ готов° (задача 6.1, MASTER 7.9). Fire-and-forget,
+    // гейтится настройкой aiReady внутри push.service.
+    pushService
+      .sendToUser(
+        quote.userId,
+        {
+          title: 'Анализ цитаты готов',
+          body: 'ИИ разобрал вашу цитату — загляните в дневник',
+          data: { type: 'ai_ready', quoteId: String(quote._id) },
+        },
+        'aiReady'
+      )
+      .catch(() => {});
+
     return updated;
   } catch (err) {
     await Quote.findByIdAndUpdate(quote._id, { $set: { aiStatus: 'failed' } });

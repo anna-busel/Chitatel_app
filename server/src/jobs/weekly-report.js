@@ -4,6 +4,7 @@ const User = require('../models/User');
 const Quote = require('../models/Quote');
 const WeeklyReport = require('../models/WeeklyReport');
 const { generateWeeklySummary } = require('../services/ai.service');
+const pushService = require('../services/push.service');
 
 /**
  * Еженедельный ИИ-отчёт (MASTER 7.7, экран 4.26).
@@ -13,7 +14,7 @@ const { generateWeeklySummary } = require('../services/ai.service');
  *   - у юзера aiConsent === true
  *   - за последние 7 дней сохранено >= 3 цитат
  *
- * Push «Еженедельный отчёт готов» — задача 6.1 (push-сервиса ещё нет).
+ * Push «Еженедельный отчёт готов» — шлётся после генерации (задача 6.1).
  */
 
 const MIN_QUOTES_FOR_REPORT = 3;
@@ -93,6 +94,23 @@ const runWeeklyReports = async () => {
       );
 
       created += 1;
+
+      // Push «еженедельный отчёт готов» (задача 6.1). Гейтится настройкой weeklyReport.
+      pushService
+        .sendToUser(
+          user._id,
+          {
+            title: 'Еженедельный отчёт',
+            body: `${quotes.length} цитат за неделю — читайте разбор`,
+            data: {
+              type: 'weekly_report',
+              year: String(year),
+              week: String(weekNumber),
+            },
+          },
+          'weeklyReport'
+        )
+        .catch(() => {});
     } catch (err) {
       // Один упавший юзер не должен ронять весь прогон.
       logger.error('Weekly report failed for user', {
