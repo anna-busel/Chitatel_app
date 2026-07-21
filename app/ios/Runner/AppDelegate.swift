@@ -28,6 +28,17 @@ import UserNotifications
 
     UNUserNotificationCenter.current().delegate = self
 
+    // Если разрешение уже выдано (вернувшийся юзер) — переполучаем токен на
+    // старте. registerForRemoteNotifications ДИАЛОГ НЕ ПОКАЗЫВАЕТ, только
+    // триггерит didRegister → onToken → регистрация на бэкенде.
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      if settings.authorizationStatus == .authorized {
+        DispatchQueue.main.async {
+          UIApplication.shared.registerForRemoteNotifications()
+        }
+      }
+    }
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
