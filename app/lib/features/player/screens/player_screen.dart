@@ -18,24 +18,9 @@ import '../widgets/sleep_timer_sheet.dart';
 /// Открывается через `/player/:bookId`, может прийти с дополнительными
 /// параметрами в `extra`: `{'startPart': int?, 'startPosition': int?}`.
 ///
-/// Логика загрузки книги (`_ensureBookLoaded`):
-/// 1. Книга НЕ та же что играет → loadBook (новая книга).
-/// 2. Та же книга, но юзер явно попросил другую часть через extra → loadBook
-///    с новой частью (юзер тапнул часть 2 при играющей части 1).
-/// 3. Та же книга и часть → ничего не делаем (юзер пришёл из mini-player).
-///
-/// Цвета (13.05.2026 v3 — шоколадные тона, согласовано с заказчиком):
-/// - фон: градиент #3A2018 (lightCoffee, сверху) → #1A0E08 (darkCoffee, снизу).
-///   Тот же тон что в карточке «Клуб месяца» на главной — визуальная связь.
-/// - status bar: светлые иконки (AnnotatedRegion)
-/// - обложка: 180×270 (соотношение 2:3 — как в каталоге, реальные PNG
-///   не обрезаются; см. `BookGridCard` где coverHeight = coverWidth * 1.5)
-///
-/// Apple HIG → Now Playing screen: deep immersive color, минимум элементов,
-/// фокус на воспроизведении. Контраст белого:
-/// - на #3A2018 (верх) = 12.4:1
-/// - на #1A0E08 (низ) = 18.7:1
-/// WCAG AA минимум 4.5:1.
+/// ⚠️ 21.07.2026 — СВЕТЛЫЙ ПОД БРЕНД. Был тёмный кофейный градиент —
+/// теперь бежевый градиент (beige → beigeDeep), чёрный текст, винное
+/// управление. Статус-бар — тёмные иконки (светлый фон). Обложка 180×270.
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({
     super.key,
@@ -99,18 +84,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final bookAsync = ref.watch(bookProvider(widget.bookId));
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      // Тёмный фон плеера → светлые иконки status bar (Apple HIG)
-      value: SystemUiOverlayStyle.light,
+      // Светлый фон плеера → тёмные иконки status bar.
+      value: SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: AppColors.darkCoffee,
+        backgroundColor: AppColors.beige,
         body: Container(
-          // Градиент фона — шоколадный, как в карточке «Клуб месяца» на главной.
-          // Сверху lightCoffee (#3A2018), снизу darkCoffee (#1A0E08).
+          // Бежевый градиент для мягкой глубины (сверху светлее, снизу темнее).
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [AppColors.lightCoffee, AppColors.darkCoffee],
+              colors: [AppColors.beige, AppColors.beigeDeep],
             ),
           ),
           child: bookAsync.when(
@@ -134,7 +118,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 }
 
-// ─────────────────────────── BODY ───────────────────────────
+// ────────────────────── BODY ──────────────────────
 
 class _PlayerBody extends ConsumerWidget {
   const _PlayerBody({required this.book});
@@ -185,7 +169,7 @@ class _PlayerBody extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────── TOP BAR ───────────────────────────
+// ────────────────────── TOP BAR ──────────────────────
 
 class _TopBar extends StatelessWidget {
   const _TopBar();
@@ -207,7 +191,7 @@ class _TopBar extends StatelessWidget {
               icon: const Icon(
                 Icons.keyboard_arrow_down_rounded,
                 size: 30,
-                color: Colors.white,
+                color: AppColors.textPrimary,
               ),
               constraints: const BoxConstraints(
                 minWidth: AppSpacing.minTapTarget,
@@ -218,7 +202,7 @@ class _TopBar extends StatelessWidget {
           Text(
             'Сейчас играет',
             style: AppTypography.microBold.copyWith(
-              color: Colors.white.withOpacity(0.6),
+              color: AppColors.textTertiary,
               letterSpacing: 1.2,
             ),
           ),
@@ -230,18 +214,13 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── COVER ───────────────────────────
+// ────────────────────── COVER ──────────────────────
 
 class _CoverSection extends StatelessWidget {
   const _CoverSection({required this.book});
 
   final BookModel book;
 
-  /// Обложка в плеере: 180×270 (соотношение 2:3).
-  /// Совпадает с пропорциями карточек в каталоге (см. BookGridCard,
-  /// `coverHeight = coverWidth * 1.5`). Реальные PNG обложки книг —
-  /// вертикальные ~7:10, и при таком соотношении контейнера BoxFit.cover
-  /// показывает их без обрезки.
   static const double _coverWidth = 180;
   static const double _coverHeight = 270;
 
@@ -254,9 +233,9 @@ class _CoverSection extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.5),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
+            color: Colors.black.withOpacity(0.22),
+            blurRadius: 26,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
@@ -275,7 +254,7 @@ class _CoverSection extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── TITLE ───────────────────────────
+// ────────────────────── TITLE ──────────────────────
 
 class _TitleSection extends ConsumerWidget {
   const _TitleSection({required this.book});
@@ -295,7 +274,7 @@ class _TitleSection extends ConsumerWidget {
         Text(
           book.title,
           style: AppTypography.serifBookTitle.copyWith(
-            color: Colors.white,
+            color: AppColors.textPrimary,
             fontSize: 22,
           ),
           textAlign: TextAlign.center,
@@ -306,7 +285,7 @@ class _TitleSection extends ConsumerWidget {
         Text(
           book.author,
           style: AppTypography.body.copyWith(
-            color: Colors.white.withOpacity(0.75),
+            color: AppColors.textSecondary,
           ),
           textAlign: TextAlign.center,
         ),
@@ -315,13 +294,13 @@ class _TitleSection extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.12),
+              color: AppColors.beigeDeep,
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
               partTitle,
               style: AppTypography.captionMedium.copyWith(
-                color: Colors.white.withOpacity(0.9),
+                color: AppColors.textPrimary,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -333,7 +312,7 @@ class _TitleSection extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────── PROGRESS (slider) ───────────────────────────
+// ────────────────────── PROGRESS (slider) ──────────────────────
 
 class _ProgressSection extends ConsumerStatefulWidget {
   const _ProgressSection();
@@ -363,7 +342,7 @@ class _ProgressSectionState extends ConsumerState<_ProgressSection> {
           data: SliderTheme.of(context).copyWith(
             trackHeight: 3,
             activeTrackColor: AppColors.terracotta,
-            inactiveTrackColor: Colors.white.withOpacity(0.2),
+            inactiveTrackColor: AppColors.coldGray,
             thumbColor: AppColors.terracotta,
             overlayColor: AppColors.terracotta.withOpacity(0.2),
             thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
@@ -394,13 +373,13 @@ class _ProgressSectionState extends ConsumerState<_ProgressSection> {
               Text(
                 _formatTime(displayPosition),
                 style: AppTypography.caption.copyWith(
-                  color: Colors.white.withOpacity(0.75),
+                  color: AppColors.textSecondary,
                 ),
               ),
               Text(
                 _formatTime(state.duration),
                 style: AppTypography.caption.copyWith(
-                  color: Colors.white.withOpacity(0.75),
+                  color: AppColors.textSecondary,
                 ),
               ),
             ],
@@ -411,7 +390,7 @@ class _ProgressSectionState extends ConsumerState<_ProgressSection> {
   }
 }
 
-// ─────────────────────────── MAIN CONTROLS ───────────────────────────
+// ────────────────────── MAIN CONTROLS ──────────────────────
 
 class _MainControls extends ConsumerWidget {
   const _MainControls();
@@ -476,14 +455,14 @@ class _SkipButton extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 32, color: Colors.white),
+                Icon(icon, size: 32, color: AppColors.textPrimary),
                 const SizedBox(height: 2),
                 Text(
                   label,
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white.withOpacity(0.7),
+                    color: AppColors.textSecondary,
                   ),
                 ),
               ],
@@ -553,7 +532,7 @@ class _PlayPauseBig extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────── BOTTOM CONTROLS ───────────────────────────
+// ────────────────────── BOTTOM CONTROLS ──────────────────────
 
 class _BottomControls extends ConsumerWidget {
   const _BottomControls();
@@ -630,7 +609,7 @@ class _BottomButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color =
-        isActive ? AppColors.terracotta : Colors.white.withOpacity(0.8);
+        isActive ? AppColors.terracotta : AppColors.textSecondary;
 
     return Semantics(
       label: semanticLabel,
@@ -668,7 +647,7 @@ class _BottomButton extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── LOADING / ERROR ───────────────────────────
+// ────────────────────── LOADING / ERROR ──────────────────────
 
 class _LoadingView extends StatelessWidget {
   const _LoadingView();
@@ -677,7 +656,7 @@ class _LoadingView extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Center(
       child: CircularProgressIndicator(
-        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+        valueColor: AlwaysStoppedAnimation<Color>(AppColors.terracotta),
       ),
     );
   }
@@ -697,19 +676,19 @@ class _ErrorView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.error_outline,
-                size: 48, color: Colors.white70),
+                size: 48, color: AppColors.textSecondary),
             const SizedBox(height: 16),
             Text(
               'Не удалось загрузить разбор',
               style: AppTypography.serifSectionTitle
-                  .copyWith(color: Colors.white),
+                  .copyWith(color: AppColors.textPrimary),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               'Проверьте соединение и попробуйте снова',
               style: AppTypography.caption.copyWith(
-                color: Colors.white.withOpacity(0.75),
+                color: AppColors.textSecondary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -742,7 +721,7 @@ class _ErrorView extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── HELPERS ───────────────────────────
+// ────────────────────── HELPERS ──────────────────────
 
 String _formatTime(Duration d) {
   final h = d.inHours;
