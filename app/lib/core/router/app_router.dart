@@ -11,6 +11,7 @@ import '../../features/auth/screens/email_login_screen.dart';
 import '../../features/auth/screens/email_register_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/auth/screens/ai_consent_screen.dart';
+import '../../features/auth/screens/push_permission_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/catalog/screens/catalog_screen.dart';
 import '../../features/club/screens/club_screen.dart';
@@ -40,9 +41,10 @@ final _shellNavigatorKey = GlobalKey<NavigatorState>();
 ///
 /// ⚠️ 12.07.2026 (Фаза 6, A6): все заглушки `_Placeholder` УДАЛЕНЫ — Apple
 /// отклоняет сборки с экранами «в разработке». Профиль и его подэкраны теперь
-/// настоящие (задача 6.2). Онбординг, опрос и экран разрешения push — волна 6Б
-/// (задачи 6.1/6.3); до тех пор эти маршруты не объявлены вовсе, чтобы на них
-/// нельзя было попасть и упереться в пустоту.
+/// настоящие (задача 6.2). Онбординг и опрос — волна 6Б (задача 6.3);
+/// до тех пор эти маршруты не объявлены вовсе, чтобы на них нельзя было
+/// попасть и упереться в пустоту. Экран разрешения push (4.8) — задача 6.1,
+/// теперь зарегистрирован (на него ведёт экран согласия на ИИ).
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
@@ -58,7 +60,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           location != Routes.emailLogin &&
           location != Routes.register &&
           location != Routes.forgotPassword &&
-          location != Routes.aiConsent) {
+          location != Routes.aiConsent &&
+          location != Routes.pushConsent) {
         return Routes.login;
       }
 
@@ -86,6 +89,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.aiConsent,
         builder: (context, state) => const AiConsentScreen(),
+      ),
+      // Разрешение на push (4.8, задача 6.1) — шаг онбординга после согласия на ИИ.
+      GoRoute(
+        path: Routes.pushConsent,
+        builder: (context, state) => const PushPermissionScreen(),
       ),
 
       // — Главные табы (ShellRoute с bottom bar + mini-player) —

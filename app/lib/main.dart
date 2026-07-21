@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
+import 'core/services/push_service.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/player/services/audio_service.dart';
 import 'features/player/services/cover_cache.dart';
@@ -35,6 +36,11 @@ void main() async {
     progressService: container.read(progressServiceProvider),
     coverCache: container.read(coverCacheProvider),
   );
+
+  // Push-сервис (задача 6.1): создание провайдера ставит обработчик нативного
+  // канала APNs (приём токена и тапов). Если юзер уже авторизован и
+  // разрешение выдано — тихо переустанавливаем токен на бэкенде.
+  await container.read(pushServiceProvider).refreshToken();
 
   runApp(UncontrolledProviderScope(
     container: container,
