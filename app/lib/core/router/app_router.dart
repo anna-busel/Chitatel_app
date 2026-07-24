@@ -24,6 +24,7 @@ import '../../features/notifications/screens/notifications_screen.dart';
 import '../../features/diary/screens/diary_screen.dart';
 import '../../features/diary/screens/analysis_screen.dart';
 import '../../features/diary/screens/weekly_report_screen.dart';
+import '../../features/diary/screens/monthly_report_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/profile/screens/edit_profile_screen.dart';
 import '../../features/profile/screens/my_purchases_screen.dart';
@@ -210,6 +211,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.weeklyReport,
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const WeeklyReportScreen(),
+      ),
+      GoRoute(
+        path: Routes.monthlyReport,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const MonthlyReportScreen(),
       ),
 
       // — Профильная зона (задача 6.2) —

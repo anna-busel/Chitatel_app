@@ -14,7 +14,7 @@ import '../widgets/quote_sheet.dart';
 /// Дневник (MASTER 4.24).
 ///
 /// Пустое состояние → «Начните с первой цитаты».
-/// Активное → статистика (цитат · анализов · дней подряд), кнопка отчёта,
+/// Активное → статистика (цитат · анализов · дней подряд), кнопки отчётов,
 /// лента цитат (новые сверху), FAB «новая цитата».
 class DiaryScreen extends ConsumerWidget {
   const DiaryScreen({super.key});
@@ -62,6 +62,7 @@ class DiaryScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final quotesAsync = ref.watch(quotesProvider);
     final reportAsync = ref.watch(latestReportProvider);
+    final monthlyReportAsync = ref.watch(latestMonthlyReportProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -87,11 +88,13 @@ class DiaryScreen extends ConsumerWidget {
                 data: (quotes) {
                   final stats = calculateDiaryStats(quotes);
                   final hasReport = reportAsync.valueOrNull != null;
+                  final hasMonthly = monthlyReportAsync.valueOrNull != null;
 
                   return RefreshIndicator(
                     onRefresh: () async {
                       ref.invalidate(quotesProvider);
                       ref.invalidate(latestReportProvider);
+                      ref.invalidate(latestMonthlyReportProvider);
                     },
                     child: ListView(
                       padding: const EdgeInsets.fromLTRB(
@@ -108,7 +111,17 @@ class DiaryScreen extends ConsumerWidget {
                           if (hasReport) ...[
                             const SizedBox(height: 12),
                             _ReportButton(
+                              title: 'Еженедельный отчёт',
+                              icon: Icons.insights_outlined,
                               onTap: () => context.push(Routes.weeklyReport),
+                            ),
+                          ],
+                          if (hasMonthly) ...[
+                            const SizedBox(height: 12),
+                            _ReportButton(
+                              title: 'Ежемесячный отчёт',
+                              icon: Icons.calendar_month_outlined,
+                              onTap: () => context.push(Routes.monthlyReport),
                             ),
                           ],
                           const SizedBox(height: 16),
@@ -180,10 +193,16 @@ class _StatItem extends StatelessWidget {
   }
 }
 
-/// Кнопка «Еженедельный отчёт» (показывается только если отчёт есть).
+/// Кнопка отчёта (показывается только если соответствующий отчёт есть).
 class _ReportButton extends StatelessWidget {
-  const _ReportButton({required this.onTap});
+  const _ReportButton({
+    required this.title,
+    required this.icon,
+    required this.onTap,
+  });
 
+  final String title;
+  final IconData icon;
   final VoidCallback onTap;
 
   @override
@@ -200,11 +219,11 @@ class _ReportButton extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.insights_outlined, size: 18, color: AppColors.purple),
+            Icon(icon, size: 18, color: AppColors.purple),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Еженедельный отчёт',
+                title,
                 style: AppTypography.bodyMedium.copyWith(color: AppColors.purple),
               ),
             ),

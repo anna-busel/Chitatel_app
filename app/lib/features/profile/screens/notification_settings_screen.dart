@@ -9,10 +9,9 @@ import '../services/profile_service.dart';
 
 /// Настройки уведомлений (экран 4.31, задача 6.2).
 ///
-/// Тумблеры сохраняются на сервере (User.pushSettings). Сам отправитель push
-/// (задача 6.1, волна 6Б) обязан читать эти флаги перед отправкой — экран
-/// сделан заранее, чтобы настройки уже существовали к моменту, когда push
-/// включат, и чтобы юзер мог их выставить до первого уведомления.
+/// Тумблеры сохраняются на сервере (User.pushSettings). Отправитель push
+/// (push.service) читает эти флаги перед отправкой. «Отчёты» гейтит недельный
+/// и месячный отчёты; «Новости» — анонсы сезона и новинки клуба.
 class NotificationSettingsScreen extends ConsumerWidget {
   const NotificationSettingsScreen({super.key});
 
@@ -33,9 +32,14 @@ class NotificationSettingsScreen extends ConsumerWidget {
       subtitle: 'Когда ИИ закончил анализ вашей цитаты',
     ),
     _Setting(
-      key: 'weeklyReport',
-      title: 'Недельный отчёт',
-      subtitle: 'Итоги вашей недели по воскресеньям',
+      key: 'reports',
+      title: 'Отчёты',
+      subtitle: 'Недельные и месячные итоги ваших цитат',
+    ),
+    _Setting(
+      key: 'news',
+      title: 'Новости',
+      subtitle: 'Анонсы сезонов и новинки клуба',
     ),
     _Setting(
       key: 'chatMessages',

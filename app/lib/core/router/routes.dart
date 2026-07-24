@@ -44,6 +44,9 @@ class Routes {
   /// Еженедельный отчёт (4.26). Открывается из дневника.
   static const String weeklyReport = '/weekly-report';
 
+  /// Ежемесячный отчёт (4.26). Открывается из дневника.
+  static const String monthlyReport = '/monthly-report';
+
   // — Контент —
   static String book(String id) => '/book/$id';
   static const String bookPath = '/book/:id';

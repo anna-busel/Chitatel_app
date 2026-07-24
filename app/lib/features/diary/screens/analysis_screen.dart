@@ -11,9 +11,9 @@ import '../widgets/analysis_card.dart';
 
 /// Экран анализа цитаты (MASTER 4.25).
 ///
-/// Цитата + три блока разбора + дисклеймер «Анализ создан ИИ и не является терапией».
-/// Если анализ ещё считается (aiStatus='pending') — показываем ожидание
-/// с кнопкой «Обновить».
+/// Цитата + разбор ИИ (insights) + чипы категории и тем + дисклеймер
+/// «Анализ создан ИИ и не является терапией». Если анализ ещё считается
+/// (aiStatus='pending') — показываем ожидание с кнопкой «Обновить».
 class AnalysisScreen extends ConsumerWidget {
   const AnalysisScreen({super.key, required this.quoteId});
 
@@ -66,6 +66,15 @@ class _Content extends StatelessWidget {
     return parts.join(' · ');
   }
 
+  List<String> _chips(AiAnalysis a) {
+    final chips = <String>[];
+    if (a.category.trim().isNotEmpty) chips.add(a.category.trim());
+    for (final t in a.themes) {
+      if (t.trim().isNotEmpty) chips.add(t.trim());
+    }
+    return chips;
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -114,22 +123,21 @@ class _Content extends StatelessWidget {
           )
         else if (quote.hasAnalysis) ...[
           AnalysisCard(
-            title: 'Что эта цитата говорит о вас',
-            text: quote.aiAnalysis!.resonance,
-            icon: Icons.favorite_border,
-          ),
-          AnalysisCard(
-            title: 'Паттерн',
-            text: quote.aiAnalysis!.context,
-            icon: Icons.timeline,
-          ),
-          AnalysisCard(
-            title: 'Вопрос для размышления',
-            text: quote.aiAnalysis!.question,
-            icon: Icons.help_outline,
+            title: 'Разбор',
+            text: quote.aiAnalysis!.insights,
+            icon: Icons.auto_awesome,
             accent: true,
           ),
-          const SizedBox(height: 8),
+          if (_chips(quote.aiAnalysis!).isNotEmpty) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final chip in _chips(quote.aiAnalysis!)) _Chip(label: chip),
+              ],
+            ),
+            const SizedBox(height: 14),
+          ],
           Text(
             'Анализ создан ИИ и не является терапией',
             style: AppTypography.micro,
@@ -142,6 +150,26 @@ class _Content extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
       ],
+    );
+  }
+}
+
+/// Чип категории/темы под разбором.
+class _Chip extends StatelessWidget {
+  const _Chip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Text(label, style: AppTypography.small),
     );
   }
 }
