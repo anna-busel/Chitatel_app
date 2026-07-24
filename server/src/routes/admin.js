@@ -14,6 +14,7 @@ const QAQuestion = require('../models/QAQuestion');
 const Report = require('../models/Report');
 const { runWeeklyReports } = require('../jobs/weekly-report');
 const { runMonthlyReports } = require('../jobs/monthly-report');
+const pushService = require('../services/push.service');
 
 const router = Router();
 
@@ -443,6 +444,42 @@ router.post(
     }
   }
 );
+
+/* ------------------------------------------------------------------ *
+ *                        НОВОСТИ / АНОНСЫ                            *
+ * ------------------------------------------------------------------ */
+
+/**
+ * POST /api/admin/news
+ * Разослать новость/анонс (напр. старт сезона). Пишется в ленту 4.30 всем
+ * адресатам (история), push шлётся тем, у кого включена настройка news.
+ *
+ * Body:
+ * - title, body — текст новости;
+ * - audience ('all' | 'subscribers', default 'all');
+ * - data (опц.) — полезная нагрузка для навигации по тапу.
+ */
+const newsSchema = z.object({
+  title: z.string().min(1).max(120).trim(),
+  body: z.string().min(1).max(1000).trim(),
+  audience: z.enum(['all', 'subscribers']).default('all'),
+  data: z.record(z.any()).optional(),
+});
+
+router.post('/news', validate(newsSchema), async (req, res, next) => {
+  try {
+    const { title, body, audience } = req.body;
+    const result = await pushService.sendNews({
+      audience,
+      title,
+      body,
+      data: req.body.data || {},
+    });
+    return success(res, result);
+  } catch (err) {
+    return next(err);
+  }
+});
 
 /* ------------------------------------------------------------------ *
  *                        СТАТИСТИКА                                  *
