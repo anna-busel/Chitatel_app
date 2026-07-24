@@ -7,6 +7,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
+import '../../player/providers/player_provider.dart';
 import '../providers/profile_provider.dart';
 import '../services/profile_service.dart';
 
@@ -19,9 +20,13 @@ import '../services/profile_service.dart';
 ///
 /// ⚠️ 24.07.2026 — ЦИФРЫ КЛИКАБЕЛЬНЫ. Тап по «разборов начато» раскрывает под
 /// блоками список начатых разборов, тап по «дослушано» — список дослушанных
-/// (GET /api/progress/list). Повторный тап сворачивает. Карточка разбора
-/// тапабельна — продолжает воспроизведение с сохранённой части и секунды (как
-/// «Продолжить слушать» на главной). Список грузится отдельным провайдером.
+/// (GET /api/progress/list). Повторный тап сворачивает.
+///
+/// ⚠️ 24.07.2026 — СВЕЖЕСТЬ + ЖИВОЙ ТЕКУЩИЙ РАЗБОР. Провайдеры статистики и
+/// списка стали autoDispose — данные перезапрашиваются при каждом открытии
+/// экрана (раньше кэш висел до перезапуска приложения). А карточка того
+/// разбора, который сейчас играет, берёт часть/позицию ЖИВЫМИ из плеера — как
+/// «Продолжить слушать» на главной, чтобы список совпадал с плеером мгновенно.
 class MyProgressScreen extends ConsumerWidget {
   const MyProgressScreen({super.key});
 
@@ -250,16 +255,32 @@ class _ExpandedList extends ConsumerWidget {
 
 /// Тапабельная мини-карточка одного разбора: обложка, название, статус
 /// (дослушано / часть N из M). Тап продолжает с сохранённой секунды.
-class _ProgressMiniCard extends StatelessWidget {
+///
+/// Если ИМЕННО этот разбор сейчас играет — часть/позиция берутся ЖИВЫМИ из
+/// плеера (как карточка «Продолжить слушать» на главной), чтобы список
+/// совпадал с плеером без перезагрузки. Иначе — данные с сервера.
+class _ProgressMiniCard extends ConsumerWidget {
   const _ProgressMiniCard({required this.item});
   final ProgressItem item;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final book = item.book;
-    final subtitle = item.isCompleted
+
+    final player = ref.watch(playerUiStateProvider).valueOrNull;
+    final bool live =
+        player != null && player.hasContent && player.book?.id == book.id;
+
+    final int partNumber = live ? player.partNumber : item.currentPartNumber;
+    final int positionSeconds =
+        live ? player.position.inSeconds : item.positionSeconds;
+
+    // «Дослушано» показываем только по серверным данным; если книга играет
+    // прямо сейчас — показываем живую часть.
+    final bool showCompleted = item.isCompleted && !live;
+    final String subtitle = showCompleted
         ? 'Дослушано'
-        : 'Часть ${item.currentPartNumber} из ${item.totalParts}';
+        : 'Часть $partNumber из ${item.totalParts}';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -271,8 +292,8 @@ class _ProgressMiniCard extends StatelessWidget {
             context.push(
               Routes.player(book.id),
               extra: {
-                'startPart': item.currentPartNumber,
-                'startPosition': item.positionSeconds,
+                'startPart': partNumber,
+                'startPosition': positionSeconds,
               },
             );
           },
@@ -312,11 +333,11 @@ class _ProgressMiniCard extends StatelessWidget {
                       Row(
                         children: [
                           Icon(
-                            item.isCompleted
+                            showCompleted
                                 ? Icons.check_circle
                                 : Icons.play_circle_outline,
                             size: 14,
-                            color: item.isCompleted
+                            color: showCompleted
                                 ? AppColors.terracotta
                                 : AppColors.textSecondary,
                           ),

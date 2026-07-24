@@ -65,14 +65,23 @@ class ProfileNotifier extends StateNotifier<AsyncValue<UserProfile>> {
 }
 
 /// Статистика прослушивания (экран 4.45). За всё время.
-final progressStatsProvider = FutureProvider<ProgressStats>((ref) async {
+///
+/// ⚠️ 24.07.2026 — autoDispose: провайдер сбрасывается, когда экран закрыт, и
+/// перезапрашивает данные при КАЖДОМ открытии «Моего прогресса». Раньше он
+/// кэшировался на весь запуск приложения — поэтому свежий прогресс после
+/// прослушивания появлялся только после перезапуска приложения.
+final progressStatsProvider =
+    FutureProvider.autoDispose<ProgressStats>((ref) async {
   return ref.read(profileServiceProvider).fetchStats();
 });
 
 /// Список начатых/дослушанных разборов (экран 4.45) — для тапабельных
 /// мини-карточек под статистикой.
+///
+/// ⚠️ 24.07.2026 — autoDispose по той же причине, что и статистика: свежие
+/// данные при каждом раскрытии списка, без ожидания перезапуска приложения.
 final progressListProvider =
-    FutureProvider<List<ProgressItem>>((ref) async {
+    FutureProvider.autoDispose<List<ProgressItem>>((ref) async {
   return ref.read(profileServiceProvider).fetchProgressList();
 });
 
