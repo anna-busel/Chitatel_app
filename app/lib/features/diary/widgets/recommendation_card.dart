@@ -83,7 +83,8 @@ class RecommendationCard extends StatelessWidget {
   }
 }
 
-/// Обложка разбора. Если картинки нет или не загрузилась — плейсхолдер.
+/// Обложка разбора. Поддерживает asset:// (бандл-ассеты каталога) и http(s).
+/// Если картинки нет или не загрузилась — плейсхолдер.
 class _Cover extends StatelessWidget {
   const _Cover({required this.url});
 
@@ -109,19 +110,37 @@ class _Cover extends StatelessWidget {
       ),
     );
 
-    if (url.trim().isEmpty) {
+    final u = url.trim();
+    if (u.isEmpty) {
+      return placeholder;
+    }
+
+    // Обложки каталога приходят как `asset://book-covers/slug.png` (бандл-ассет,
+    // грузится по пути `book-covers/slug.png`) или как http(s)-ссылка.
+    Widget image;
+    if (u.startsWith('http://') || u.startsWith('https://')) {
+      image = Image.network(
+        u,
+        width: w,
+        height: h,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => placeholder,
+      );
+    } else if (u.startsWith('asset://')) {
+      image = Image.asset(
+        u.replaceFirst('asset://', ''),
+        width: w,
+        height: h,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => placeholder,
+      );
+    } else {
       return placeholder;
     }
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        url,
-        width: w,
-        height: h,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => placeholder,
-      ),
+      child: image,
     );
   }
 }
