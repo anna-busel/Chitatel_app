@@ -5,7 +5,8 @@ const app = require('./app');
 const config = require('./config');
 const logger = require('./config/logger');
 const { setupSocket } = require('./socket');
-const { scheduleWeeklyReports } = require('./jobs/weekly-report');
+const { scheduleWeeklyReports, runWeeklyReports } = require('./jobs/weekly-report');
+const { scheduleMonthlyReports, runMonthlyReports } = require('./jobs/monthly-report');
 const { schedulePushJobs } = require('./jobs/push-scheduler');
 
 const server = http.createServer(app);
@@ -26,21 +27,41 @@ setupSocket(io);
 // Сделать io доступным в routes через app
 app.set('io', io);
 
+// Фоновый catch-up: до-генерирует пропущенные отчёты (если сервер был выключен
+// во время cron). Не блокирует старт, запускается через паузу после listen.
+// Идемпотентно: готовые отчёты пропускаются без повторного вызова OpenAI.
+const CATCHUP_DELAY_MS = 60 * 1000;
+
+const runReportsCatchUp = () => {
+  setTimeout(() => {
+    logger.info('Reports catch-up started (background)');
+    runWeeklyReports().catch((err) =>
+      logger.error('Weekly catch-up error', { message: err.message })
+    );
+    runMonthlyReports().catch((err) =>
+      logger.error('Monthly catch-up error', { message: err.message })
+    );
+  }, CATCHUP_DELAY_MS);
+};
+
 // MongoDB connect + start server
 const start = async () => {
   try {
     await mongoose.connect(config.mongoUri);
     logger.info('MongoDB connected');
 
-    // Cron еженедельного ИИ-отчёта (задача 5.1).
+    // Cron ИИ-отчётов (задачи 5.1 / отчёты).
     // ⚠️ PM2 — строго fork mode, 1 инстанс, иначе cron задвоится.
     scheduleWeeklyReports();
+    scheduleMonthlyReports();
 
     // Cron push-уведомлений (задача 6.1). Тот же принцип: 1 инстанс.
     schedulePushJobs();
 
     server.listen(config.port, () => {
       logger.info(`Server running on port ${config.port} [${config.nodeEnv}]`);
+      // Фоновый catch-up отчётов — после того как сервер поднялся.
+      runReportsCatchUp();
     });
   } catch (err) {
     logger.error('Failed to start server:', err);
