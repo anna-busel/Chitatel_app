@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
@@ -17,6 +18,12 @@ import '../services/profile_service.dart';
 /// Фото попадает не только сюда: сервер хранит ссылку в User.avatarUrl, а этот
 /// же документ подставляется автором в каждое сообщение чата — значит после
 /// загрузки фото появляется напротив реплик участницы в клубе.
+///
+/// ⚠️ 24.07.2026 — КРОП/ЗУМ ФОТО. Раньше фото грузилось целиком, как в
+/// оригинале, — нельзя было выбрать зону. Теперь после выбора картинки
+/// открывается нативный iOS-кроппер (TOCropViewController через image_cropper):
+/// квадрат с зумом и перемещением, как в Instagram. Загружается уже обрезанный
+/// файл. Отмена кропа = отмена загрузки.
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
 
@@ -89,9 +96,42 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
     if (picked == null || !mounted) return;
 
+    // Обрезка: квадрат с зумом (нативный iOS-кроппер TOCropViewController).
+    // Соотношение зафиксировано 1:1 — аватар всегда квадратный.
+    CroppedFile? cropped;
+    try {
+      cropped = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        compressFormat: ImageCompressFormat.jpg,
+        compressQuality: 85,
+        uiSettings: [
+          IOSUiSettings(
+            title: 'Фото профиля',
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+            aspectRatioPickerButtonHidden: true,
+            rotateButtonsHidden: true,
+            doneButtonTitle: 'Готово',
+            cancelButtonTitle: 'Отмена',
+          ),
+        ],
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Не удалось обрезать фото'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+
+    // Пользователь закрыл кроппер, не подтвердив, — тихо выходим.
+    if (cropped == null || !mounted) return;
+
     setState(() => _isUploadingAvatar = true);
     try {
-      await ref.read(profileProvider.notifier).uploadAvatar(picked.path);
+      await ref.read(profileProvider.notifier).uploadAvatar(cropped.path);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Фото обновлено'),
