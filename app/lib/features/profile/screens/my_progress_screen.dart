@@ -17,11 +17,11 @@ import '../services/profile_service.dart';
 /// хранит только суммарное время по книге, посуточной истории не существует,
 /// а рисовать график из воздуха честнее не показывать вовсе.
 ///
-/// ⚠️ 24.07.2026 — СПИСОК РАЗБОРОВ. Под цифрами-статистикой добавлены
-/// тапабельные мини-карточки начатых и дослушанных разборов (GET
-/// /api/progress/list). Тап продолжает воспроизведение с сохранённой части и
-/// секунды — как «Продолжить слушать» на главной. Список грузится отдельным
-/// провайдером, поэтому его загрузка/пустота не блокируют показ статистики.
+/// ⚠️ 24.07.2026 — ЦИФРЫ КЛИКАБЕЛЬНЫ. Тап по «разборов начато» раскрывает под
+/// блоками список начатых разборов, тап по «дослушано» — список дослушанных
+/// (GET /api/progress/list). Повторный тап сворачивает. Карточка разбора
+/// тапабельна — продолжает воспроизведение с сохранённой части и секунды (как
+/// «Продолжить слушать» на главной). Список грузится отдельным провайдером.
 class MyProgressScreen extends ConsumerWidget {
   const MyProgressScreen({super.key});
 
@@ -59,12 +59,26 @@ class MyProgressScreen extends ConsumerWidget {
   }
 }
 
-class _Body extends StatelessWidget {
+/// Какой список разборов раскрыт под цифрами.
+enum _Expanded { none, started, completed }
+
+class _Body extends ConsumerStatefulWidget {
   const _Body({required this.stats});
   final ProgressStats stats;
 
+  @override
+  ConsumerState<_Body> createState() => _BodyState();
+}
+
+class _BodyState extends ConsumerState<_Body> {
+  _Expanded _expanded = _Expanded.none;
+
+  void _toggle(_Expanded which) {
+    setState(() => _expanded = _expanded == which ? _Expanded.none : which);
+  }
+
   String get _timeLabel {
-    final total = stats.totalMinutes;
+    final total = widget.stats.totalMinutes;
     if (total < 60) return '$total мин';
     final hours = total ~/ 60;
     final minutes = total % 60;
@@ -73,7 +87,7 @@ class _Body extends StatelessWidget {
   }
 
   String get _lastLabel {
-    final last = stats.lastListenedAt;
+    final last = widget.stats.lastListenedAt;
     if (last == null) return 'Вы ещё не начали слушать';
     final l = last.toLocal();
     final dd = l.day.toString().padLeft(2, '0');
@@ -83,6 +97,7 @@ class _Body extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stats = widget.stats;
     final empty = stats.totalMinutes == 0 &&
         stats.booksStarted == 0 &&
         stats.quotesCount == 0;
@@ -130,6 +145,11 @@ class _Body extends StatelessWidget {
                 value: '${stats.booksStarted}',
                 label: 'разборов начато',
                 icon: Icons.play_circle_outline,
+                // Тап показывает начатые разборы (если они есть).
+                onTap: stats.booksStarted > 0
+                    ? () => _toggle(_Expanded.started)
+                    : null,
+                expanded: _expanded == _Expanded.started,
               ),
             ),
             const SizedBox(width: 12),
@@ -138,10 +158,19 @@ class _Body extends StatelessWidget {
                 value: '${stats.booksCompleted}',
                 label: 'дослушано',
                 icon: Icons.check_circle_outline,
+                // Тап показывает дослушанные разборы (если они есть).
+                onTap: stats.booksCompleted > 0
+                    ? () => _toggle(_Expanded.completed)
+                    : null,
+                expanded: _expanded == _Expanded.completed,
               ),
             ),
           ],
         ),
+
+        // Раскрывающийся список разборов под цифрами.
+        _ExpandedList(mode: _expanded),
+
         const SizedBox(height: 12),
         _SmallStat(
           value: '${stats.quotesCount}',
@@ -154,37 +183,65 @@ class _Body extends StatelessWidget {
           style: AppTypography.caption,
           textAlign: TextAlign.center,
         ),
-
-        // Список начатых/дослушанных разборов. Грузится отдельно — своя
-        // загрузка/пустота не мешает статистике выше.
-        const _ProgressList(),
       ],
     );
   }
 }
 
-/// Список разборов под статистикой. Отдельный Consumer, чтобы его загрузка
-/// и пустота не влияли на показ цифр.
-class _ProgressList extends ConsumerWidget {
-  const _ProgressList();
+/// Список разборов, раскрытый под цифрами: started — все начатые, completed —
+/// только дослушанные. Грузится отдельным провайдером (GET /api/progress/list).
+class _ExpandedList extends ConsumerWidget {
+  const _ExpandedList({required this.mode});
+  final _Expanded mode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (mode == _Expanded.none) return const SizedBox.shrink();
+
     final listAsync = ref.watch(progressListProvider);
 
     return listAsync.when(
-      loading: () => const SizedBox.shrink(),
+      loading: () => const Padding(
+        padding: EdgeInsets.only(top: 14),
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: AppColors.terracotta,
+            ),
+          ),
+        ),
+      ),
       error: (_, __) => const SizedBox.shrink(),
       data: (items) {
-        if (items.isEmpty) return const SizedBox.shrink();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 24),
-            Text('Ваши разборы', style: AppTypography.sectionHeader),
-            const SizedBox(height: 12),
-            for (final item in items) _ProgressMiniCard(item: item),
-          ],
+        // started — все начатые (совпадает с числом «разборов начато»);
+        // completed — только дослушанные.
+        final filtered = mode == _Expanded.completed
+            ? items.where((i) => i.isCompleted).toList(growable: false)
+            : items;
+
+        if (filtered.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: Text(
+              mode == _Expanded.completed
+                  ? 'Пока ничего не дослушано целиком'
+                  : 'Пока нет начатых разборов',
+              style: AppTypography.caption,
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Column(
+            children: [
+              for (final item in filtered) _ProgressMiniCard(item: item),
+            ],
+          ),
         );
       },
     );
@@ -316,24 +373,32 @@ class _BigStat extends StatelessWidget {
   }
 }
 
+/// Карточка-цифра. Если задан [onTap] — кликабельна и показывает шеврон,
+/// который разворачивается вниз, когда список раскрыт ([expanded]).
 class _SmallStat extends StatelessWidget {
   const _SmallStat({
     required this.value,
     required this.label,
     required this.icon,
+    this.onTap,
+    this.expanded = false,
   });
   final String value;
   final String label;
   final IconData icon;
+  final VoidCallback? onTap;
+  final bool expanded;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: expanded ? AppColors.terracotta : AppColors.border,
+        ),
       ),
       child: Row(
         children: [
@@ -348,8 +413,21 @@ class _SmallStat extends StatelessWidget {
               ],
             ),
           ),
+          if (onTap != null)
+            Icon(
+              expanded ? Icons.expand_less : Icons.expand_more,
+              size: 18,
+              color: AppColors.terracotta,
+            ),
         ],
       ),
+    );
+
+    if (onTap == null) return card;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: card,
     );
   }
 }

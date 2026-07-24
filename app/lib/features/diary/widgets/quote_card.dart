@@ -11,6 +11,9 @@ import '../models/quote.dart';
 ///   pending → «Анализируем…»
 ///   failed  → «Анализ временно недоступен»
 ///   skipped → ничего (ИИ выключен)
+///
+/// ⚠️ 24.07.2026 — акцент строки разбора переведён с фиолетового
+/// (AppColors.purple) на брендовый винный (AppColors.terracotta).
 class QuoteCard extends StatelessWidget {
   const QuoteCard({
     super.key,
@@ -119,13 +122,14 @@ class _AiStatusRow extends StatelessWidget {
             height: 14,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              color: AppColors.purple,
+              color: AppColors.terracotta,
             ),
           ),
           const SizedBox(width: 8),
           Text(
             'Анализируем…',
-            style: AppTypography.captionMedium.copyWith(color: AppColors.purple),
+            style: AppTypography.captionMedium
+                .copyWith(color: AppColors.terracotta),
           ),
         ],
       );
@@ -144,17 +148,19 @@ class _AiStatusRow extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         child: Row(
           children: [
-            const Icon(Icons.auto_awesome, size: 16, color: AppColors.purple),
+            const Icon(Icons.auto_awesome,
+                size: 16, color: AppColors.terracotta),
             const SizedBox(width: 8),
             Text(
               'Анализ от Анны',
-              style: AppTypography.bodyMedium.copyWith(color: AppColors.purple),
+              style: AppTypography.bodyMedium
+                  .copyWith(color: AppColors.terracotta),
             ),
             const SizedBox(width: 4),
             const Icon(
               Icons.arrow_forward,
               size: 14,
-              color: AppColors.purple,
+              color: AppColors.terracotta,
             ),
           ],
         ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,8 +17,55 @@ import '../widgets/quote_sheet.dart';
 /// Пустое состояние → «Начните с первой цитаты».
 /// Активное → статистика (цитат · анализов · дней подряд), кнопки отчётов,
 /// лента цитат (новые сверху), FAB «новая цитата».
-class DiaryScreen extends ConsumerWidget {
+///
+/// ⚠️ 24.07.2026 — АВТО-ОПРОС ЛЕНТЫ ПОКА ИДЁТ АНАЛИЗ. Раньше карточка свежей
+/// цитаты висела на «Анализируем…», пока не сделаешь pull-to-refresh: лента
+/// (quotesProvider) не перезапрашивалась сама. Теперь, пока хотя бы одна цитата
+/// в статусе pending, экран каждые 4 сек тихо перезапрашивает ленту (до ~80 сек)
+/// — разбор появляется без ручного обновления. `skipLoadingOnReload: true`
+/// держит уже загруженный список во время перезапроса (без мигания спиннером).
+class DiaryScreen extends ConsumerStatefulWidget {
   const DiaryScreen({super.key});
+
+  @override
+  ConsumerState<DiaryScreen> createState() => _DiaryScreenState();
+}
+
+class _DiaryScreenState extends ConsumerState<DiaryScreen> {
+  Timer? _timer;
+  int _attempts = 0;
+
+  // ~80 секунд опроса — обычно разбор готов за несколько секунд.
+  static const int _maxAttempts = 20;
+  static const Duration _interval = Duration(seconds: 4);
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  /// Держим таймер опроса включённым, пока в ленте есть цитата в статусе
+  /// pending. Как только все разобраны (или анализ выключен) — гасим таймер.
+  void _syncPolling(bool anyPending) {
+    if (anyPending) {
+      if (_timer == null && _attempts < _maxAttempts) {
+        _timer = Timer.periodic(_interval, (t) {
+          _attempts += 1;
+          ref.invalidate(quotesProvider);
+          if (_attempts >= _maxAttempts) {
+            t.cancel();
+            _timer = null;
+          }
+        });
+      }
+    } else {
+      _timer?.cancel();
+      _timer = null;
+      // Сбрасываем счётчик, чтобы новая цитата снова могла запустить опрос.
+      _attempts = 0;
+    }
+  }
 
   Future<void> _openQuoteSheet(BuildContext context) async {
     await showQuoteSheet(context);
@@ -59,7 +107,14 @@ class DiaryScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    // Реагируем на изменения ленты: запустить/остановить авто-опрос.
+    ref.listen(quotesProvider, (_, next) {
+      next.whenData(
+        (quotes) => _syncPolling(quotes.any((q) => q.isAnalyzing)),
+      );
+    });
+
     final quotesAsync = ref.watch(quotesProvider);
     final reportAsync = ref.watch(latestReportProvider);
     final monthlyReportAsync = ref.watch(latestMonthlyReportProvider);
@@ -81,6 +136,7 @@ class DiaryScreen extends ConsumerWidget {
             ),
             Expanded(
               child: quotesAsync.when(
+                skipLoadingOnReload: true,
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (_, __) => _ErrorState(
                   onRetry: () => ref.invalidate(quotesProvider),
