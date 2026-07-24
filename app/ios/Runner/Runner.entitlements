@@ -2,12 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- APNs (задача 6.1). development = sandbox-шлюз (сборка из Xcode на
-	     устройство). ⚠️ ДЛЯ TestFlight/App Store СМЕНИТЬ НА production
-	     (и на сервере APNS_PRODUCTION=true) — иначе токен TestFlight-сборки
-	     не работает против sandbox. -->
+	<!-- APNs (задача 6.1). production = App Store/TestFlight-шлюз APNs.
+	     ⚠️ Сервер должен идти в тот же шлюз: APNS_PRODUCTION=true.
+	     Для ЛОКАЛЬНОЙ сборки из Xcode на устройство вернуть development
+	     (и APNS_PRODUCTION=false) — токен sandbox-сборки не работает
+	     против production и наоборот. -->
 	<key>aps-environment</key>
-	<string>development</string>
+	<string>production</string>
 	<key>com.apple.developer.applesignin</key>
 	<array>
 		<string>Default</string>
