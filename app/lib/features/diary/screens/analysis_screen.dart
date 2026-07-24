@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,17 +12,60 @@ import '../widgets/analysis_card.dart';
 
 /// Экран анализа цитаты (MASTER 4.25).
 ///
-/// Цитата + разбор ИИ (insights) + чипы категории и тем + дисклеймер
-/// «Анализ создан ИИ и не является терапией». Если анализ ещё считается
-/// (aiStatus='pending') — показываем ожидание с кнопкой «Обновить».
-class AnalysisScreen extends ConsumerWidget {
+/// Цитата + разбор ИИ (insights) + чипы категории/тем + дисклеймер
+/// «Анализ создан ИИ и не является терапией». Пока разбор считается
+/// (aiStatus='pending') — экран сам опрашивает сервер каждые 3 сек
+/// (до ~36 сек), поэтому результат появляется без ручного обновления.
+class AnalysisScreen extends ConsumerStatefulWidget {
   const AnalysisScreen({super.key, required this.quoteId});
 
   final String quoteId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final quoteAsync = ref.watch(quoteProvider(quoteId));
+  ConsumerState<AnalysisScreen> createState() => _AnalysisScreenState();
+}
+
+class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
+  Timer? _timer;
+  int _attempts = 0;
+
+  // ~36 секунд опроса — обычно разбор готов за несколько секунд.
+  static const int _maxAttempts = 12;
+  static const Duration _interval = Duration(seconds: 3);
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  /// Держим таймер опроса включённым, пока статус 'pending'.
+  void _syncPolling(bool isPending) {
+    if (isPending) {
+      if (_timer == null && _attempts < _maxAttempts) {
+        _timer = Timer.periodic(_interval, (t) {
+          _attempts += 1;
+          ref.invalidate(quoteProvider(widget.quoteId));
+          if (_attempts >= _maxAttempts) {
+            t.cancel();
+            _timer = null;
+          }
+        });
+      }
+    } else {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Реагируем на смену статуса: запустить/остановить авто-опрос.
+    ref.listen(quoteProvider(widget.quoteId), (_, next) {
+      next.whenData((q) => _syncPolling(q.isAnalyzing));
+    });
+
+    final quoteAsync = ref.watch(quoteProvider(widget.quoteId));
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -38,11 +82,11 @@ class AnalysisScreen extends ConsumerWidget {
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (_, __) => _Message(
                   text: 'Не удалось загрузить анализ',
-                  onRetry: () => ref.invalidate(quoteProvider(quoteId)),
+                  onRetry: () => ref.invalidate(quoteProvider(widget.quoteId)),
                 ),
                 data: (quote) => _Content(
                   quote: quote,
-                  onRefresh: () => ref.invalidate(quoteProvider(quoteId)),
+                  onRefresh: () => ref.invalidate(quoteProvider(widget.quoteId)),
                 ),
               ),
             ),
@@ -87,7 +131,7 @@ class _Content extends StatelessWidget {
         32,
       ),
       children: [
-        const Icon(Icons.auto_awesome, size: 26, color: AppColors.purple),
+        const Icon(Icons.auto_awesome, size: 26, color: AppColors.terracotta),
         const SizedBox(height: 14),
 
         // Сама цитата
@@ -116,6 +160,7 @@ class _Content extends StatelessWidget {
             text: 'Анализируем цитату…\nОбычно это занимает несколько секунд.',
             onRetry: onRefresh,
             retryLabel: 'Обновить',
+            showSpinner: true,
           )
         else if (quote.isFailed)
           _Message(
@@ -181,11 +226,13 @@ class _Message extends StatelessWidget {
     required this.text,
     required this.onRetry,
     this.retryLabel = 'Повторить',
+    this.showSpinner = false,
   });
 
   final String text;
   final VoidCallback onRetry;
   final String retryLabel;
+  final bool showSpinner;
 
   @override
   Widget build(BuildContext context) {
@@ -193,6 +240,17 @@ class _Message extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 24),
+        if (showSpinner) ...[
+          const SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: AppColors.terracotta,
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
         Text(
           text,
           style: AppTypography.body.copyWith(color: AppColors.textSecondary),

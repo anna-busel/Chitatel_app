@@ -4,13 +4,14 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/book_cover_image.dart';
 import '../models/weekly_report.dart';
 
 /// Карточка рекомендованного разбора в отчёте (недельном и месячном).
 ///
-/// Показывает обложку, название/автора и «почему» из отчёта. Тап по карточке
-/// ведёт на экран книги (там уже «Слушать» / «Купить» / «Продолжить»,
-/// покупка только через Apple). bookId проставляет сервер.
+/// Обложка (штатный BookCoverImage — он резолвит asset://book-covers/…) +
+/// название/автор. Тап по карточке ведёт на экран книги (там уже «Слушать» /
+/// «Купить» / «Продолжить», покупка только через Apple). bookId проставляет сервер.
 class RecommendationCard extends StatelessWidget {
   const RecommendationCard({super.key, required this.recommendation});
 
@@ -36,7 +37,14 @@ class RecommendationCard extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _Cover(url: rec.coverImageUrl),
+            BookCoverImage(
+              imageUrl: rec.coverImageUrl,
+              gradientColors: const ['#750009', '#9B1C24'],
+              label: rec.title,
+              width: 56,
+              height: 78,
+              borderRadius: 8,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -51,10 +59,6 @@ class RecommendationCard extends StatelessWidget {
                   if (rec.author.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(rec.author, style: AppTypography.small),
-                  ],
-                  if (rec.why.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text(rec.why, style: AppTypography.body),
                   ],
                   const SizedBox(height: 10),
                   Row(
@@ -79,68 +83,6 @@ class RecommendationCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// Обложка разбора. Поддерживает asset:// (бандл-ассеты каталога) и http(s).
-/// Если картинки нет или не загрузилась — плейсхолдер.
-class _Cover extends StatelessWidget {
-  const _Cover({required this.url});
-
-  final String url;
-
-  @override
-  Widget build(BuildContext context) {
-    const double w = 56;
-    const double h = 78;
-
-    final placeholder = Container(
-      width: w,
-      height: h,
-      decoration: BoxDecoration(
-        color: AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: const Icon(
-        Icons.menu_book_outlined,
-        size: 22,
-        color: AppColors.textMetadata,
-      ),
-    );
-
-    final u = url.trim();
-    if (u.isEmpty) {
-      return placeholder;
-    }
-
-    // Обложки каталога приходят как `asset://book-covers/slug.png` (бандл-ассет,
-    // грузится по пути `book-covers/slug.png`) или как http(s)-ссылка.
-    Widget image;
-    if (u.startsWith('http://') || u.startsWith('https://')) {
-      image = Image.network(
-        u,
-        width: w,
-        height: h,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => placeholder,
-      );
-    } else if (u.startsWith('asset://')) {
-      image = Image.asset(
-        u.replaceFirst('asset://', ''),
-        width: w,
-        height: h,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => placeholder,
-      );
-    } else {
-      return placeholder;
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: image,
     );
   }
 }

@@ -5,8 +5,7 @@ import '../../../core/theme/app_typography.dart';
 
 /// Один блок ИИ-разбора: заголовок секции + текст (экраны 4.25 и 4.26).
 ///
-/// Используется для секций «Что эта цитата говорит о вас», «Паттерн»,
-/// «Вопрос для размышления», «Главная тема недели» и т.д.
+/// Используется для секций «Разбор», «Разбор недели», «Разбор месяца» и т.п.
 class AnalysisCard extends StatelessWidget {
   const AnalysisCard({
     super.key,
@@ -20,7 +19,7 @@ class AnalysisCard extends StatelessWidget {
   final String text;
   final IconData? icon;
 
-  /// accent=true — фиолетовая рамка (для «Вопроса для размышления»).
+  /// accent=true — бордовая рамка (бренд), для основного разбора.
   final bool accent;
 
   @override
@@ -36,7 +35,9 @@ class AnalysisCard extends StatelessWidget {
         color: accent ? AppColors.surfaceLight : AppColors.cardBackground,
         borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
         border: Border.all(
-          color: accent ? AppColors.purple.withValues(alpha: 0.35) : AppColors.border,
+          color: accent
+              ? AppColors.terracotta.withValues(alpha: 0.35)
+              : AppColors.border,
         ),
       ),
       child: Column(
@@ -45,7 +46,7 @@ class AnalysisCard extends StatelessWidget {
           Row(
             children: [
               if (icon != null) ...[
-                Icon(icon, size: 16, color: AppColors.purple),
+                Icon(icon, size: 16, color: AppColors.terracotta),
                 const SizedBox(width: 8),
               ],
               Expanded(

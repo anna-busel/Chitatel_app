@@ -215,19 +215,19 @@ class _ReportButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surfaceLight,
           borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
-          border: Border.all(color: AppColors.purple.withValues(alpha: 0.3)),
+          border: Border.all(color: AppColors.terracotta.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: AppColors.purple),
+            Icon(icon, size: 18, color: AppColors.terracotta),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 title,
-                style: AppTypography.bodyMedium.copyWith(color: AppColors.purple),
+                style: AppTypography.bodyMedium.copyWith(color: AppColors.terracotta),
               ),
             ),
-            const Icon(Icons.chevron_right, size: 18, color: AppColors.purple),
+            const Icon(Icons.chevron_right, size: 18, color: AppColors.terracotta),
           ],
         ),
       ),
