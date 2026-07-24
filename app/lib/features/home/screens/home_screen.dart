@@ -7,6 +7,7 @@ import '../../../shared/widgets/error_view.dart';
 import '../../diary/widgets/quote_sheet.dart';
 import '../../payments/screens/paywall_screen.dart';
 import '../../payments/season_window.dart';
+import '../../player/providers/player_provider.dart';
 import '../providers/home_provider.dart';
 import '../widgets/home_header.dart';
 import '../widgets/club_month_card.dart';
@@ -27,9 +28,12 @@ import '../widgets/popular_books_section.dart';
 /// Теперь на её месте компактная строка: обложка последнего начатого разбора,
 /// часть, сколько осталось, полоска прогресса и кнопка ▶ — тап продолжает с
 /// сохранённой секунды. Ничего не начато → блок не показывается вовсе.
-/// Статистика (минуты/книги/цитаты) осталась в профиле → «Мой прогресс»:
-/// главная должна звать слушать, а не отчитываться.
-/// Файл progress_card.dart больше не используется.
+///
+/// ⚠️ 21.07.2026 — СИНХРОНИЗАЦИЯ КАРТОЧКИ С ПЛЕЕРОМ. Данные главной
+/// (homeProvider) кэшируются один раз, а при смене части в плеере не
+/// перезапрашивались — карточка «Продолжить» висела на 1й части, когда плеер
+/// уже на 2й. Теперь главная слушает плеер и обновляет данные при смене
+/// книги/части (по позиции — нет, чтобы не дёргать сеть каждую секунду).
 ///
 /// ⚠️ 12.07.2026 (Фаза 6): баннер «Пригласите подругу» УБРАН — реферальной
 /// механики нет ни на сервере, ни в профиле, а баннер обещал «месяц клуба в
@@ -37,13 +41,10 @@ import '../widgets/popular_books_section.dart';
 ///
 /// Полоска сезона (11.07.2026): статичная, под карточкой клуба, только в фазы
 /// анонса и окна покупки. Тексты — season_window.dart. Тап → paywall.
-/// НЕ карусель и НЕ авторотация (осознанное решение — баннерная слепота).
 ///
-/// FAB-перо (задача 5.3): открывает шторку «Новая цитата» (4.17). Иконка —
-/// `Icons.history_edu` (гусиное перо; в прототипе перо было из lucide-react,
-/// во Flutter не подключается без flutter_svg — взяли ближайший штатный аналог).
-/// Живёт только на главной и в дневнике — там, где есть текст, который может
-/// зацепить.
+/// FAB-карандаш (задача 5.3): открывает шторку «Новая цитата» (4.17). Иконка —
+/// `Icons.edit_outlined` (карандаш, как в дневнике). Живёт только на главной
+/// и в дневнике — там, где есть текст, который может зацепить.
 ///
 /// Обновление: pull-to-refresh (invalidate homeProvider).
 class HomeScreen extends ConsumerWidget {
@@ -53,6 +54,20 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final homeAsync = ref.watch(homeProvider);
     final seasonText = SeasonWindow.clubBannerText();
+
+    // Синхронизация с плеером: когда в плеере меняется книга или часть —
+    // обновляем данные главной, чтобы карточка «Продолжить слушать» не отставала.
+    ref.listen<AsyncValue<PlayerUiState>>(playerUiStateProvider, (prev, next) {
+      final n = next.valueOrNull;
+      if (n == null || !n.hasContent) return;
+      final p = prev?.valueOrNull;
+      final changed = p == null ||
+          p.book?.id != n.book?.id ||
+          p.partNumber != n.partNumber;
+      if (changed) {
+        ref.invalidate(homeProvider);
+      }
+    });
 
     return Container(
       color: AppColors.background,
@@ -71,8 +86,8 @@ class HomeScreen extends ConsumerWidget {
                     color: AppColors.terracotta,
                     child: ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      // Нижний отступ увеличен под FAB — чтобы перо не
-                      // перекрывало последний блок ленты.
+                      // Нижний отступ увеличен под FAB — чтобы карандаш не
+                      // перекрывал последний блок ленты.
                       padding: const EdgeInsets.only(top: 8, bottom: 96),
                       children: [
                         ClubMonthCard(
@@ -118,7 +133,7 @@ class HomeScreen extends ConsumerWidget {
             ],
           ),
 
-          // FAB «Новая цитата» (перо). Показывается только когда главная
+          // FAB «Новая цитата» (карандаш). Показывается только когда главная
           // загрузилась — на шиммере и экране ошибки он бессмыслен.
           if (homeAsync.hasValue)
             Positioned(
@@ -132,7 +147,7 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-/// Плавающая кнопка «Новая цитата» (перо).
+/// Плавающая кнопка «Новая цитата» (карандаш, как в дневнике).
 class _QuoteFab extends StatelessWidget {
   const _QuoteFab({required this.onTap});
 
@@ -157,7 +172,7 @@ class _QuoteFab extends StatelessWidget {
               boxShadow: AppColors.buttonShadow,
             ),
             child: const Icon(
-              Icons.history_edu,
+              Icons.edit_outlined,
               size: 24,
               color: Colors.white,
             ),

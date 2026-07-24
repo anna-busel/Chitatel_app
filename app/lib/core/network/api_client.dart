@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api_endpoints.dart';
@@ -7,6 +8,7 @@ import '../storage/secure_storage.dart';
 /// Источник: MASTER.md секция 7.2.1
 ///
 /// - Добавляет Authorization header автоматически
+/// - Проактивно рефрешит протухший access-токен ДО запроса
 /// - На 401: пробует refresh → если fail → logout
 ///
 /// Гонка параллельных 401 (фикс): когда несколько запросов уходят
@@ -52,17 +54,58 @@ class ApiClient {
 
   Dio get dio => _dio;
 
-  /// Добавляем Authorization header если есть токен
+  /// Добавляем Authorization header если есть токен.
+  /// Если access-токен уже протух — обновляем его ПРОАКТИВНО до отправки.
+  ///
+  /// Зачем: эндпоинты с optionalAuth (/api/home) НЕ возвращают 401 при
+  /// протухшем токене — они молча считают юзера гостем. На холодном старте
+  /// (access 15 мин уже истёк) это ломало персональные блоки на главной
+  /// («Продолжить слушать») — они приходили пустыми до ручного рефреша.
   Future<void> _onRequest(
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
     final storage = _ref.read(secureStorageProvider);
-    final token = await storage.getAccessToken();
+    var token = await storage.getAccessToken();
+
+    if (token != null &&
+        options.path != ApiEndpoints.refresh &&
+        _isAccessTokenExpired(token)) {
+      final refreshed = await _ensureRefreshed();
+      if (refreshed != null) token = refreshed;
+    }
+
     if (token != null) {
       options.headers['Authorization'] = 'Bearer $token';
     }
     handler.next(options);
+  }
+
+  /// true, если access-токен истёк (или истекает в ближайшие 10 секунд).
+  /// Декодируем payload JWT и смотрим exp. При любой ошибке — false
+  /// (не блокируем запрос; протухание всё равно поймает ветка 401 → refresh).
+  bool _isAccessTokenExpired(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return false;
+      var payload = parts[1].replaceAll('-', '+').replaceAll('_', '/');
+      switch (payload.length % 4) {
+        case 2:
+          payload += '==';
+          break;
+        case 3:
+          payload += '=';
+          break;
+      }
+      final map = jsonDecode(utf8.decode(base64.decode(payload)))
+          as Map<String, dynamic>;
+      final exp = map['exp'];
+      if (exp is! int) return false;
+      final expiryMs = exp * 1000;
+      return DateTime.now().millisecondsSinceEpoch >= (expiryMs - 10000);
+    } catch (_) {
+      return false;
+    }
   }
 
   /// На 401 пробуем refresh token. Один refresh на все параллельные 401:
@@ -114,7 +157,7 @@ class ApiClient {
     }
   }
 
-  /// Гарантирует один refresh на все параллельные 401. Возвращает новый
+  /// Гарантирует один refresh на все параллельные запросы. Возвращает новый
   /// accessToken, либо null если refresh не удался (тогда выполнен logout).
   Future<String?> _ensureRefreshed() {
     // Уже идёт refresh — ждём его результат.
