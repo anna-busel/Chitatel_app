@@ -89,6 +89,74 @@ router.get('/stats', async (req, res, next) => {
 });
 
 /**
+ * GET /api/progress/list
+ * Список начатых и дослушанных разборов (экран «Мой прогресс», 4.45).
+ *
+ * ⚠️ ВАЖНО: этот маршрут ОБЯЗАН стоять ВЫШЕ '/:bookId' — иначе Express примет
+ * слово "list" за bookId и вернёт ошибку невалидного ObjectId.
+ *
+ * Отдаёт все книги, которые юзер начал слушать, новые сверху (по lastListenedAt).
+ * Для каждой — сама книга (та же проекция полей, что на главной), текущая часть
+ * и позиция (чтобы тап продолжал с сохранённой секунды), сколько частей всего и
+ * сколько прослушано, и флаг isCompleted (все части пройдены). Книги, снятые с
+ * публикации, пропускаем — слушать их всё равно нельзя.
+ *
+ * Ответ: { items: [{ book, currentPartNumber, positionSeconds, totalParts,
+ *                     listenedParts, isCompleted, lastListenedAt }] }
+ */
+router.get('/list', async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+
+    const progresses = await Progress.find({ userId })
+      .sort({ lastListenedAt: -1 })
+      .select(
+        'bookId currentPartNumber positionSeconds listenedPartNumbers lastListenedAt'
+      )
+      .lean();
+
+    if (progresses.length === 0) {
+      return success(res, { items: [] });
+    }
+
+    const bookFields =
+      'title author coverImageUrl coverGradientColors coverLabel bookSlug ' +
+      'durationTotal rating reviewCount priceUsd priceRub priceByn isFree isPartOfClub ' +
+      'categories parts';
+
+    const bookIds = progresses.map((p) => p.bookId);
+    const books = await Book.find({ _id: { $in: bookIds }, isPublished: true })
+      .select(bookFields)
+      .lean();
+    const bookById = new Map(books.map((b) => [String(b._id), b]));
+
+    const items = [];
+    for (const p of progresses) {
+      const book = bookById.get(String(p.bookId));
+      if (!book) continue; // снята с публикации — пропускаем
+
+      const totalParts = (book.parts || []).length;
+      const listenedParts = (p.listenedPartNumbers || []).length;
+      const isCompleted = totalParts > 0 && listenedParts >= totalParts;
+
+      items.push({
+        book,
+        currentPartNumber: p.currentPartNumber,
+        positionSeconds: p.positionSeconds,
+        totalParts,
+        listenedParts,
+        isCompleted,
+        lastListenedAt: p.lastListenedAt,
+      });
+    }
+
+    return success(res, { items });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
  * GET /api/progress/:bookId
  * Получить прогресс юзера по конкретной книге.
  * Если прогресса нет — возвращает defaults (часть 1, позиция 0).

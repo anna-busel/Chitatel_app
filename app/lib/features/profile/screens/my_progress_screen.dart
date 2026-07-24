@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../providers/profile_provider.dart';
 import '../services/profile_service.dart';
@@ -13,6 +16,12 @@ import '../services/profile_service.dart';
 /// и дослушанные разборы, число цитат. Недельной динамики нет осознанно — база
 /// хранит только суммарное время по книге, посуточной истории не существует,
 /// а рисовать график из воздуха честнее не показывать вовсе.
+///
+/// ⚠️ 24.07.2026 — СПИСОК РАЗБОРОВ. Под цифрами-статистикой добавлены
+/// тапабельные мини-карточки начатых и дослушанных разборов (GET
+/// /api/progress/list). Тап продолжает воспроизведение с сохранённой части и
+/// секунды — как «Продолжить слушать» на главной. Список грузится отдельным
+/// провайдером, поэтому его загрузка/пустота не блокируют показ статистики.
 class MyProgressScreen extends ConsumerWidget {
   const MyProgressScreen({super.key});
 
@@ -145,7 +154,132 @@ class _Body extends StatelessWidget {
           style: AppTypography.caption,
           textAlign: TextAlign.center,
         ),
+
+        // Список начатых/дослушанных разборов. Грузится отдельно — своя
+        // загрузка/пустота не мешает статистике выше.
+        const _ProgressList(),
       ],
+    );
+  }
+}
+
+/// Список разборов под статистикой. Отдельный Consumer, чтобы его загрузка
+/// и пустота не влияли на показ цифр.
+class _ProgressList extends ConsumerWidget {
+  const _ProgressList();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final listAsync = ref.watch(progressListProvider);
+
+    return listAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (items) {
+        if (items.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 24),
+            Text('Ваши разборы', style: AppTypography.sectionHeader),
+            const SizedBox(height: 12),
+            for (final item in items) _ProgressMiniCard(item: item),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Тапабельная мини-карточка одного разбора: обложка, название, статус
+/// (дослушано / часть N из M). Тап продолжает с сохранённой секунды.
+class _ProgressMiniCard extends StatelessWidget {
+  const _ProgressMiniCard({required this.item});
+  final ProgressItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final book = item.book;
+    final subtitle = item.isCompleted
+        ? 'Дослушано'
+        : 'Часть ${item.currentPartNumber} из ${item.totalParts}';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+        child: InkWell(
+          onTap: () {
+            context.push(
+              Routes.player(book.id),
+              extra: {
+                'startPart': item.currentPartNumber,
+                'startPosition': item.positionSeconds,
+              },
+            );
+          },
+          borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: BookCoverImage(
+                    imageUrl: book.coverImageUrl,
+                    gradientColors: book.coverGradientColors,
+                    label: book.coverLabel,
+                    width: 44,
+                    height: 44,
+                    borderRadius: 8,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        book.title,
+                        style: AppTypography.bodyMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Icon(
+                            item.isCompleted
+                                ? Icons.check_circle
+                                : Icons.play_circle_outline,
+                            size: 14,
+                            color: item.isCompleted
+                                ? AppColors.terracotta
+                                : AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(subtitle, style: AppTypography.caption),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: AppColors.textSecondary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

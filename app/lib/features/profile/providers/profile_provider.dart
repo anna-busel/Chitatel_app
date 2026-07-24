@@ -69,6 +69,13 @@ final progressStatsProvider = FutureProvider<ProgressStats>((ref) async {
   return ref.read(profileServiceProvider).fetchStats();
 });
 
+/// Список начатых/дослушанных разборов (экран 4.45) — для тапабельных
+/// мини-карточек под статистикой.
+final progressListProvider =
+    FutureProvider<List<ProgressItem>>((ref) async {
+  return ref.read(profileServiceProvider).fetchProgressList();
+});
+
 /// История покупок (экран 4.44).
 final purchaseHistoryProvider =
     FutureProvider<List<PurchaseItem>>((ref) async {

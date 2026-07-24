@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_endpoints.dart';
+import '../../../shared/models/book_model.dart';
 
 /// Профиль пользователя (экран 4.27 и подэкраны, задача 6.2).
 class UserProfile {
@@ -98,6 +99,43 @@ class ProgressStats {
       booksStarted: (j['booksStarted'] as num?)?.toInt() ?? 0,
       booksCompleted: (j['booksCompleted'] as num?)?.toInt() ?? 0,
       quotesCount: (j['quotesCount'] as num?)?.toInt() ?? 0,
+      lastListenedAt: j['lastListenedAt'] is String
+          ? DateTime.tryParse(j['lastListenedAt'] as String)
+          : null,
+    );
+  }
+}
+
+/// Один начатый/дослушанный разбор — карточка в списке под статистикой на
+/// экране «Мой прогресс» (4.45). Тап продолжает воспроизведение с сохранённой
+/// части и секунды (как «Продолжить слушать» на главной).
+class ProgressItem {
+  const ProgressItem({
+    required this.book,
+    required this.currentPartNumber,
+    required this.positionSeconds,
+    required this.totalParts,
+    required this.listenedParts,
+    required this.isCompleted,
+    this.lastListenedAt,
+  });
+
+  final BookModel book;
+  final int currentPartNumber;
+  final int positionSeconds;
+  final int totalParts;
+  final int listenedParts;
+  final bool isCompleted;
+  final DateTime? lastListenedAt;
+
+  factory ProgressItem.fromJson(Map<String, dynamic> j) {
+    return ProgressItem(
+      book: BookModel.fromJson(j['book'] as Map<String, dynamic>),
+      currentPartNumber: (j['currentPartNumber'] as num?)?.toInt() ?? 1,
+      positionSeconds: (j['positionSeconds'] as num?)?.toInt() ?? 0,
+      totalParts: (j['totalParts'] as num?)?.toInt() ?? 0,
+      listenedParts: (j['listenedParts'] as num?)?.toInt() ?? 0,
+      isCompleted: j['isCompleted'] == true,
       lastListenedAt: j['lastListenedAt'] is String
           ? DateTime.tryParse(j['lastListenedAt'] as String)
           : null,
@@ -223,6 +261,22 @@ class ProfileService {
     final body = response.data as Map<String, dynamic>;
     final data = body['data'] as Map<String, dynamic>;
     return ProgressStats.fromJson(data['stats'] as Map<String, dynamic>);
+  }
+
+  /// Список начатых/дослушанных разборов (4.45) — для мини-карточек под
+  /// статистикой. Новые сверху (по времени последнего прослушивания).
+  Future<List<ProgressItem>> fetchProgressList() async {
+    final response = await _api.dio.get(ApiEndpoints.progressList);
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>;
+    final raw = data['items'];
+    if (raw is List) {
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(ProgressItem.fromJson)
+          .toList(growable: false);
+    }
+    return const [];
   }
 
   /// История покупок (4.44).

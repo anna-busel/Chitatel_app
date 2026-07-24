@@ -97,6 +97,11 @@ class ApiEndpoints {
   /// задача 6.2): всего минут, книг начато/завершено, цитат, streak.
   static const String progressStats = '/progress/stats';
 
+  /// GET /api/progress/list — список начатых и дослушанных разборов (4.45).
+  /// Для тапабельных мини-карточек на экране «Мой прогресс»: книга + часть +
+  /// позиция + флаг isCompleted. Тап продолжает с сохранённой секунды.
+  static const String progressList = '/progress/list';
+
   /// GET /api/progress/:bookId — получить прогресс по конкретной книге.
   /// Если прогресса нет — возвращает defaults (часть 1, позиция 0).
   static String progressByBook(String bookId) => '/progress/$bookId';
