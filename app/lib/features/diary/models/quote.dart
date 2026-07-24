@@ -53,33 +53,39 @@ class QuoteModel {
   }
 }
 
-/// Результат ИИ-разбора цитаты (экран 4.25).
+/// Результат ИИ-разбора цитаты (экран 4.25). Формат промпта Анны:
+///   category  — одна из 14 категорий
+///   themes    — 1–3 короткие темы
+///   sentiment — positive / neutral / negative
+///   insights  — художественный разбор в тоне «личной колонки»
 class AiAnalysis {
   const AiAnalysis({
-    required this.resonance,
-    required this.context,
-    required this.question,
+    required this.category,
+    required this.themes,
+    required this.sentiment,
+    required this.insights,
   });
 
-  /// Почему цитата откликнулась («Что эта цитата говорит о вас»)
-  final String resonance;
-
-  /// Связь с идеями книги («Паттерн»)
-  final String context;
-
-  /// Вопрос для размышления
-  final String question;
+  final String category;
+  final List<String> themes;
+  final String sentiment;
+  final String insights;
 
   bool get isEmpty =>
-      resonance.trim().isEmpty &&
-      context.trim().isEmpty &&
-      question.trim().isEmpty;
+      insights.trim().isEmpty && category.trim().isEmpty && themes.isEmpty;
 
   factory AiAnalysis.fromJson(Map<String, dynamic> json) {
+    final themesJson = json['themes'];
     return AiAnalysis(
-      resonance: (json['resonance'] ?? '').toString(),
-      context: (json['context'] ?? '').toString(),
-      question: (json['question'] ?? '').toString(),
+      category: (json['category'] ?? '').toString(),
+      themes: themesJson is List
+          ? themesJson
+              .map((e) => e.toString())
+              .where((e) => e.trim().isNotEmpty)
+              .toList()
+          : const [],
+      sentiment: (json['sentiment'] ?? '').toString(),
+      insights: (json['insights'] ?? '').toString(),
     );
   }
 }

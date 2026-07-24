@@ -1,6 +1,10 @@
 import 'quote.dart';
 
 /// Еженедельный ИИ-отчёт (сервер: server/src/models/WeeklyReport.js, экран 4.26).
+///
+/// Показывается только текст insights (личное письмо Анны). dominantThemes и
+/// статистика — служебные. recommendations — книги каталога, подобранные по темам
+/// (карточка с обложкой, тап → экран разбора).
 class WeeklyReportModel {
   const WeeklyReportModel({
     required this.id,
@@ -10,9 +14,9 @@ class WeeklyReportModel {
     required this.endDate,
     required this.stats,
     required this.quotes,
-    this.weekTheme = '',
-    this.insight = '',
-    this.recommendation,
+    this.insights = '',
+    this.dominantThemes = const [],
+    this.recommendations = const [],
   });
 
   final String id;
@@ -22,27 +26,20 @@ class WeeklyReportModel {
   final DateTime endDate;
   final ReportStats stats;
 
-  /// Главная тема недели (обобщение ИИ)
-  final String weekTheme;
+  /// Личное письмо Анны — единственное, что показывается на экране.
+  final String insights;
 
-  /// Наблюдение — что может занимать читателя сейчас
-  final String insight;
+  final List<String> dominantThemes;
 
-  /// Рекомендованный разбор. null — если ИИ не подобрал книгу из каталога:
-  /// в этом случае блок рекомендации на экране не показывается.
-  final Recommendation? recommendation;
+  /// Рекомендованные разборы из каталога (только с реальным bookId).
+  final List<Recommendation> recommendations;
 
   final List<QuoteModel> quotes;
 
   factory WeeklyReportModel.fromJson(Map<String, dynamic> json) {
-    final summary = json['aiSummary'] as Map<String, dynamic>? ?? const {};
-    final recJson = summary['recommendation'];
     final statsJson = json['stats'] as Map<String, dynamic>? ?? const {};
     final quotesJson = json['quotes'] as List<dynamic>? ?? const [];
-
-    final recommendation = recJson is Map<String, dynamic>
-        ? Recommendation.fromJson(recJson)
-        : null;
+    final themesJson = json['dominantThemes'] as List<dynamic>? ?? const [];
 
     return WeeklyReportModel(
       id: (json['_id'] ?? json['id'] ?? '').toString(),
@@ -53,11 +50,12 @@ class WeeklyReportModel {
       endDate:
           DateTime.tryParse((json['endDate'] ?? '').toString()) ?? DateTime.now(),
       stats: ReportStats.fromJson(statsJson),
-      weekTheme: (summary['weekTheme'] ?? '').toString(),
-      insight: (summary['insight'] ?? '').toString(),
-      // Рекомендация показывается только если есть реальная книга в каталоге.
-      recommendation:
-          (recommendation != null && recommendation.isUsable) ? recommendation : null,
+      insights: (json['insights'] ?? '').toString(),
+      dominantThemes: themesJson
+          .map((e) => e.toString())
+          .where((e) => e.trim().isNotEmpty)
+          .toList(),
+      recommendations: Recommendation.listFromJson(json['recommendations']),
       quotes: quotesJson
           .whereType<Map<String, dynamic>>()
           .map(QuoteModel.fromJson)
@@ -66,54 +64,67 @@ class WeeklyReportModel {
   }
 }
 
-/// Статистика недели.
+/// Статистика отчёта. weeksActive используется только в месячном отчёте.
 class ReportStats {
   const ReportStats({
-    this.minutesListened = 0,
     this.quotesCount = 0,
-    this.analysesCount = 0,
+    this.uniqueAuthors = 0,
+    this.activeDays = 0,
+    this.weeksActive = 0,
   });
 
-  /// ⚠️ Пока всегда 0: недельная статистика прослушивания появится в задаче 6.2
-  /// (GET /api/progress/stats). Экран это учитывает и минуты не показывает.
-  final int minutesListened;
   final int quotesCount;
-  final int analysesCount;
+  final int uniqueAuthors;
+  final int activeDays;
+  final int weeksActive;
 
   factory ReportStats.fromJson(Map<String, dynamic> json) {
     return ReportStats(
-      minutesListened: (json['minutesListened'] as num?)?.toInt() ?? 0,
       quotesCount: (json['quotesCount'] as num?)?.toInt() ?? 0,
-      analysesCount: (json['analysesCount'] as num?)?.toInt() ?? 0,
+      uniqueAuthors: (json['uniqueAuthors'] as num?)?.toInt() ?? 0,
+      activeDays: (json['activeDays'] as num?)?.toInt() ?? 0,
+      weeksActive: (json['weeksActive'] as num?)?.toInt() ?? 0,
     );
   }
 }
 
-/// Рекомендованный разбор из нашего каталога.
-/// bookId проставляет сервер — по нему открывается экран книги
-/// (там уже «Слушать» / «Купить» / «Продолжить»).
+/// Рекомендованный разбор из каталога. bookId проставляет сервер — по нему
+/// открывается экран книги (там уже «Слушать» / «Купить» / «Продолжить»).
 class Recommendation {
   const Recommendation({
+    required this.bookId,
     required this.title,
     required this.author,
+    required this.coverImageUrl,
     required this.why,
-    required this.bookId,
   });
 
+  final String? bookId;
   final String title;
   final String author;
+  final String coverImageUrl;
   final String why;
-  final String? bookId;
 
-  /// Показываем блок только если есть и название, и ссылка на реальную книгу.
+  /// Показываем карточку только если есть название и ссылка на реальную книгу.
   bool get isUsable => title.trim().isNotEmpty && (bookId?.isNotEmpty ?? false);
 
   factory Recommendation.fromJson(Map<String, dynamic> json) {
     return Recommendation(
+      bookId: json['bookId']?.toString(),
       title: (json['title'] ?? '').toString(),
       author: (json['author'] ?? '').toString(),
+      coverImageUrl: (json['coverImageUrl'] ?? '').toString(),
       why: (json['why'] ?? '').toString(),
-      bookId: json['bookId']?.toString(),
     );
+  }
+
+  /// Разбор массива рекомендаций из ответа сервера (с отсевом нерабочих).
+  static List<Recommendation> listFromJson(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(Recommendation.fromJson)
+        .where((r) => r.isUsable)
+        .toList();
   }
 }

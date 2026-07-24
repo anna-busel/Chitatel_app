@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/quote.dart';
 import '../models/weekly_report.dart';
+import '../models/monthly_report.dart';
 import '../services/diary_service.dart';
 
 /// Лента цитат дневника (4.24). Новые сверху.
@@ -26,6 +27,14 @@ final quoteProvider =
 final latestReportProvider = FutureProvider<WeeklyReportModel?>((ref) async {
   final service = ref.read(diaryServiceProvider);
   return service.fetchLatestReport();
+});
+
+/// Последний ежемесячный отчёт (4.26). null — отчётов ещё нет,
+/// тогда кнопка «Ежемесячный отчёт» в дневнике не показывается.
+final latestMonthlyReportProvider =
+    FutureProvider<MonthlyReportModel?>((ref) async {
+  final service = ref.read(diaryServiceProvider);
+  return service.fetchLatestMonthlyReport();
 });
 
 /// Статистика дневника для шапки (4.24): цитат · анализов · дней подряд.

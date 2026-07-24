@@ -3,6 +3,7 @@ import '../../../core/network/api_client.dart';
 import '../../../core/network/api_endpoints.dart';
 import '../models/quote.dart';
 import '../models/weekly_report.dart';
+import '../models/monthly_report.dart';
 
 /// Провайдер сервиса дневника.
 final diaryServiceProvider = Provider<DiaryService>((ref) {
@@ -78,7 +79,7 @@ class DiaryService {
     await _api.dio.delete(ApiEndpoints.quoteById(id));
   }
 
-  /// GET /api/reports/weekly/latest — последний отчёт (или null, если отчётов нет).
+  /// GET /api/reports/weekly/latest — последний недельный отчёт (или null).
   Future<WeeklyReportModel?> fetchLatestReport() async {
     final response = await _api.dio.get(ApiEndpoints.reportsWeeklyLatest);
     final body = response.data as Map<String, dynamic>;
@@ -88,6 +89,18 @@ class DiaryService {
       return null;
     }
     return WeeklyReportModel.fromJson(json);
+  }
+
+  /// GET /api/reports/monthly/latest — последний месячный отчёт (или null).
+  Future<MonthlyReportModel?> fetchLatestMonthlyReport() async {
+    final response = await _api.dio.get(ApiEndpoints.reportsMonthlyLatest);
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>? ?? const {};
+    final json = data['report'];
+    if (json is! Map<String, dynamic>) {
+      return null;
+    }
+    return MonthlyReportModel.fromJson(json);
   }
 
   /// PATCH /api/profile/ai-consent — включить/выключить ИИ-анализ (4.7 / 4.42).
