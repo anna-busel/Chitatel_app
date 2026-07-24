@@ -170,16 +170,16 @@ router.post('/avatar', upload.single('avatar'), async (req, res, next) => {
  * PATCH /api/profile/push-settings
  * Настройки уведомлений (экран 4.31).
  *
- * Сами уведомления отправляет push-сервис (задача 6.1) — он обязан читать эти
- * флаги перед отправкой. Пока push-сервиса нет, настройки просто сохраняются:
- * так экран настроек честный и не врёт пользователю, что что-то включено.
+ * Сами уведомления отправляет push-сервис (задача 6.1) — он читает эти флаги
+ * перед отправкой. reports — недельный + месячный отчёты; news — новости/анонсы.
  */
 const pushSettingsSchema = z.object({
   dailyQuote: z.boolean().optional(),
   newAudio: z.boolean().optional(),
   aiReady: z.boolean().optional(),
   chatMessages: z.boolean().optional(),
-  weeklyReport: z.boolean().optional(),
+  reports: z.boolean().optional(),
+  news: z.boolean().optional(),
   reminders: z.boolean().optional(),
 });
 

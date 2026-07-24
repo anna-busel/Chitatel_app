@@ -28,12 +28,14 @@ let provider = null;
 let providerInitTried = false;
 
 // Типы, которые сохраняются в ленту уведомлений (4.30) при отправке.
-// Персональные события — да; массовые рассылки/напоминания — нет (шум).
+// Персональные события + новости — да; массовые напоминания — нет (шум).
 const PERSIST_TYPES = new Set([
   'ai_ready',
   'weekly_report',
+  'monthly_report',
   'chat_reply',
   'new_audio',
+  'news',
 ]);
 
 /**
@@ -206,4 +208,62 @@ const broadcast = async ({ audience = 'all' } = {}, payload, settingKey = null) 
   return { total: users.length, sent };
 };
 
-module.exports = { sendToUser, broadcast };
+/**
+ * Новости/анонсы (админ). В отличие от broadcast, ПИШЕТСЯ в ленту 4.30 всем
+ * адресатам (лента = история, независимо от push-разрешения и токена), а push
+ * шлётся только тем, у кого включена настройка news и есть токен.
+ *
+ * @param {{audience?: 'all'|'subscribers', title:string, body:string, data?:object}} opts
+ * @returns {Promise<{total:number, persisted:number, sent:number}>}
+ */
+const sendNews = async ({ audience = 'all', title, body, data = {} } = {}) => {
+  const feedFilter = { isDeleted: { $ne: true } };
+  if (audience === 'subscribers') {
+    feedFilter.subscriptionStatus = { $in: ['basic', 'premium'] };
+    feedFilter.subscriptionExpiresAt = { $gt: new Date() };
+  }
+
+  const users = await User.find(feedFilter)
+    .select('_id pushToken pushSettings isDeleted')
+    .lean();
+
+  const payloadData = { ...data, type: 'news' };
+
+  // Пишем в ленту всем адресатам (история). ordered:false — один сбой не рушит пачку.
+  if (users.length > 0) {
+    try {
+      await Notification.insertMany(
+        users.map((u) => ({
+          userId: u._id,
+          type: 'news',
+          title,
+          body,
+          data: payloadData,
+        })),
+        { ordered: false }
+      );
+    } catch (err) {
+      logger.warn('Не удалось записать часть новостей в ленту', {
+        message: err.message,
+      });
+    }
+  }
+
+  // Push — только тем, у кого включена настройка news и есть токен.
+  let sent = 0;
+  for (const user of users) {
+    if (!isAllowed(user, 'news')) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await deliver(user, { title, body, data: payloadData });
+    if (ok) sent += 1;
+  }
+
+  logger.info('Push news завершён', {
+    audience,
+    total: users.length,
+    sent,
+  });
+  return { total: users.length, persisted: users.length, sent };
+};
+
+module.exports = { sendToUser, broadcast, sendNews };

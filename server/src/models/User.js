@@ -50,12 +50,16 @@ const userSchema = new mongoose.Schema(
 
     aiConsent: { type: Boolean, default: false },
     pushToken: String,
+    // Настройки push (экран 4.31). reports — недельный + месячный отчёты (одна
+    // настройка, решение проекта 24.07.2026, заменила weeklyReport). news —
+    // новости/анонсы сезона. aiReady — «разбор цитаты готов».
     pushSettings: {
       dailyQuote: { type: Boolean, default: true },
       newAudio: { type: Boolean, default: true },
       aiReady: { type: Boolean, default: true },
       chatMessages: { type: Boolean, default: true },
-      weeklyReport: { type: Boolean, default: true },
+      reports: { type: Boolean, default: true },
+      news: { type: Boolean, default: true },
       reminders: { type: Boolean, default: true },
     },
     surveyAnswers: mongoose.Schema.Types.Mixed,
