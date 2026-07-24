@@ -16,6 +16,10 @@ import '../widgets/analysis_card.dart';
 /// «Анализ создан ИИ и не является терапией». Пока разбор считается
 /// (aiStatus='pending') — экран сам опрашивает сервер каждые 3 сек
 /// (до ~36 сек), поэтому результат появляется без ручного обновления.
+///
+/// ⚠️ 24.07.2026 — `skipLoadingOnReload: true`: во время авто-опроса экран
+/// держит уже показанное содержимое (цитату + «Анализируем…»), а не мигает
+/// полноэкранным спиннером на каждый перезапрос.
 class AnalysisScreen extends ConsumerStatefulWidget {
   const AnalysisScreen({super.key, required this.quoteId});
 
@@ -79,6 +83,9 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
             ),
             Expanded(
               child: quoteAsync.when(
+                // Держим уже показанный экран во время авто-опроса — иначе
+                // каждые 3с мелькал бы полноэкранный спиннер.
+                skipLoadingOnReload: true,
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (_, __) => _Message(
                   text: 'Не удалось загрузить анализ',
