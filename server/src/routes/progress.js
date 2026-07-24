@@ -237,17 +237,35 @@ router.post('/', validate(updateSchema), async (req, res, next) => {
       bookId,
     });
 
-    const previousSeconds = existing ? existing.positionSeconds : 0;
-    const previousPart = existing ? existing.currentPartNumber : currentPartNumber;
+    // «Всего прослушано» считаем по МАКСИМУМУ дошедшей позиции в каждой части,
+    // а не по приросту от последней сохранённой секунды. Иначе переслушивание
+    // уже пройденного накручивало бы минуты (сервер добавлял их повторно).
+    const partKey = String(currentPartNumber);
+    const savedMax =
+      existing && existing.maxPositionByPart
+        ? existing.maxPositionByPart.get(partKey)
+        : undefined;
 
-    // Сколько секунд добавилось с прошлого сохранения.
-    // Если юзер перемотал назад или сменил часть — не учитываем дельту.
-    let secondsDelta = 0;
-    if (currentPartNumber === previousPart && positionSeconds > previousSeconds) {
-      secondsDelta = positionSeconds - previousSeconds;
+    let prevMax;
+    if (savedMax !== undefined && savedMax !== null) {
+      prevMax = savedMax;
+    } else if (existing && existing.currentPartNumber === currentPartNumber) {
+      // Старые записи без карты: берём последнюю сохранённую позицию той
+      // же части как стартовый максимум — чтобы при первом сохранении после
+      // обновления ничего не задвоить.
+      prevMax = existing.positionSeconds || 0;
+    } else {
+      prevMax = 0;
     }
 
-    // Готовим обновление
+    // Считаем только НОВУЮ пройденную «землю».
+    let secondsDelta = 0;
+    if (positionSeconds > prevMax) {
+      secondsDelta = positionSeconds - prevMax;
+    }
+    const newMax = prevMax > positionSeconds ? prevMax : positionSeconds;
+
+    // Прослушанные части (для галочек).
     const listenedSet = new Set(existing ? existing.listenedPartNumbers : []);
     if (markPartCompleted === true) {
       listenedSet.add(currentPartNumber);
@@ -261,6 +279,7 @@ router.post('/', validate(updateSchema), async (req, res, next) => {
           positionSeconds,
           listenedPartNumbers: Array.from(listenedSet).sort((a, b) => a - b),
           lastListenedAt: new Date(),
+          [`maxPositionByPart.${partKey}`]: newMax,
         },
         $inc: { totalListenedSeconds: secondsDelta },
       },

@@ -39,6 +39,12 @@ const progressSchema = new mongoose.Schema(
     // Сколько секунд всего прослушано по этой книге (для статистики).
     totalListenedSeconds: { type: Number, default: 0 },
 
+    // Максимально дошедшая позиция по каждой части (номер части → секунды).
+    // По ней считается прирост totalListenedSeconds: добавляем только НОВУЮ
+    // пройденную «землю», а не разницу с последней позицией. Иначе
+    // переслушивание уже пройденного накручивало бы «всего прослушано».
+    maxPositionByPart: { type: Map, of: Number, default: {} },
+
     // Когда юзер слушал в последний раз.
     lastListenedAt: { type: Date, default: Date.now },
   },
