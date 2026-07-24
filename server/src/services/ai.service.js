@@ -8,29 +8,35 @@ const pushService = require('./push.service');
 const {
   AI_MODEL,
   AI_TEMPERATURE,
-  AI_MAX_TOKENS,
+  QUOTE_ANALYSIS_MAX_TOKENS,
+  WEEKLY_REPORT_MAX_TOKENS,
+  MONTHLY_REPORT_MAX_TOKENS,
+  QUOTE_CATEGORIES,
+  QUOTE_ANALYSIS_SYSTEM,
   QUOTE_ANALYSIS_PROMPT,
+  WEEKLY_REPORT_SYSTEM,
   WEEKLY_REPORT_PROMPT,
+  MONTHLY_REPORT_SYSTEM,
+  MONTHLY_REPORT_WEEKLY_PROMPT,
+  MONTHLY_REPORT_TOPQUOTES_PROMPT,
 } = require('../config/ai-prompts');
 
 /**
- * ИИ-анализ цитат (MASTER 7.7).
+ * ИИ-анализ цитат + недельный/месячный отчёты (промпты Анны, config/ai-prompts.js).
  *
- * 🔴 Apple 5.1.2(i): НИКАКИЕ данные пользователя не уходят в OpenAI без
- * явного согласия (user.aiConsent === true). Гард — в analyzeQuote и
- * generateWeeklySummary, обойти его нельзя.
+ * 🔴 Apple 5.1.2(i): НИКАКИЕ данные пользователя не уходят в OpenAI без явного
+ * согласия (user.aiConsent === true). Гард — в analyzeQuote / generateWeeklyReport /
+ * generateMonthlyReport, обойти его нельзя.
  *
- * Таймаут 30 сек, 3 попытки с экспоненциальной паузой (1с, 3с, 9с).
- * При окончательной неудаче цитата помечается aiStatus='failed'
- * (клиент показывает «Анализ временно недоступен», MASTER 7.5 AI_ANALYSIS_FAILED).
+ * Таймаут 30 сек, 3 попытки с экспоненциальной паузой (1с, 3с, 9с). При
+ * окончательной неудаче анализа цитаты — aiStatus='failed' (клиент показывает
+ * «Анализ временно недоступен»). Для отчётов ошибка пробрасывается в job, который
+ * пропускает юзера (не сохраняет «сломанный» отчёт) — повтор при фоновом catch-up.
  */
 
 const REQUEST_TIMEOUT_MS = 30000;
 const MAX_ATTEMPTS = 3;
 const BACKOFF_MS = [1000, 3000, 9000];
-
-// Сколько разборов каталога показываем модели при генерации рекомендации.
-const CATALOG_LIMIT = 80;
 
 let client = null;
 
@@ -51,8 +57,20 @@ const getClient = () => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Убирает markdown-обёртку ```json ... ``` если модель её добавила,
- * и парсит JSON. Бросает ошибку если распарсить нельзя.
+ * Подстановка {токенов} в промпт-шаблон. Плейсхолдеры вида {key} заменяются
+ * на vars[key] (все вхождения). Отсутствующий ключ заменяется пустой строкой.
+ */
+const fillTemplate = (template, vars) => {
+  let out = String(template);
+  for (const [key, value] of Object.entries(vars)) {
+    out = out.split(`{${key}}`).join(value == null ? '' : String(value));
+  }
+  return out;
+};
+
+/**
+ * Убирает markdown-обёртку ```json ... ``` если модель её добавила, и парсит JSON.
+ * Бросает ошибку если распарсить нельзя.
  */
 const parseJsonResponse = (raw) => {
   const cleaned = String(raw || '')
@@ -66,9 +84,10 @@ const parseJsonResponse = (raw) => {
  * Один вызов OpenAI с ретраями.
  * @param {string} systemPrompt
  * @param {string} userMessage
+ * @param {number} maxTokens
  * @returns {Promise<object>} распарсенный JSON-ответ модели
  */
-const callOpenAI = async (systemPrompt, userMessage) => {
+const callOpenAI = async (systemPrompt, userMessage, maxTokens) => {
   const openai = getClient();
   let lastError = null;
 
@@ -77,7 +96,7 @@ const callOpenAI = async (systemPrompt, userMessage) => {
       const completion = await openai.chat.completions.create({
         model: AI_MODEL,
         temperature: AI_TEMPERATURE,
-        max_tokens: AI_MAX_TOKENS,
+        max_tokens: maxTokens,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt },
@@ -107,26 +126,35 @@ const callOpenAI = async (systemPrompt, userMessage) => {
   );
 };
 
-/**
- * Собирает user-message для анализа цитаты:
- * текст цитаты + автор + книга + последние 5 цитат пользователя (MASTER 7.7).
- */
-const buildQuoteUserMessage = (quote, recentQuotes) => {
-  const lines = [
-    `Цитата: «${quote.text}»`,
-    `Автор: ${quote.author || 'не указан'}`,
-    `Книга: ${quote.bookTitle || 'не указана'}`,
-  ];
+/** Нормализация темы/категории для сопоставления (регистр, ё, пробелы, пунктуация). */
+const normalizeTerm = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[«»"'.,!?:;()\-—]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-  if (recentQuotes.length > 0) {
-    lines.push('');
-    lines.push('Последние цитаты этого читателя (для контекста):');
-    for (const q of recentQuotes) {
-      lines.push(`- «${q.text}» (${q.author || 'без автора'})`);
-    }
+/** Нормализация ответа модели по одной цитате к полям aiAnalysis. */
+const normalizeQuoteAnalysis = (result) => {
+  const allowedSentiment = ['positive', 'neutral', 'negative'];
+  let themes = [];
+  if (Array.isArray(result.themes)) {
+    themes = result.themes
+      .map((t) => String(t || '').trim())
+      .filter(Boolean)
+      .slice(0, 3);
   }
-
-  return lines.join('\n');
+  const category = String(result.category || '').trim() || 'ДРУГОЕ';
+  const sentiment = allowedSentiment.includes(result.sentiment)
+    ? result.sentiment
+    : 'neutral';
+  return {
+    category,
+    themes,
+    sentiment,
+    insights: String(result.insights || '').trim(),
+  };
 };
 
 /**
@@ -147,21 +175,21 @@ const analyzeQuote = async (quote, user) => {
     );
   }
 
-  // Последние 5 цитат юзера (кроме текущей) — контекст для модели.
-  const recentQuotes = await Quote.find({
-    userId: quote.userId,
-    _id: { $ne: quote._id },
-  })
-    .sort({ createdAt: -1 })
-    .limit(5)
-    .select('text author')
-    .lean();
+  // {userContext} — хук под персонализацию из онбординга (пока не собран → пусто).
+  const userMessage = fillTemplate(QUOTE_ANALYSIS_PROMPT, {
+    text: quote.text,
+    author: quote.author || 'не указан',
+    userContext: '',
+    categories: QUOTE_CATEGORIES.join(', '),
+  });
 
   try {
-    const result = await callOpenAI(
-      QUOTE_ANALYSIS_PROMPT,
-      buildQuoteUserMessage(quote, recentQuotes)
+    const raw = await callOpenAI(
+      QUOTE_ANALYSIS_SYSTEM,
+      userMessage,
+      QUOTE_ANALYSIS_MAX_TOKENS
     );
+    const analysis = normalizeQuoteAnalysis(raw);
 
     const updated = await Quote.findByIdAndUpdate(
       quote._id,
@@ -169,9 +197,10 @@ const analyzeQuote = async (quote, user) => {
         $set: {
           aiStatus: 'ready',
           aiAnalysis: {
-            resonance: result.resonance || '',
-            context: result.context || '',
-            question: result.question || '',
+            category: analysis.category,
+            themes: analysis.themes,
+            sentiment: analysis.sentiment,
+            insights: analysis.insights,
             createdAt: new Date(),
           },
         },
@@ -181,8 +210,7 @@ const analyzeQuote = async (quote, user) => {
 
     logger.info('AI quote analysis ready', { quoteId: String(quote._id) });
 
-    // Push °Анализ готов° (задача 6.1, MASTER 7.9). Fire-and-forget,
-    // гейтится настройкой aiReady внутри push.service.
+    // Push «Анализ готов» (задача 6.1). Fire-and-forget, гейтится настройкой aiReady.
     pushService
       .sendToUser(
         quote.userId,
@@ -218,100 +246,222 @@ const analyzeQuoteInBackground = (quote, user) => {
   });
 };
 
-/** Нормализация названия для сопоставления ответа модели с каталогом. */
-const normalizeTitle = (value) =>
-  String(value || '')
-    .toLowerCase()
-    .replace(/[«»"'.,!?:;()]/g, '')
-    .replace(/ё/g, 'е')
-    .replace(/\s+/g, ' ')
-    .trim();
+/** Формат одной цитаты в тексте для отчёта (как в reader-bot). */
+const formatQuoteLine = (q) =>
+  `"${q.text}" ${q.author ? `(${q.author})` : ''}`.trim();
 
 /**
- * Обобщённый анализ цитат за неделю (для еженедельного отчёта, MASTER 7.7).
+ * Недельный отчёт по цитатам (промпт WEEKLY_REPORT_PROMPT Анны).
+ * Рекомендации здесь НЕ генерируются моделью — они подбираются отдельно
+ * (resolveRecommendations) по темам из ответа. Отчёт = только личный разбор.
  *
- * Рекомендация берётся ТОЛЬКО из опубликованных разборов каталога:
- * список подставляется в user-message, ответ модели сопоставляется с базой
- * по названию → bookId. Если книга не опознана — bookId=null, и клиент
- * не показывает блок рекомендации (кнопка вела бы в никуда).
- *
- * @param {object} user - документ User (нужен aiConsent)
+ * @param {object} user - документ User (нужен aiConsent, name)
  * @param {Array} quotes - цитаты за неделю
- * @returns {Promise<object>} { weekTheme, insight, recommendation: { title, author, why, bookId } }
+ * @param {string} previousReportText - текст insights прошлого отчёта (для «динамики»)
+ * @returns {Promise<{dominantThemes:string[], emotionalTone:string, insights:string, personalGrowth:string}>}
  */
-const generateWeeklySummary = async (user, quotes) => {
+const generateWeeklyReport = async (user, quotes, previousReportText = '') => {
   if (!user || user.aiConsent !== true) {
-    throw new AppError(
-      'AI_CONSENT_REQUIRED',
-      'Требуется согласие на ИИ-анализ',
-      403
-    );
+    throw new AppError('AI_CONSENT_REQUIRED', 'Требуется согласие на ИИ-анализ', 403);
   }
 
-  // Каталог для рекомендации: только опубликованные разборы (у остальных нет аудио).
-  const catalog = await Book.find({ isPublished: true })
-    .select('title author tags')
-    .limit(CATALOG_LIMIT)
+  const quotesText = quotes.map(formatQuoteLine).join('\n\n');
+  const previousReportBlock = previousReportText
+    ? `ПРОШЛЫЙ ОТЧЁТ:\n${previousReportText}`
+    : '';
+
+  const userMessage = fillTemplate(WEEKLY_REPORT_PROMPT, {
+    quotesText,
+    userName: user.name || '',
+    previousReportBlock,
+  });
+
+  const result = await callOpenAI(
+    WEEKLY_REPORT_SYSTEM,
+    userMessage,
+    WEEKLY_REPORT_MAX_TOKENS
+  );
+
+  const dominantThemes = Array.isArray(result.dominantThemes)
+    ? result.dominantThemes.map((t) => String(t || '').trim()).filter(Boolean)
+    : [];
+
+  return {
+    dominantThemes,
+    emotionalTone: String(result.emotionalTone || '').trim(),
+    insights: String(result.insights || '').trim(),
+    personalGrowth: String(result.personalGrowth || '').trim(),
+  };
+};
+
+/** Русское название месяца (1-12). */
+const MONTH_NAMES = [
+  'январе', 'феврале', 'марте', 'апреле', 'мае', 'июне',
+  'июле', 'августе', 'сентябре', 'октябре', 'ноябре', 'декабре',
+];
+const getMonthName = (month) => MONTH_NAMES[(Number(month) - 1 + 12) % 12] || '';
+
+/**
+ * Месячный отчёт (промпты MONTHLY_REPORT_* Анны). Двухуровневая логика:
+ *   - >= 2 недельных отчётов → агрегируем их инсайты (weekly-промпт);
+ *   - иначе → фоллбек по топ-цитатам месяца (topquotes-промпт).
+ *
+ * @param {object} user - документ User (нужен aiConsent, name)
+ * @param {object} data
+ * @param {Array}  data.weeklyReports - недельные отчёты месяца (insights, dominantThemes, emotionalTone)
+ * @param {Array}  data.topQuotes - топ-цитаты месяца (для фоллбека)
+ * @param {object} data.metrics - { month, totalQuotes, uniqueAuthors, weeksActive, topThemes[], emotionalTrend }
+ * @returns {Promise<{insights:string}>}
+ */
+const generateMonthlyReport = async (user, { weeklyReports = [], topQuotes = [], metrics = {} }) => {
+  if (!user || user.aiConsent !== true) {
+    throw new AppError('AI_CONSENT_REQUIRED', 'Требуется согласие на ИИ-анализ', 403);
+  }
+
+  const monthName = getMonthName(metrics.month);
+  let systemPrompt;
+  let userMessage;
+
+  if (weeklyReports.length >= 2) {
+    const weeklyInsights = weeklyReports
+      .map((report, i) => {
+        const themes = Array.isArray(report.dominantThemes) && report.dominantThemes.length
+          ? report.dominantThemes.join(', ')
+          : 'нет данных';
+        const tone = report.emotionalTone || 'нейтральный';
+        const gist = String(report.insights || '').substring(0, 250);
+        return `\nНеделя ${i + 1}:\n- Темы: ${themes}\n- Тон: ${tone}\n- Суть: ${gist}\n    `;
+      })
+      .join('\n');
+
+    systemPrompt = MONTHLY_REPORT_SYSTEM;
+    userMessage = fillTemplate(MONTHLY_REPORT_WEEKLY_PROMPT, {
+      monthName,
+      userName: user.name || '',
+      totalQuotes: metrics.totalQuotes ?? 0,
+      uniqueAuthors: metrics.uniqueAuthors ?? 0,
+      weeksActive: metrics.weeksActive ?? 0,
+      topThemes: Array.isArray(metrics.topThemes) ? metrics.topThemes.join(', ') : '',
+      emotionalTrend: metrics.emotionalTrend || '',
+      weeklyInsights,
+    });
+  } else {
+    const quotesText = topQuotes
+      .map((q, i) => `${i + 1}. "${q.text}" ${q.author ? `(${q.author})` : ''}`)
+      .join('\n');
+
+    systemPrompt = MONTHLY_REPORT_SYSTEM;
+    userMessage = fillTemplate(MONTHLY_REPORT_TOPQUOTES_PROMPT, { quotesText });
+  }
+
+  const result = await callOpenAI(
+    systemPrompt,
+    userMessage,
+    MONTHLY_REPORT_MAX_TOKENS
+  );
+
+  return { insights: String(result.insights || '').trim() };
+};
+
+/**
+ * Подбор рекомендаций из каталога по темам/категориям отчёта.
+ * Берём только опубликованные разборы (у остальных нет аудио). Ранжируем по
+ * количеству совпавших тем/категорий (Book.categories + Book.tags), затем по рейтингу.
+ *
+ * @param {object} opts
+ * @param {string[]} opts.themes - темы цитат/отчёта (dominantThemes, aiAnalysis.themes)
+ * @param {string[]} opts.categories - категории цитат (aiAnalysis.category)
+ * @param {Array}    opts.excludeBookIds - книги, которые не рекомендуем (напр. уже открытые)
+ * @param {number}   opts.limit - сколько карточек вернуть (по умолчанию 3)
+ * @returns {Promise<Array<{bookId, title, author, coverImageUrl, why}>>}
+ */
+const resolveRecommendations = async ({
+  themes = [],
+  categories = [],
+  excludeBookIds = [],
+  limit = 3,
+}) => {
+  const wanted = [];
+  const seen = new Set();
+  for (const t of [...themes, ...categories]) {
+    const norm = normalizeTerm(t);
+    if (norm && !seen.has(norm)) {
+      seen.add(norm);
+      wanted.push({ norm, original: String(t).trim() });
+    }
+  }
+  if (wanted.length === 0) {
+    return [];
+  }
+
+  const books = await Book.find({
+    isPublished: true,
+    _id: { $nin: excludeBookIds },
+  })
+    .select('title author coverImageUrl categories tags rating')
     .lean();
 
-  const lines = ['Цитаты, сохранённые читателем за неделю:'];
-  for (const q of quotes) {
-    lines.push(
-      `- «${q.text}» — ${q.author || 'без автора'}${q.bookTitle ? ` (${q.bookTitle})` : ''}`
-    );
-  }
-
-  if (catalog.length > 0) {
-    lines.push('');
-    lines.push('КАТАЛОГ РАЗБОРОВ (выбирай рекомендацию только отсюда, название — дословно):');
-    for (const b of catalog) {
-      const tags = Array.isArray(b.tags) && b.tags.length > 0
-        ? ` — темы: ${b.tags.slice(0, 5).join(', ')}`
-        : '';
-      lines.push(`- «${b.title}» — ${b.author || 'без автора'}${tags}`);
+  const scored = [];
+  for (const b of books) {
+    const terms = new Set();
+    for (const c of b.categories || []) {
+      const n = normalizeTerm(c);
+      if (n) terms.add(n);
     }
-  } else {
-    lines.push('');
-    lines.push('КАТАЛОГ РАЗБОРОВ: пуст. Верни "recommendation": null.');
-  }
+    for (const t of b.tags || []) {
+      const n = normalizeTerm(t);
+      if (n) terms.add(n);
+    }
 
-  const result = await callOpenAI(WEEKLY_REPORT_PROMPT, lines.join('\n'));
+    let score = 0;
+    let matched = null;
+    for (const w of wanted) {
+      if (terms.has(w.norm)) {
+        score += 1;
+        if (!matched) matched = w.original;
+      }
+    }
+    // Частичное совпадение (вхождение) — слабый сигнал, если точных нет.
+    if (score === 0) {
+      for (const w of wanted) {
+        let hit = false;
+        for (const term of terms) {
+          if (term.includes(w.norm) || w.norm.includes(term)) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) {
+          score += 0.5;
+          if (!matched) matched = w.original;
+        }
+      }
+    }
 
-  const summary = {
-    weekTheme: result.weekTheme || '',
-    insight: result.insight || '',
-    recommendation: {
-      title: '',
-      author: '',
-      why: '',
-      bookId: null,
-    },
-  };
-
-  const rec = result.recommendation;
-  if (rec && rec.title) {
-    const wanted = normalizeTitle(rec.title);
-    const matched = catalog.find((b) => normalizeTitle(b.title) === wanted);
-
-    if (matched) {
-      // Название и автор берём из базы, а не из ответа модели — чтобы в отчёте
-      // не было «почти правильных» названий.
-      summary.recommendation = {
-        title: matched.title,
-        author: matched.author || '',
-        why: rec.why || '',
-        bookId: matched._id,
-      };
-    } else {
-      logger.warn('AI recommended a book outside catalog', { title: rec.title });
+    if (score > 0) {
+      scored.push({ book: b, score, matched });
     }
   }
 
-  return summary;
+  scored.sort(
+    (x, y) => y.score - x.score || (y.book.rating || 0) - (x.book.rating || 0)
+  );
+
+  return scored.slice(0, limit).map(({ book, matched }) => ({
+    bookId: book._id,
+    title: book.title,
+    author: book.author || '',
+    coverImageUrl: book.coverImageUrl || '',
+    why: matched
+      ? `Одна из тем ваших цитат — «${matched}». Этот разбор может быть созвучен.`
+      : 'Этот разбор может быть вам близок.',
+  }));
 };
 
 module.exports = {
   analyzeQuote,
   analyzeQuoteInBackground,
-  generateWeeklySummary,
+  generateWeeklyReport,
+  generateMonthlyReport,
+  resolveRecommendations,
 };
