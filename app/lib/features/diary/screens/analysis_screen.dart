@@ -216,7 +216,9 @@ class _Chip extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppColors.border),
       ),
-      child: Text(label, style: AppTypography.small),
+      // Единый стиль тегов: # + строчными, чтобы категория (в базе КАПСОМ)
+      // и темы выглядели одинаково.
+      child: Text('#${label.toLowerCase()}', style: AppTypography.small),
     );
   }
 }

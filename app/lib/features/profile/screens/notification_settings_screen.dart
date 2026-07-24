@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/services/push_service.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../providers/profile_provider.dart';
 import '../services/profile_service.dart';
@@ -12,6 +13,11 @@ import '../services/profile_service.dart';
 /// Тумблеры сохраняются на сервере (User.pushSettings). Отправитель push
 /// (push.service) читает эти флаги перед отправкой. «Отчёты» гейтит недельный
 /// и месячный отчёты; «Новости» — анонсы сезона и новинки клуба.
+///
+/// Кнопка «Разрешить уведомления» вызывает системный запрос разрешения APNs.
+/// Нужна для существующих аккаунтов, которые логинятся мимо онбординга (экран
+/// 4.8) и потому никогда не получали запрос — без него iOS даже не показывает
+/// раздел уведомлений приложения, и пуши физически не приходят.
 class NotificationSettingsScreen extends ConsumerWidget {
   const NotificationSettingsScreen({super.key});
 
@@ -72,6 +78,19 @@ class NotificationSettingsScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _enablePush(BuildContext context, WidgetRef ref) async {
+    final granted =
+        await ref.read(pushServiceProvider).requestPermissionAndRegister();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        granted
+            ? 'Уведомления включены на этом устройстве'
+            : 'Разрешение не выдано. Включите в Настройках iPhone → ЧИТАТЕЛЬ → Уведомления.',
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(profileProvider);
@@ -102,6 +121,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
           data: (profile) => _Body(
             profile: profile,
             onToggle: (key, value) => _toggle(context, ref, key, value),
+            onEnablePush: () => _enablePush(context, ref),
           ),
         ),
       ),
@@ -121,15 +141,54 @@ class _Setting {
 }
 
 class _Body extends StatelessWidget {
-  const _Body({required this.profile, required this.onToggle});
+  const _Body({
+    required this.profile,
+    required this.onToggle,
+    required this.onEnablePush,
+  });
   final UserProfile profile;
   final void Function(String key, bool value) onToggle;
+  final VoidCallback onEnablePush;
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.screenPadding),
       children: [
+        // Кнопка системного запроса разрешения (для тех, кто прошёл мимо 4.8).
+        GestureDetector(
+          onTap: onEnablePush,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceLight,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+              border: Border.all(
+                color: AppColors.terracotta.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.notifications_active_outlined,
+                  size: 18,
+                  color: AppColors.terracotta,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Разрешить уведомления на этом устройстве',
+                    style: AppTypography.bodyMedium
+                        .copyWith(color: AppColors.terracotta),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
         Container(
           decoration: BoxDecoration(
             color: AppColors.cardBackground,

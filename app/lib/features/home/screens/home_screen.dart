@@ -7,7 +7,6 @@ import '../../../shared/widgets/error_view.dart';
 import '../../diary/widgets/quote_sheet.dart';
 import '../../payments/screens/paywall_screen.dart';
 import '../../payments/season_window.dart';
-import '../../player/providers/player_provider.dart';
 import '../providers/home_provider.dart';
 import '../widgets/home_header.dart';
 import '../widgets/club_month_card.dart';
@@ -29,11 +28,12 @@ import '../widgets/popular_books_section.dart';
 /// часть, сколько осталось, полоска прогресса и кнопка ▶ — тап продолжает с
 /// сохранённой секунды. Ничего не начато → блок не показывается вовсе.
 ///
-/// ⚠️ 21.07.2026 — СИНХРОНИЗАЦИЯ КАРТОЧКИ С ПЛЕЕРОМ. Данные главной
-/// (homeProvider) кэшируются один раз, а при смене части в плеере не
-/// перезапрашивались — карточка «Продолжить» висела на 1й части, когда плеер
-/// уже на 2й. Теперь главная слушает плеер и обновляет данные при смене
-/// книги/части (по позиции — нет, чтобы не дёргать сеть каждую секунду).
+/// ⚠️ 24.07.2026 — СИНХРОНИЗАЦИЯ КАРТОЧКИ С ПЛЕЕРОМ. Раньше главная дёргала
+/// invalidate(homeProvider) на каждую смену части, чтобы обновить карточку, но
+/// это перерисовывало весь экран в шиммер и обгоняло серверное сохранение
+/// прогресса (карточка отставала). Теперь синхронизация живёт ВНУТРИ
+/// ContinueListeningCard: она сама читает playerUiStateProvider и показывает
+/// живую часть/позицию, если играет эта книга. Главной ничего слушать не надо.
 ///
 /// ⚠️ 12.07.2026 (Фаза 6): баннер «Пригласите подругу» УБРАН — реферальной
 /// механики нет ни на сервере, ни в профиле, а баннер обещал «месяц клуба в
@@ -54,20 +54,6 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final homeAsync = ref.watch(homeProvider);
     final seasonText = SeasonWindow.clubBannerText();
-
-    // Синхронизация с плеером: когда в плеере меняется книга или часть —
-    // обновляем данные главной, чтобы карточка «Продолжить слушать» не отставала.
-    ref.listen<AsyncValue<PlayerUiState>>(playerUiStateProvider, (prev, next) {
-      final n = next.valueOrNull;
-      if (n == null || !n.hasContent) return;
-      final p = prev?.valueOrNull;
-      final changed = p == null ||
-          p.book?.id != n.book?.id ||
-          p.partNumber != n.partNumber;
-      if (changed) {
-        ref.invalidate(homeProvider);
-      }
-    });
 
     return Container(
       color: AppColors.background,

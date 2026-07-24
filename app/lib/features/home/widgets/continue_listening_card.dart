@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../shared/widgets/book_cover_image.dart';
+import '../../player/providers/player_provider.dart';
 import '../services/home_service.dart';
 
 /// «Продолжить слушать» — последний начатый разбор (13.07.2026).
@@ -12,42 +14,71 @@ import '../services/home_service.dart';
 /// ЗАМЕНИЛА мёртвую карточку «Мой прогресс» из Фазы 2: та ВСЕГДА писала
 /// «Начните слушать первый разбор» (данных не было вовсе) и вела в каталог.
 ///
-/// Дизайн — сознательно КОМПАКТНАЯ СТРОКА, а не карточка с крупной обложкой:
-/// на главной уже два ряда обложек (бесплатные и популярные), третий ряд
-/// перегрузил бы ленту. Здесь: миниатюра 56×56, название, «Часть 2 · осталось
-/// 12 мин», тонкая полоска прогресса и кнопка ▶.
+/// Дизайн — сознательно КОМПАКТНАЯ СТРОКА: миниатюра 56×56, название,
+/// «Часть 2 · осталось 12 мин», тонкая полоска прогресса и кнопка ▶.
 ///
-/// Тап по строке или по ▶ → плеер, продолжает с сохранённой секунды
-/// (startPart/startPosition передаются в PlayerScreen).
+/// ⚠️ 24.07.2026 — СИНХРОНИЗАЦИЯ С ПЛЕЕРОМ ПЕРЕДЕЛАНА. Раньше карточка жила
+/// только на серверных данных прогресса, а сервер пишет прогресс с задержкой —
+/// поэтому при смене части в плеере карточка отставала (висела на 1й части).
+/// Прошлый фикс дёргал invalidate(homeProvider) на каждую смену части, но это
+/// перерисовывало весь экран в шиммер («не прогружается сразу»). Теперь:
+/// если играет ИМЕННО эта книга — часть/позицию/прогресс берём ЖИВЫМИ из
+/// плеера (ref.watch), карточка обновляется мгновенно и без перезагрузки.
+/// Плеер не активен / играет другая книга → показываем серверные данные.
 ///
-/// Если ничего не начато — виджет не рисуется (SizedBox.shrink): пустота лучше
-/// мёртвой карточки. Статистика (минуты, книги, цитаты) живёт в профиле
-/// («Мой прогресс»), на главной ей не место — главная зовёт слушать, а не
-/// отчитывается.
-class ContinueListeningCard extends StatelessWidget {
+/// Тап → плеер, продолжает с сохранённой (или живой) секунды.
+class ContinueListeningCard extends ConsumerWidget {
   const ContinueListeningCard({super.key, required this.item});
 
   final ContinueListening? item;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final data = item;
     if (data == null) return const SizedBox.shrink();
 
     final book = data.book;
-    final partLabel = data.partTitle != null && data.partTitle!.isNotEmpty
+
+    // Живое состояние плеера, если играет эта же книга.
+    final player = ref.watch(playerUiStateProvider).valueOrNull;
+    final bool live =
+        player != null && player.hasContent && player.book?.id == book.id;
+
+    final int partNumber = live ? player.partNumber : data.currentPartNumber;
+    final int positionSeconds =
+        live ? player.position.inSeconds : data.positionSeconds;
+
+    final double progress;
+    final int? minutesLeft;
+    if (live) {
+      progress = player.progress;
+      final durSec = player.duration.inSeconds;
+      if (durSec > 0) {
+        final leftSec = durSec - player.position.inSeconds;
+        minutesLeft = leftSec > 0 ? (leftSec / 60).ceil() : 0;
+      } else {
+        minutesLeft = null;
+      }
+    } else {
+      progress = data.progress;
+      minutesLeft = data.minutesLeft;
+    }
+
+    // Название части: серверный partTitle корректен только для серверной части.
+    final partLabel = (!live &&
+            data.partTitle != null &&
+            data.partTitle!.isNotEmpty)
         ? data.partTitle!
-        : 'Часть ${data.currentPartNumber}';
-    final left = data.minutesLeft;
+        : 'Часть $partNumber';
     final subtitle =
-        left != null ? '$partLabel · осталось $left мин' : partLabel;
+        minutesLeft != null ? '$partLabel · осталось $minutesLeft мин' : partLabel;
 
     void open() {
       context.push(
         Routes.player(book.id),
         extra: {
-          'startPart': data.currentPartNumber,
-          'startPosition': data.positionSeconds,
+          'startPart': partNumber,
+          'startPosition': positionSeconds,
         },
       );
     }
@@ -117,7 +148,7 @@ class ContinueListeningCard extends StatelessWidget {
                           height: 3,
                           child: LayoutBuilder(
                             builder: (context, constraints) {
-                              final w = constraints.maxWidth * data.progress;
+                              final w = constraints.maxWidth * progress;
                               return Stack(
                                 children: [
                                   Container(color: AppColors.surfaceMedium),
