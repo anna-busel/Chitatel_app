@@ -4,18 +4,31 @@ const mongoose = require('mongoose');
  * WeeklyReport — еженедельный ИИ-отчёт по цитатам пользователя
  * (MASTER 7.3, 7.7 «Еженедельный отчёт», экран 4.26).
  *
- * Генерируется job'ом src/jobs/weekly-report.js (cron воскресенье 10:00),
- * только для юзеров с aiConsent=true и >= 3 цитатами за неделю (STEP-BY-STEP 5.1).
+ * Генерируется job'ом src/jobs/weekly-report.js (cron понедельник 10:00 МСК,
+ * за ПРЕДЫДУЩУЮ завершённую ISO-неделю), только для юзеров с aiConsent=true,
+ * зарегистрированных до начала недели и с >= 3 цитатами за неделю.
  *
- * aiSummary — поля соответствуют JSON-ответу промпта из MASTER 7.7:
- * weekTheme / insight / recommendation { title, author, why }.
+ * Структура (решение проекта 24.07.2026): показываем ТОЛЬКО текст insights
+ * (личное письмо Анны), без хардкод-полей «тема/тон». dominantThemes и
+ * emotionalTone хранятся для рекомендаций и аналитики, но на экране не выводятся.
  *
- * recommendation.bookId — проставляется сервером: ИИ выбирает разбор из списка
- * опубликованных книг, сервер находит его в базе и кладёт _id. Если книга не
- * опознана — bookId остаётся null, и клиент не показывает блок рекомендации
- * (кнопка вела бы в никуда). Кнопка в отчёте — «Открыть разбор» → экран книги
- * (там уже «Слушать» / «Купить» / «Продолжить», покупка только через Apple IAP).
+ * recommendations[] — книги каталога, подобранные по темам недели
+ * (ai.service.resolveRecommendations: пересечение dominantThemes/категорий цитат
+ * с Book.categories/tags среди опубликованных разборов). Снимок title/author/
+ * coverImageUrl кладётся в отчёт, bookId — для перехода на экран разбора.
+ * Если подходящих книг нет — массив пустой, блок рекомендаций не показывается.
  */
+const recommendationSchema = new mongoose.Schema(
+  {
+    bookId: { type: mongoose.Schema.Types.ObjectId, ref: 'Book', required: true },
+    title: { type: String, default: '' },
+    author: { type: String, default: '' },
+    coverImageUrl: { type: String, default: '' },
+    why: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
 const weeklyReportSchema = new mongoose.Schema(
   {
     userId: {
@@ -24,32 +37,26 @@ const weeklyReportSchema = new mongoose.Schema(
       required: true,
     },
 
-    // ISO-номер недели (1-53) и год — по ним ищется конкретный отчёт (GET /api/reports/weekly?week=&year=)
+    // ISO-номер недели (1-53) и ISO-год — по ним ищется отчёт (GET /api/reports/weekly?week=&year=)
     weekNumber: { type: Number, required: true },
     year: { type: Number, required: true },
 
     startDate: Date,
     endDate: Date,
 
-    stats: {
-      minutesListened: { type: Number, default: 0 },
-      quotesCount: { type: Number, default: 0 },
-      analysesCount: { type: Number, default: 0 },
-    },
+    // Личное письмо Анны — единственное, что показывается на экране.
+    insights: { type: String, default: '' },
 
-    aiSummary: {
-      weekTheme: String,
-      insight: String,
-      recommendation: {
-        title: String,
-        author: String,
-        why: String,
-        bookId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'Book',
-          default: null,
-        },
-      },
+    // Служебные поля модели (для рекомендаций/аналитики, не для экрана).
+    dominantThemes: { type: [String], default: [] },
+    emotionalTone: { type: String, default: '' },
+
+    recommendations: { type: [recommendationSchema], default: [] },
+
+    stats: {
+      quotesCount: { type: Number, default: 0 },
+      uniqueAuthors: { type: Number, default: 0 },
+      activeDays: { type: Number, default: 0 },
     },
 
     quotes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Quote' }],

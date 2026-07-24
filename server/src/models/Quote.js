@@ -10,7 +10,11 @@ const mongoose = require('mongoose');
  *   'failed'  — OpenAI не ответил / вернул ошибку после ретраев
  *
  * aiAnalysis — результат разбора цитаты (поля соответствуют JSON-ответу промпта
- * из MASTER 7.7: resonance / context / question).
+ * `quote_analysis` Анны, config/ai-prompts.js):
+ *   category  — одна из 14 категорий Анны (QUOTE_CATEGORIES)
+ *   themes    — 1–3 коротких темы (существительные), используются для рекомендаций
+ *   sentiment — 'positive' | 'neutral' | 'negative'
+ *   insights  — художественный разбор в тоне «личной колонки»
  */
 const quoteSchema = new mongoose.Schema(
   {
@@ -34,9 +38,10 @@ const quoteSchema = new mongoose.Schema(
     },
 
     aiAnalysis: {
-      resonance: String,
-      context: String,
-      question: String,
+      category: String,
+      themes: { type: [String], default: undefined },
+      sentiment: String,
+      insights: String,
       createdAt: Date,
     },
   },
