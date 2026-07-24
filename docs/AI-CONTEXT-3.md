@@ -8,6 +8,45 @@
 
 ---
 
+## ✅ 24.07.2026 — ОТЧЁТЫ (НЕДЕЛЬНЫЙ+МЕСЯЧНЫЙ) + УВЕДОМЛЕНИЯ + НОВОСТИ
+
+**Код целиком, в билде НЕ проверено, нужен `OPENAI_API_KEY`.** Задачи #10–#17.
+
+**Промпты (config/ai-prompts.js).** Заглушка заменена на РЕАЛЬНЫЕ промпты Анны:
+- Анализ цитаты — промпт `quote_analysis` («JSON v2») из Mongo reader-bot. Формат ответа сменился: `{category, themes[], sentiment, insights}` (было resonance/context/question). 14 категорий + ДРУГОЕ.
+  ⚠️ Few-shot «Пример инсайта: "..."» живёт ТОЛЬКО в Mongo reader-bot (в git его нет) — в промпт НЕ включён. Нужен — вставить дословно из базы в конец QUOTE_ANALYSIS_PROMPT.
+- Недельный отчёт — промпт reader-bot `weeklyReportService.js` дословно, **БЕЗ требования цитировать классиков** (решение проекта). Ответ: `{dominantThemes[], emotionalTone, insights, personalGrowth}`.
+- Месячный отчёт — промпты reader-bot `monthlyReportService.js`: основной (агрегат ≥2 недельных) + фоллбек по топ-20 цитатам + жёсткий фоллбек-текст. Ответ: `{insights}`. ~18 фирменных фраз Анны дословно (с двойными пробелами оригинала).
+- ${...}-интерполяции reader-bot заменены на {токены}, подстановка в ai.service (fillTemplate).
+
+**Модели.** `Quote.aiAnalysis → {category,themes,sentiment,insights}`; `WeeklyReport → insights + dominantThemes + recommendations[] + stats{quotesCount,uniqueAuthors,activeDays}` (minutesListened/analysesCount убраны); **MonthlyReport (новая)** — insights + recommendations + stats{+weeksActive}. Индексы (userId,year,weekNumber) и (userId,year,month) unique.
+
+**ai.service.js.** analyzeQuote (новый формат, {userContext}-хук под онбординг = пока пусто), generateWeeklyReport, generateMonthlyReport (двухуровневый), **resolveRecommendations** — подбор ОПУБЛИКОВАННЫХ разборов по пересечению тем/категорий цитат с Book.categories/tags, ранжирование по совпадениям+рейтингу, снимок обложки+bookId. Рекомендации больше НЕ выбираются моделью (промпты запрещают) — только матчинг по каталогу. maxTokens на вызов.
+
+**Джобы.** weekly-report: cron **пн 10:00 МСК** за ПРЕДЫДУЩУЮ завершённую ISO-неделю (границы МСК→UTC). monthly-report **(новый)**: cron **1-е 10:00 МСК** за предыдущий месяц. Гейты: aiConsent + регистрация ДО начала периода + ≥3 цитат. **Идемпотентно**: готовый отчёт пропускается без вызова OpenAI. server.js: **неблокирующий фоновый catch-up** через 60с после старта (до-генерирует пропущенные отчёты). Push: type weekly_report/monthly_report, settingKey `reports`.
+
+**Роуты.** GET `/api/reports/monthly/latest` и `/monthly?month=&year=`. Админ-триггеры POST `/api/admin/reports/weekly/run` и `/monthly/run` (body {userId?, force?=true}; с userId — синхронно {generated}, без — фоном {started}). force игнорирует порог/регистрацию (тест).
+
+**Уведомления.** User.pushSettings: `weeklyReport → reports` (недельный+месячный), **+ news**. push.service PERSIST_TYPES += monthly_report, news. **sendNews()** — новости: запись в ленту 4.30 ВСЕМ адресатам + push по настройке news. Админ POST `/api/admin/news` {title, body, audience?, data?}. profile push-settings схема обновлена.
+
+**Flutter.** Модели Quote/WeeklyReport/MonthlyReport (общий ReportStats/Recommendation); diary_service.fetchLatestMonthlyReport + latestMonthlyReportProvider; api_endpoints reportsMonthly*; **RecommendationCard** (обложка Image.network + плейсхолдер + тап→/book/:id); analysis_screen (insights + чипы категории/тем); weekly_report_screen (письмо insights + карточки рекомендаций + stats цитат/авторов/дней, дата — понедельник); **monthly_report_screen (новый)** + маршрут `monthlyReport` + регистрация в app_router; diary_screen — кнопка «Ежемесячный отчёт»; notification_settings — тумблеры «Отчёты» + «Новости».
+
+**РЕШЕНИЯ / СЛАБЫЕ МЕСТА (закрыты):**
+- Отчёт = ТОЛЬКО текст insights (без хардкод-полей тема/тон). Рекомендации работают отдельно через каталог.
+- Классики убраны из недельного; в месячном не выдумываются (промпт запрещает книжные рекомендации в тексте).
+- Даты корректные: понедельник/1-е число, за завершённый период, границы в МСК.
+- Онбординг-гейт против «тонких» отчётов; {userContext} хук под будущий онбординг (пока пусто).
+- AI-сбой отчёта = пропуск юзера (не сохраняем сломанное), повтор при catch-up.
+- Рекомендации покажутся ТОЛЬКО когда каталог опубликован (isPublished:true) и книги затегированы (Book.categories/tags, 14 категорий Анны). Сейчас каталог почти весь isPublished:false → рекомендации пустые до публикации (делает Анна).
+
+**PENDING по этому блоку:**
+1. `OPENAI_API_KEY` в .env → `pm2 restart`. Node ≥20 (на сервере v18 — при странных ошибках ИИ обновить).
+2. Обложки/теги книг: опубликовать разборы + проставить Book.categories/tags — иначе рекомендации пустые.
+3. Few-shot «Пример инсайта» для quote_analysis — при желании вставить из Mongo.
+4. **Native push-токен (Flutter #6/#7)** — client APNs через MethodChannel ЕЩЁ НЕ СДЕЛАН: без него серверный push уходит «в никуда». Экран разрешения 4.8 и лента 4.30 — готовы.
+
+---
+
 ## ТЕКУЩИЙ СТАТУС (на 12.07.2026, вечер)
 
 **✅ ФАЗА 6 — ВОЛНА 6А НАПИСАНА (12.07):** все блокеры ревью Apple закрыты кодом. Блокировка участниц (A1), удаление аккаунта с отзывом Apple-токена (A2), Privacy/Terms/Support (A3), Info.plist (A4), админка жалоб и Q&A (A5), убраны все `_Placeholder` (A6), настоящий профиль (6.2). **Плюс сверх плана: ответ на Q&A из приложения** (эндпоинт был, UI не существовало нигде — Q&A по факту не работал) и **загрузка аватара** (появляется и в чате).
@@ -24,7 +63,7 @@
 
 **🔧 ЧАТ:** эксперимент 2 (`2829ece`) — текстура убрана, автоскролл починен. Ждёт общего билда.
 
-**⚠️ ПРОМПТЫ ИИ — ЗАГЛУШКА, `OPENAI_API_KEY` пуст.** Разбор цитаты вернёт «ИИ недоступен» — это ожидаемо, не баг.
+**✅ ПРОМПТЫ ИИ — РЕАЛЬНЫЕ (Анны), 24.07.2026.** `OPENAI_API_KEY` всё ещё пуст → разбор/отчёты вернут «ИИ недоступен» пока ключ не задан (ожидаемо). См. раздел «24.07.2026 — ОТЧЁТЫ + УВЕДОМЛЕНИЯ» ниже.
 
 **ПРИМЕНИТЬ НА СЕРВЕРЕ:** `git pull` + **`npm install`** + `.env` (два новых поля Apple, см. ниже) + `pm2 restart`.
 
