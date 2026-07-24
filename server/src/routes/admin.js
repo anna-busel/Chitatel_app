@@ -12,6 +12,8 @@ const ClubMonth = require('../models/ClubMonth');
 const ChatMessage = require('../models/ChatMessage');
 const QAQuestion = require('../models/QAQuestion');
 const Report = require('../models/Report');
+const { runWeeklyReports } = require('../jobs/weekly-report');
+const { runMonthlyReports } = require('../jobs/monthly-report');
 
 const router = Router();
 
@@ -368,6 +370,74 @@ router.post(
       });
 
       return success(res, { pinnedMessageId: newPinId });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/* ------------------------------------------------------------------ *
+ *                РУЧНОЙ ЗАПУСК ОТЧЁТОВ (тест/catch-up)              *
+ * ------------------------------------------------------------------ */
+
+/**
+ * POST /api/admin/reports/weekly/run
+ * POST /api/admin/reports/monthly/run
+ *
+ * Запуск генерации отчётов за прошедший период.
+ * Body:
+ * - userId (опц.) — только для одного пользователя (тест);
+ * - force (опц., по умолчанию true) — генерировать заново, без порога/регистрации.
+ *
+ * С userId — выполняется синхронно и возвращает { generated }.
+ * Без userId — по всем юзерам в фоне (может быть долго), возвращает { started: true }.
+ */
+const runReportsSchema = z.object({
+  userId: z
+    .string()
+    .refine((s) => mongoose.Types.ObjectId.isValid(s), {
+      message: 'userId должен быть валидным ObjectId',
+    })
+    .optional(),
+  force: z.boolean().optional(),
+});
+
+router.post(
+  '/reports/weekly/run',
+  validate(runReportsSchema),
+  async (req, res, next) => {
+    try {
+      const userId = req.body.userId || null;
+      const force = req.body.force !== undefined ? req.body.force : true;
+
+      if (userId) {
+        const generated = await runWeeklyReports({ force, userId });
+        return success(res, { generated });
+      }
+
+      runWeeklyReports({ force }).catch(() => {});
+      return success(res, { started: true });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+router.post(
+  '/reports/monthly/run',
+  validate(runReportsSchema),
+  async (req, res, next) => {
+    try {
+      const userId = req.body.userId || null;
+      const force = req.body.force !== undefined ? req.body.force : true;
+
+      if (userId) {
+        const generated = await runMonthlyReports({ force, userId });
+        return success(res, { generated });
+      }
+
+      runMonthlyReports({ force }).catch(() => {});
+      return success(res, { started: true });
     } catch (err) {
       return next(err);
     }
