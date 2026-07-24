@@ -95,6 +95,10 @@ class PushService {
         router.go(Routes.diary);
       case 'weekly_report':
         router.go(Routes.weeklyReport);
+      case 'monthly_report':
+        router.go(Routes.monthlyReport);
+      case 'news':
+        router.go(Routes.notifications);
       default:
         router.go(Routes.home);
     }

@@ -68,7 +68,9 @@ class _Content extends StatelessWidget {
 
   List<String> _chips(AiAnalysis a) {
     final chips = <String>[];
-    if (a.category.trim().isNotEmpty) chips.add(a.category.trim());
+    final cat = a.category.trim();
+    // «ДРУГОЕ» — служебная категория-предохранитель, пользователю не показываем.
+    if (cat.isNotEmpty && cat.toUpperCase() != 'ДРУГОЕ') chips.add(cat);
     for (final t in a.themes) {
       if (t.trim().isNotEmpty) chips.add(t.trim());
     }
