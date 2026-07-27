@@ -93,6 +93,18 @@
 
 ---
 
+## ✅ 27.07.2026 — АРХИВ/ПЕРЕКЛЮЧАТЕЛЬ ОТЧЁТОВ (commit 93277e4)
+
+Раньше в приложении был виден только ПОСЛЕДНИЙ недельный и последний месячный отчёт (прошлые сохранялись в базе, но пролистать их в UI было нельзя). Теперь заголовок с датой на экране отчёта кликабелен (стрелка вниз появляется, когда отчётов больше одного) → тап открывает bottom-sheet со списком всех недель/месяцев (дата + число цитат) → выбор переключает отчёт на месте. Последний по-прежнему открывается сразу из дневника; отдельного маршрута/экрана нет.
+
+- Сервер routes/reports.js: GET /api/reports/weekly/list и /monthly/list — метаданные всех отчётов пользователя (weekNumber/month, year, startDate, endDate, stats), без полного текста, новые сверху. Существующие /weekly?week=&year= и /monthly?month=&year= используются для загрузки выбранного отчёта.
+- Клиент: api_endpoints (reportsWeeklyList/reportsMonthlyList); models/report_summary.dart (WeeklyReportSummary/MonthlyReportSummary); diary_service (fetchWeeklyReportList/fetchMonthlyReportList + fetchWeeklyReport(week,year)/fetchMonthlyReport(month,year)); diary_provider (weekly/monthlyReportListProvider autoDispose, selectedWeek/MonthProvider StateProvider autoDispose с record-типом ({int week,int year})?, currentWeekly/MonthlyReportProvider — последний при null или выбранный); weekly/monthly_report_screen перешли с latest*Provider на current*Provider, заголовок → _Week/MonthPeriodSelector (ConsumerWidget) с bottom-sheet, skipLoadingOnReload при переключении.
+- ⚠️ ТРЕБУЕТ деплой сервера (git pull + pm2 restart) — иначе /list вернёт 404 и переключатель не покажется. Стрелка-переключатель видна только при ≥2 отчётах соответствующего типа.
+
+Также в этой сессии зафиксированы пороги/расписание отчётов (свёрено с кодом джоб, без изменений кода): недельный — cron пн 10:00 МСК за прошлую ISO-неделю, месячный — 1-е число 10:00 МСК за прошлый месяц; порог обоих — ≥3 цитаты + aiConsent + регистрация до начала периода; месячный двухуровневый (≥2 недельных → агрегат, иначе фоллбек по топ-20 цитатам месяца); идемпотентны, force (админ-триггер) перезаписывает и игнорирует порог/регистрацию.
+
+---
+
 ## ТЕКУЩИЙ СТАТУС (на 12.07.2026, вечер)
 
 **✅ ФАЗА 6 — ВОЛНА 6А НАПИСАНА (12.07):** все блокеры ревью Apple закрыты кодом. Блокировка участниц (A1), удаление аккаунта с отзывом Apple-токена (A2), Privacy/Terms/Support (A3), Info.plist (A4), админка жалоб и Q&A (A5), убраны все `_Placeholder` (A6), настоящий профиль (6.2). **Плюс сверх плана: ответ на Q&A из приложения** (эндпоинт был, UI не существовало нигде — Q&A по факту не работал) и **загрузка аватара** (появляется и в чате).
