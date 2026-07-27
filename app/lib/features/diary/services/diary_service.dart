@@ -4,6 +4,7 @@ import '../../../core/network/api_endpoints.dart';
 import '../models/quote.dart';
 import '../models/weekly_report.dart';
 import '../models/monthly_report.dart';
+import '../models/report_summary.dart';
 
 /// Провайдер сервиса дневника.
 final diaryServiceProvider = Provider<DiaryService>((ref) {
@@ -94,6 +95,60 @@ class DiaryService {
   /// GET /api/reports/monthly/latest — последний месячный отчёт (или null).
   Future<MonthlyReportModel?> fetchLatestMonthlyReport() async {
     final response = await _api.dio.get(ApiEndpoints.reportsMonthlyLatest);
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>? ?? const {};
+    final json = data['report'];
+    if (json is! Map<String, dynamic>) {
+      return null;
+    }
+    return MonthlyReportModel.fromJson(json);
+  }
+
+  /// GET /api/reports/weekly/list — все недельные отчёты (метаданные, архив).
+  Future<List<WeeklyReportSummary>> fetchWeeklyReportList() async {
+    final response = await _api.dio.get(ApiEndpoints.reportsWeeklyList);
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>? ?? const {};
+    final items = data['reports'] as List<dynamic>? ?? const [];
+    return items
+        .whereType<Map<String, dynamic>>()
+        .map(WeeklyReportSummary.fromJson)
+        .toList();
+  }
+
+  /// GET /api/reports/monthly/list — все месячные отчёты (метаданные, архив).
+  Future<List<MonthlyReportSummary>> fetchMonthlyReportList() async {
+    final response = await _api.dio.get(ApiEndpoints.reportsMonthlyList);
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>? ?? const {};
+    final items = data['reports'] as List<dynamic>? ?? const [];
+    return items
+        .whereType<Map<String, dynamic>>()
+        .map(MonthlyReportSummary.fromJson)
+        .toList();
+  }
+
+  /// GET /api/reports/weekly?week=&year= — конкретный недельный отчёт.
+  Future<WeeklyReportModel?> fetchWeeklyReport(int week, int year) async {
+    final response = await _api.dio.get(
+      ApiEndpoints.reportsWeekly,
+      queryParameters: {'week': week, 'year': year},
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>? ?? const {};
+    final json = data['report'];
+    if (json is! Map<String, dynamic>) {
+      return null;
+    }
+    return WeeklyReportModel.fromJson(json);
+  }
+
+  /// GET /api/reports/monthly?month=&year= — конкретный месячный отчёт.
+  Future<MonthlyReportModel?> fetchMonthlyReport(int month, int year) async {
+    final response = await _api.dio.get(
+      ApiEndpoints.reportsMonthly,
+      queryParameters: {'month': month, 'year': year},
+    );
     final body = response.data as Map<String, dynamic>;
     final data = body['data'] as Map<String, dynamic>? ?? const {};
     final json = data['report'];

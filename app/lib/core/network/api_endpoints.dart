@@ -218,12 +218,18 @@ class ApiEndpoints {
   /// GET /api/reports/weekly?week=&year= — конкретный отчёт.
   static const String reportsWeekly = '/reports/weekly';
 
+  /// GET /api/reports/weekly/list — все недельные отчёты (архив, метаданные).
+  static const String reportsWeeklyList = '/reports/weekly/list';
+
   /// GET /api/reports/monthly/latest — последний ежемесячный отчёт (4.26).
   /// Если отчётов нет — { report: null }.
   static const String reportsMonthlyLatest = '/reports/monthly/latest';
 
   /// GET /api/reports/monthly?month=&year= — конкретный месячный отчёт.
   static const String reportsMonthly = '/reports/monthly';
+
+  /// GET /api/reports/monthly/list — все месячные отчёты (архив, метаданные).
+  static const String reportsMonthlyList = '/reports/monthly/list';
 
   // — Health —
   static const String health = '/health';

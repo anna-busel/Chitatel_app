@@ -6,20 +6,25 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/app_top_bar.dart';
 import '../models/monthly_report.dart';
+import '../models/report_summary.dart';
 import '../providers/diary_provider.dart';
 import '../widgets/analysis_card.dart';
 import '../widgets/recommendation_card.dart';
 
 /// Ежемесячный отчёт (MASTER 4.26).
 ///
-/// Показывает последний месячный отчёт: месяц, статистика (цитат · авторов ·
-/// недель), глубокое письмо Анны за месяц (insights) и рекомендованные разборы.
+/// Показывает месячный отчёт: месяц, статистика (цитат · авторов · недель),
+/// глубокое письмо Анны за месяц (insights) и рекомендованные разборы.
+///
+/// ⚠️ 27.07.2026 — АРХИВ/ПЕРЕКЛЮЧАТЕЛЬ. По умолчанию открывается последний
+/// месячный отчёт, заголовок с месяцем кликабелен (когда отчётов больше одного):
+/// тап открывает список всех месяцев → выбор переключает отчёт на месте.
 class MonthlyReportScreen extends ConsumerWidget {
   const MonthlyReportScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final reportAsync = ref.watch(latestMonthlyReportProvider);
+    final reportAsync = ref.watch(currentMonthlyReportProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -33,10 +38,11 @@ class MonthlyReportScreen extends ConsumerWidget {
             ),
             Expanded(
               child: reportAsync.when(
+                skipLoadingOnReload: true,
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (_, __) => _Message(
                   text: 'Не удалось загрузить отчёт',
-                  onRetry: () => ref.invalidate(latestMonthlyReportProvider),
+                  onRetry: () => ref.invalidate(currentMonthlyReportProvider),
                 ),
                 data: (report) {
                   if (report == null) {
@@ -53,19 +59,20 @@ class MonthlyReportScreen extends ConsumerWidget {
   }
 }
 
+const _monthNames = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+];
+
+String _formatMonth(int month, int year) {
+  if (month < 1 || month > 12) return '$year';
+  return '${_monthNames[month - 1]} $year';
+}
+
 class _Content extends StatelessWidget {
   const _Content({required this.report});
 
   final MonthlyReportModel report;
-
-  String _formatMonth(int month, int year) {
-    const months = [
-      'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-      'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
-    ];
-    if (month < 1 || month > 12) return '$year';
-    return '${months[month - 1]} $year';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -77,10 +84,7 @@ class _Content extends StatelessWidget {
         32,
       ),
       children: [
-        Text(
-          _formatMonth(report.month, report.year),
-          style: AppTypography.serifSectionTitle,
-        ),
+        _MonthPeriodSelector(report: report),
         const SizedBox(height: 14),
 
         // Статистика месяца
@@ -127,6 +131,101 @@ class _Content extends StatelessWidget {
           textAlign: TextAlign.center,
         ),
       ],
+    );
+  }
+}
+
+/// Заголовок-переключатель месяца. Если месячных отчётов больше одного —
+/// кликабелен и открывает список всех месяцев.
+class _MonthPeriodSelector extends ConsumerWidget {
+  const _MonthPeriodSelector({required this.report});
+
+  final MonthlyReportModel report;
+
+  void _openPicker(
+    BuildContext context,
+    WidgetRef ref,
+    List<MonthlyReportSummary> list,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.cardBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text('Все месячные отчёты', style: AppTypography.bodyMedium),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: list.length,
+                itemBuilder: (_, i) {
+                  final s = list[i];
+                  final selected =
+                      s.month == report.month && s.year == report.year;
+                  return ListTile(
+                    title: Text(
+                      _formatMonth(s.month, s.year),
+                      style: AppTypography.body,
+                    ),
+                    subtitle: Text(
+                      '${s.quotesCount} цитат',
+                      style: AppTypography.caption,
+                    ),
+                    trailing: selected
+                        ? const Icon(Icons.check,
+                            color: AppColors.terracotta, size: 20)
+                        : null,
+                    onTap: () {
+                      ref.read(selectedMonthProvider.notifier).state =
+                          (month: s.month, year: s.year);
+                      Navigator.of(ctx).pop();
+                    },
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final list = ref.watch(monthlyReportListProvider).valueOrNull ?? const [];
+    final hasArchive = list.length > 1;
+
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            _formatMonth(report.month, report.year),
+            style: AppTypography.serifSectionTitle,
+          ),
+        ),
+        if (hasArchive) ...[
+          const SizedBox(width: 6),
+          const Icon(Icons.expand_more, size: 22, color: AppColors.terracotta),
+        ],
+      ],
+    );
+
+    if (!hasArchive) return content;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openPicker(context, ref, list),
+      child: content,
     );
   }
 }

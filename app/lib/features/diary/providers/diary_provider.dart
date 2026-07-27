@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/quote.dart';
 import '../models/weekly_report.dart';
 import '../models/monthly_report.dart';
+import '../models/report_summary.dart';
 import '../services/diary_service.dart';
 
 /// Лента цитат дневника (4.24). Новые сверху.
@@ -35,6 +36,47 @@ final latestMonthlyReportProvider =
     FutureProvider<MonthlyReportModel?>((ref) async {
   final service = ref.read(diaryServiceProvider);
   return service.fetchLatestMonthlyReport();
+});
+
+/// Список всех недельных отчётов — для архива/переключателя (4.26).
+/// autoDispose: перезапрос при каждом открытии экрана отчёта.
+final weeklyReportListProvider =
+    FutureProvider.autoDispose<List<WeeklyReportSummary>>((ref) async {
+  return ref.read(diaryServiceProvider).fetchWeeklyReportList();
+});
+
+/// Список всех месячных отчётов — для архива/переключателя (4.26).
+final monthlyReportListProvider =
+    FutureProvider.autoDispose<List<MonthlyReportSummary>>((ref) async {
+  return ref.read(diaryServiceProvider).fetchMonthlyReportList();
+});
+
+/// Выбранный недельный период (null = последний отчёт). Живёт, пока открыт
+/// экран отчёта; при выходе сбрасывается — вернувшись, снова видим последний.
+final selectedWeekProvider =
+    StateProvider.autoDispose<({int week, int year})?>((ref) => null);
+
+/// Выбранный месячный период (null = последний отчёт).
+final selectedMonthProvider =
+    StateProvider.autoDispose<({int month, int year})?>((ref) => null);
+
+/// Показываемый недельный отчёт: последний (по умолчанию) или выбранный из
+/// архива. skipLoadingOnReload на экране держит старый отчёт при переключении.
+final currentWeeklyReportProvider =
+    FutureProvider.autoDispose<WeeklyReportModel?>((ref) async {
+  final sel = ref.watch(selectedWeekProvider);
+  final service = ref.read(diaryServiceProvider);
+  if (sel == null) return service.fetchLatestReport();
+  return service.fetchWeeklyReport(sel.week, sel.year);
+});
+
+/// Показываемый месячный отчёт: последний или выбранный из архива.
+final currentMonthlyReportProvider =
+    FutureProvider.autoDispose<MonthlyReportModel?>((ref) async {
+  final sel = ref.watch(selectedMonthProvider);
+  final service = ref.read(diaryServiceProvider);
+  if (sel == null) return service.fetchLatestMonthlyReport();
+  return service.fetchMonthlyReport(sel.month, sel.year);
 });
 
 /// Статистика дневника для шапки (4.24): цитат · анализов · дней подряд.

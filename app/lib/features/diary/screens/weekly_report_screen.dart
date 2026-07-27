@@ -5,6 +5,7 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/app_top_bar.dart';
+import '../models/report_summary.dart';
 import '../models/weekly_report.dart';
 import '../providers/diary_provider.dart';
 import '../widgets/analysis_card.dart';
@@ -13,15 +14,19 @@ import '../widgets/recommendation_card.dart';
 
 /// Еженедельный отчёт (MASTER 4.26).
 ///
-/// Показывает последний отчёт: неделя, статистика (цитат · авторов · дней),
-/// личное письмо Анны (insights), рекомендованные разборы (карточки с обложкой)
-/// и ваши цитаты.
+/// Показывает отчёт: неделя, статистика (цитат · авторов · дней), личное письмо
+/// Анны (insights), рекомендованные разборы (карточки с обложкой) и ваши цитаты.
+///
+/// ⚠️ 27.07.2026 — АРХИВ/ПЕРЕКЛЮЧАТЕЛЬ. По умолчанию открывается последний отчёт,
+/// но заголовок с датой кликабелен (когда отчётов больше одного): тап открывает
+/// список всех недель → выбор переключает отчёт на месте (selectedWeekProvider).
+/// Свежий отчёт по-прежнему открывается сразу из дневника.
 class WeeklyReportScreen extends ConsumerWidget {
   const WeeklyReportScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final reportAsync = ref.watch(latestReportProvider);
+    final reportAsync = ref.watch(currentWeeklyReportProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -35,10 +40,11 @@ class WeeklyReportScreen extends ConsumerWidget {
             ),
             Expanded(
               child: reportAsync.when(
+                skipLoadingOnReload: true,
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (_, __) => _Message(
                   text: 'Не удалось загрузить отчёт',
-                  onRetry: () => ref.invalidate(latestReportProvider),
+                  onRetry: () => ref.invalidate(currentWeeklyReportProvider),
                 ),
                 data: (report) {
                   if (report == null) {
@@ -55,23 +61,24 @@ class WeeklyReportScreen extends ConsumerWidget {
   }
 }
 
+const _months = [
+  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+];
+
+String _formatRange(DateTime start, DateTime end) {
+  final s = start.toLocal();
+  final e = end.toLocal();
+  if (s.month == e.month) {
+    return '${s.day}–${e.day} ${_months[e.month - 1]}';
+  }
+  return '${s.day} ${_months[s.month - 1]} – ${e.day} ${_months[e.month - 1]}';
+}
+
 class _Content extends StatelessWidget {
   const _Content({required this.report});
 
   final WeeklyReportModel report;
-
-  String _formatRange(DateTime start, DateTime end) {
-    const months = [
-      'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
-    ];
-    final s = start.toLocal();
-    final e = end.toLocal();
-    if (s.month == e.month) {
-      return '${s.day}–${e.day} ${months[e.month - 1]}';
-    }
-    return '${s.day} ${months[s.month - 1]} – ${e.day} ${months[e.month - 1]}';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -83,10 +90,7 @@ class _Content extends StatelessWidget {
         32,
       ),
       children: [
-        Text(
-          'Неделя ${report.weekNumber} · ${_formatRange(report.startDate, report.endDate)}',
-          style: AppTypography.serifSectionTitle,
-        ),
+        _WeekPeriodSelector(report: report),
         const SizedBox(height: 14),
 
         // Статистика недели
@@ -143,6 +147,99 @@ class _Content extends StatelessWidget {
           textAlign: TextAlign.center,
         ),
       ],
+    );
+  }
+}
+
+/// Заголовок-переключатель периода. Если недельных отчётов больше одного —
+/// кликабелен и открывает список всех недель.
+class _WeekPeriodSelector extends ConsumerWidget {
+  const _WeekPeriodSelector({required this.report});
+
+  final WeeklyReportModel report;
+
+  void _openPicker(
+    BuildContext context,
+    WidgetRef ref,
+    List<WeeklyReportSummary> list,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.cardBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text('Все недельные отчёты', style: AppTypography.bodyMedium),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: list.length,
+                itemBuilder: (_, i) {
+                  final s = list[i];
+                  final selected =
+                      s.weekNumber == report.weekNumber && s.year == report.year;
+                  return ListTile(
+                    title: Text(
+                      'Неделя ${s.weekNumber} · ${_formatRange(s.startDate, s.endDate)}',
+                      style: AppTypography.body,
+                    ),
+                    subtitle: Text(
+                      '${s.quotesCount} цитат',
+                      style: AppTypography.caption,
+                    ),
+                    trailing: selected
+                        ? const Icon(Icons.check,
+                            color: AppColors.terracotta, size: 20)
+                        : null,
+                    onTap: () {
+                      ref.read(selectedWeekProvider.notifier).state =
+                          (week: s.weekNumber, year: s.year);
+                      Navigator.of(ctx).pop();
+                    },
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final list = ref.watch(weeklyReportListProvider).valueOrNull ?? const [];
+    final hasArchive = list.length > 1;
+
+    final label =
+        'Неделя ${report.weekNumber} · ${_formatRange(report.startDate, report.endDate)}';
+
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(child: Text(label, style: AppTypography.serifSectionTitle)),
+        if (hasArchive) ...[
+          const SizedBox(width: 6),
+          const Icon(Icons.expand_more, size: 22, color: AppColors.terracotta),
+        ],
+      ],
+    );
+
+    if (!hasArchive) return content;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openPicker(context, ref, list),
+      child: content,
     );
   }
 }

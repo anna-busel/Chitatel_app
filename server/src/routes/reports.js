@@ -31,6 +31,25 @@ router.get('/weekly/latest', async (req, res, next) => {
 });
 
 /**
+ * GET /api/reports/weekly/list
+ * Все недельные отчёты пользователя (метаданные для архива/переключателя, 4.26).
+ * Полный текст не тянем — он грузится при выборе конкретного отчёта.
+ * Новые сверху.
+ */
+router.get('/weekly/list', async (req, res, next) => {
+  try {
+    const reports = await WeeklyReport.find({ userId: req.user.userId })
+      .sort({ year: -1, weekNumber: -1 })
+      .select('weekNumber year startDate endDate stats')
+      .lean();
+
+    return success(res, { reports });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
  * GET /api/reports/weekly?week=&year=
  * Конкретный отчёт по номеру недели (экран 4.26).
  */
@@ -73,6 +92,24 @@ router.get('/monthly/latest', async (req, res, next) => {
       .lean();
 
     return success(res, { report: report || null });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * GET /api/reports/monthly/list
+ * Все месячные отчёты пользователя (метаданные для архива/переключателя, 4.26).
+ * Новые сверху.
+ */
+router.get('/monthly/list', async (req, res, next) => {
+  try {
+    const reports = await MonthlyReport.find({ userId: req.user.userId })
+      .sort({ year: -1, month: -1 })
+      .select('month year startDate endDate stats')
+      .lean();
+
+    return success(res, { reports });
   } catch (err) {
     return next(err);
   }
