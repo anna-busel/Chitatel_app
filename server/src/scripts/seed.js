@@ -52,8 +52,6 @@ const packageCoverFilenames = {
   paket_goals_ach: 'paket_goals_ach',
   paket_understand_yourself: 'paket_understand_yourself',
   facultativ_dostoevsky: 'facultativ_dostoevsky',
-  facultativ_nabokov: 'facultativ_nabokov',
-  facultativ_children: 'facultativ_children_classics',
   facultativ_tolstoy: null, // обложки нет — будет fallback на градиент
   facultativ_foreign: 'facultativ_foreign_classics',
   facultativ_russian: 'facultativ_russian_classics',
