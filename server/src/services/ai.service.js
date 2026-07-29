@@ -179,6 +179,7 @@ const analyzeQuote = async (quote, user) => {
   const userMessage = fillTemplate(QUOTE_ANALYSIS_PROMPT, {
     text: quote.text,
     author: quote.author || 'не указан',
+    userName: user.name || '',
     userContext: '',
     categories: QUOTE_CATEGORIES.join(', '),
   });
