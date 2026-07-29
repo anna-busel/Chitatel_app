@@ -317,6 +317,21 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = const AuthState(status: AuthStatus.guest);
   }
 
+  /// Принудительный выход из-за протухшей сессии (refresh не удался).
+  ///
+  /// Вызывается из ApiClient._logout(), когда обновить токен не удалось.
+  /// Делает то же, что logout(), НО без серверного вызова _authService.logout():
+  /// сессия уже мертва, а этот вызов пошёл бы через тот же Dio → 401 → refresh →
+  /// снова logout, то есть рекурсия. Здесь чистим только локально и переводим в
+  /// гостя, чтобы роутер увёл на экран входа (а не показывал «что-то пошло не
+  /// так» на защищённых экранах).
+  Future<void> sessionExpired() async {
+    await _storage.clearAll();
+    await _clearLocalUserFlags();
+    _resetUserScopedState();
+    state = const AuthState(status: AuthStatus.guest);
+  }
+
   /// Сохранить токены + флаг прохождения онбординга.
   ///
   /// ⚠️ Здесь же сбрасываем кэш провайдеров и локальные флаги: вход мог
