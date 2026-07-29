@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api_endpoints.dart';
 import '../storage/secure_storage.dart';
+import '../../features/auth/providers/auth_provider.dart';
 
 /// Dio HTTP клиент с JWT interceptor.
 /// Источник: MASTER.md секция 7.2.1
@@ -210,8 +211,12 @@ class ApiClient {
     }
   }
 
+  /// Сессия мертва (refresh не удался или refresh-токен отсутствует).
+  /// Переводим приложение в гостя через AuthNotifier: он чистит хранилище +
+  /// локальные флаги, сбрасывает кэш пользовательских провайдеров и ставит
+  /// status=guest, после чего роутер сам уводит на экран входа. Без этого
+  /// защищённые экраны показывали «что-то пошло не так» вместо логина.
   Future<void> _logout() async {
-    final storage = _ref.read(secureStorageProvider);
-    await storage.clearAll();
+    await _ref.read(authProvider.notifier).sessionExpired();
   }
 }
