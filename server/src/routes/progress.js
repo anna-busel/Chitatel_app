@@ -43,41 +43,43 @@ router.get('/stats', async (req, res, next) => {
       .select('bookId listenedPartNumbers totalListenedSeconds lastListenedAt')
       .lean();
 
-    const totalSeconds = progresses.reduce(
-      (sum, p) => sum + (p.totalListenedSeconds || 0),
-      0
-    );
-
-    // Дослушанные книги: количество прослушанных частей = количеству частей книги.
+    // Считаем ТОЛЬКО по существующим опубликованным книгам. Осиротевший
+    // прогресс (книга удалена / снята с публикации) в статистику не идёт —
+    // иначе booksStarted расходится со списком «Мой прогресс» (/list), где
+    // такие книги отфильтрованы (симптом «2 начато, а карточка одна»).
     const bookIds = progresses.map((p) => p.bookId);
-    const books = await Book.find({ _id: { $in: bookIds } })
+    const books = await Book.find({ _id: { $in: bookIds }, isPublished: true })
       .select('parts')
       .lean();
     const partsByBook = new Map(
       books.map((b) => [String(b._id), (b.parts || []).length])
     );
 
+    let totalSeconds = 0;
+    let booksStarted = 0;
     let booksCompleted = 0;
+    let lastListenedAt = null;
     for (const p of progresses) {
+      if (!partsByBook.has(String(p.bookId))) continue; // осиротевшая/снятая
+      booksStarted += 1;
+      totalSeconds += p.totalListenedSeconds || 0;
       const totalParts = partsByBook.get(String(p.bookId)) || 0;
       const listened = (p.listenedPartNumbers || []).length;
       if (totalParts > 0 && listened >= totalParts) booksCompleted += 1;
-    }
-
-    const quotesCount = await Quote.countDocuments({ userId });
-
-    let lastListenedAt = null;
-    for (const p of progresses) {
-      if (!p.lastListenedAt) continue;
-      if (!lastListenedAt || p.lastListenedAt > lastListenedAt) {
+      if (
+        p.lastListenedAt &&
+        (!lastListenedAt || p.lastListenedAt > lastListenedAt)
+      ) {
         lastListenedAt = p.lastListenedAt;
       }
     }
 
+    const quotesCount = await Quote.countDocuments({ userId });
+
     return success(res, {
       stats: {
         totalMinutes: Math.round(totalSeconds / 60),
-        booksStarted: progresses.length,
+        booksStarted,
         booksCompleted,
         quotesCount,
         lastListenedAt,
