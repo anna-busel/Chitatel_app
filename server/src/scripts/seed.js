@@ -127,7 +127,7 @@ const FREE_BOOKS = [
   },
   {
     title: 'Биография Достоевского',
-    author: '',
+    author: 'Анна Бусел',
     description:
       'Путь Достоевского: от каторги и потерь к великим романам. Как страдание становится источником смысла и творчества.',
     bookSlug: 'biografiya_dostoevskogo',
@@ -252,9 +252,9 @@ async function mapPackage(src, bookSlugToId) {
 // --- Основная функция seed ---
 
 async function seed() {
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('🌱 Seed каталога ЧИТАТЕЛЬ');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
   console.log(`\n📡 Подключение к MongoDB: ${config.mongoUri}`);
   await mongoose.connect(config.mongoUri);
@@ -315,13 +315,13 @@ async function seed() {
   }
   console.log(`✅ Вставлено: ${insertedPackages.length} пакетов`);
 
-  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('📊 Итого в БД:');
   console.log(`   Книг платных:     ${insertedPaid.length}`);
   console.log(`   Книг бесплатных:  ${insertedFree.length}`);
   console.log(`   Пакетов:          ${insertedPackages.length}`);
   console.log(`   ВСЕГО книг:       ${insertedPaid.length + insertedFree.length}`);
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
   await mongoose.disconnect();
   console.log('\n👋 Отключено от MongoDB');
