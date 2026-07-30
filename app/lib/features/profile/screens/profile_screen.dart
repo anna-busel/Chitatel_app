@@ -19,10 +19,10 @@ import '../services/profile_service.dart';
 /// Состав:
 /// - шапка: аватар + имя + почта, тап → редактирование (4.46);
 /// - карточка подписки: статус и дата, тап → управление (4.33) либо paywall;
-/// - тумблер «ИИ-анализ» (4.27): включение показывает модалку согласия (4.42) —
-///   без явного согласия ни одна цитата не уходит в OpenAI (Apple 5.1.2(i));
 /// - меню: Мой дневник, Мой прогресс, Мои покупки, Уведомления,
 ///   Заблокированные (A1), Поддержка;
+/// - тумблер «ИИ-анализ» (4.27, под меню): включение показывает модалку
+///   согласия (4.42) — без явного согласия ни одна цитата не уходит в OpenAI;
 /// - выход и удаление аккаунта (4.34, Apple 5.1.1(v)).
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -145,13 +145,6 @@ class _ProfileBody extends ConsumerWidget {
           ),
           const SizedBox(height: 20),
 
-          // — Тумблер ИИ-анализа (4.27) —
-          _AiToggleCard(
-            value: profile.aiConsent,
-            onChanged: (v) => _toggleAi(context, ref, v),
-          ),
-          const SizedBox(height: 20),
-
           // — Меню —
           _MenuGroup(
             items: [
@@ -186,6 +179,13 @@ class _ProfileBody extends ConsumerWidget {
                 onTap: () => context.push(Routes.support),
               ),
             ],
+          ),
+          const SizedBox(height: 20),
+
+          // — Тумблер ИИ-анализа (4.27) — перенесён под меню, под «Поддержку» —
+          _AiToggleCard(
+            value: profile.aiConsent,
+            onChanged: (v) => _toggleAi(context, ref, v),
           ),
           const SizedBox(height: 24),
 
