@@ -7,6 +7,7 @@ const { AppError } = require('../middleware/error');
 const Book = require('../models/Book');
 const User = require('../models/User');
 const ClubMonth = require('../models/ClubMonth');
+const Package = require('../models/Package');
 const { archiveWindowEnd } = require('../middleware/subscription');
 const { generateSignedUrl } = require('../services/audio.service');
 
@@ -23,7 +24,7 @@ const router = Router();
 router.get('/', async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
-    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
     const skip = (page - 1) * limit;
 
     const filter = { isPublished: true };
@@ -76,7 +77,7 @@ router.get('/featured', async (_req, res, next) => {
 
 /**
  * GET /api/books/search
- * MASTER 7.4: полнотекстовый поиск (MongoDB text index)
+ * MASTER 4.11: поиск по названию/автору в реальном времени.
  * Query: ?q=
  */
 router.get('/search', async (req, res, next) => {
@@ -86,15 +87,18 @@ router.get('/search', async (req, res, next) => {
       return success(res, { books: [] });
     }
 
-    const books = await Book.find(
-      {
-        $text: { $search: query },
-        isPublished: true,
-      },
-      { score: { $meta: 'textScore' } }
-    )
+    // Поиск по подстроке (регистронезависимо) по названию и автору.
+    // MASTER 4.11 требует результаты «в реальном времени» по мере ввода —
+    // MongoDB $text матчит только целые слова, поэтому здесь regex-substring
+    // (каталог небольшой, это дёшево). Ввод экранируется от regex-инъекций.
+    const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const rx = new RegExp(escaped, 'i');
+
+    const books = await Book.find({
+      isPublished: true,
+      $or: [{ title: rx }, { author: rx }],
+    })
       .select('-parts.audioFilename')
-      .sort({ score: { $meta: 'textScore' } })
       .limit(20)
       .lean();
 
@@ -237,6 +241,16 @@ async function userHasBookAccess(book, user) {
     (id) => id.toString() === book._id.toString()
   );
   if (hasPurchased) return true;
+
+  // Книга входит в купленный пакет (Non-Consumable IAP на пакет).
+  // purchasedPackages заполняется в purchase.service.js при покупке package.{slug}.
+  if (user.purchasedPackages && user.purchasedPackages.length > 0) {
+    const inOwnedPackage = await Package.exists({
+      _id: { $in: user.purchasedPackages },
+      books: book._id,
+    });
+    if (inOwnedPackage) return true;
+  }
 
   // Админ — доступ ко всему
   if (user.role === 'admin') return true;
