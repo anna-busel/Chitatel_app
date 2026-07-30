@@ -45,40 +45,62 @@ function planDurationMonths(plan) {
 }
 
 /**
- * Набор клубных месяцев, которые ОПЛАЧЕНЫ текущим периодом подписки.
+ * Клубные месяцы, которые ОПЛАЧИВАЕТ одна транзакция подписки, по дате покупки
+ * и плану. Якорь = КАЛЕНДАРНЫЙ месяц purchaseDate (Apple при продлении ставит
+ * purchaseDate = дата списания за это продление), далее подряд `duration`
+ * месяцев. Пример: monthly, purchaseDate 5 сентября → ['2026-9']. Season,
+ * purchaseDate 10 сентября → ['2026-9','2026-10','2026-11'].
  *
- * Период = [expiresAt − длительность_плана; expiresAt]. Первый оплаченный
- * клуб = месяц НАЧАЛА этого периода, далее подряд `duration` месяцев.
- * Пример (monthly, истекает 5 сентября) → период [5 авг; 5 сен], оплачен
- * ТОЛЬКО август. Сентябрьский клуб (даже если стартовал 1 сен и подписка ещё
- * активна до 5 сен) в набор НЕ входит — откроется только после продления,
- * когда expiresAt сдвинется на октябрь и якорь станет сентябрём.
- * Пример (season, истекает 10 декабря) → период [10 сен; 10 дек], оплачены
- * сентябрь+октябрь+ноябрь.
+ * Вызывается в purchase.service.applyTransaction при КАЖДОЙ успешной
+ * транзакции подписки; результат накапливается в user.clubMonthsEntitled —
+ * это и есть «оплаченный набор», по которому проверяется доступ. Так дата
+ * фиксируется один раз в момент платежа и не пересчитывается из expiresAt.
  *
- * Возвращает Set строк-ключей вида `${year}-${month}` (month 1..12), чтобы
- * сравнивать с ClubMonth (у него поля month 1..12 и year).
+ * Возвращает МАССИВ ключей вида 'YYYY-M' (month 1..12).
+ */
+function clubMonthKeysForPurchase(purchaseDate, plan) {
+  const keys = [];
+  if (!purchaseDate) return keys;
+  const d = new Date(purchaseDate);
+  const duration = planDurationMonths(plan);
+  const startAbs = d.getFullYear() * 12 + d.getMonth();
+  for (let i = 0; i < duration; i += 1) {
+    const abs = startAbs + i;
+    const year = Math.floor(abs / 12);
+    const month = (abs % 12) + 1; // 0-11 → 1-12
+    keys.push(`${year}-${month}`);
+  }
+  return keys;
+}
+
+/**
+ * Оплаченный набор клубных месяцев, ВЫЧИСЛЕННЫЙ из expiresAt + плана.
+ * Используется ТОЛЬКО одноразовым бэкфиллом (scripts/backfill-club-
+ * entitlements.js), чтобы засеять clubMonthsEntitled существующим подписчикам,
+ * оформившимся ДО перехода на хранимый набор. В рантайме доступа НЕ участвует.
+ *
+ * Период = [expiresAt − длительность_плана; expiresAt]. Первый оплаченный клуб
+ * = месяц начала периода, далее подряд `duration` месяцев.
+ * Возвращает МАССИВ ключей 'YYYY-M' (month 1..12).
  */
 function coveredClubMonthKeys(expiresAt, plan) {
-  const set = new Set();
-  if (!expiresAt) return set;
+  const keys = [];
+  if (!expiresAt) return keys;
   const exp = new Date(expiresAt);
   const duration = planDurationMonths(plan);
-  // Абсолютный индекс месяца конца оплаченного периода (год*12 + мес.0-11).
   const expAbs = exp.getFullYear() * 12 + exp.getMonth();
-  // Начало периода = конец − duration месяцев = первый оплаченный клуб.
   const startAbs = expAbs - duration;
   for (let i = 0; i < duration; i += 1) {
     const abs = startAbs + i;
     const year = Math.floor(abs / 12);
     const month = (abs % 12) + 1; // 0-11 → 1-12
-    set.add(`${year}-${month}`);
+    keys.push(`${year}-${month}`);
   }
-  return set;
+  return keys;
 }
 
 /**
- * Ключ клубного месяца для сравнения с coveredClubMonthKeys.
+ * Ключ клубного месяца для сравнения с оплаченным набором.
  * ClubMonth хранит month (1..12) и year.
  */
 function clubMonthKey(club) {
@@ -198,21 +220,22 @@ const requireAdmin = async (req, _res, next) => {
 /**
  * Middleware определения уровня доступа к КОНКРЕТНОМУ клубу.
  *
- * МОДЕЛЬ ДОСТУПА (пересмотрена 30.07.2026 — ПРИВЯЗКА К ОПЛАЧЕННОМУ МЕСЯЦУ):
+ * МОДЕЛЬ ДОСТУПА (пересмотрена 30.07.2026 — ХРАНИМЫЙ ОПЛАЧЕННЫЙ НАБОР):
  * Подписка открывает клуб НЕ «какой сейчас по календарю», а РОВНО те клубные
- * месяцы, что входят в оплаченный период (см. coveredClubMonthKeys). Месячная
- * подписка = 1 клуб (месяц покупки), сезон = 3, полугодие = 6, год = 12.
+ * месяцы, что лежат в user.clubMonthsEntitled. Этот набор пополняется в
+ * purchase.service.applyTransaction при каждой успешной транзакции подписки
+ * (из даты платежа + плана), поэтому доступ опирается на факт оплаты, а не на
+ * пересчёт из expiresAt. Месячная = 1 клуб (месяц покупки), сезон = 3,
+ * полугодие = 6, год = 12.
  *
- * Почему так (баг, который чиним): раньше любой активный подписчик получал
+ * Почему так (баг, который чинили): раньше любой активный подписчик получал
  * ТЕКУЩИЙ по календарю клуб. Из-за расхождения «клуб с 1 числа» vs «оплата
  * Apple с 5 числа» августовский плательщик 1–5 сентября хватал сентябрьский
- * клуб бесплатно. Теперь клуб доступен, только если его (месяц,год) в
- * оплаченном наборе.
+ * клуб бесплатно. Теперь клуб доступен, только если его (месяц,год) в наборе.
  *
  * Архив (обсуждение прошлого клуба) сохраняется отдельным правилом: любой,
  * кто когда-либо был подписчиком, дообсуждает прошлый клуб весь следующий
- * календарный месяц (canPost=true). Это не зависит от оплаченного набора —
- * человек этот клуб когда-то оплатил.
+ * календарный месяц (canPost=true). Это не зависит от набора.
  *
  * 12.07.2026: в clubAccess есть поле plan ('monthly'|'season'|...|null) —
  * клиент скрывает плашку «оформите сезон» у тех, кто уже на сезоне.
@@ -270,7 +293,7 @@ const resolveClubAccess = async (req, _res, next) => {
 
     const user = await User.findById(req.user.userId)
       .select(
-        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt role isBanned mutedUntil'
+        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled role isBanned mutedUntil'
       )
       .lean();
 
@@ -307,11 +330,9 @@ const resolveClubAccess = async (req, _res, next) => {
 
     const plan = user.subscriptionPlan || null;
 
-    // Оплаченный набор клубных месяцев для текущего периода подписки.
-    const coveredKeys = coveredClubMonthKeys(
-      user.subscriptionExpiresAt,
-      plan
-    );
+    // Оплаченный набор клубных месяцев — ХРАНИМЫЙ (пополняется в
+    // purchase.service при каждой транзакции подписки).
+    const coveredKeys = new Set(user.clubMonthsEntitled || []);
     const isPaidClub = coveredKeys.has(clubMonthKey(club));
 
     // Классифицируем запрошенный клуб по времени (КАЛЕНДАРНО).
@@ -412,6 +433,7 @@ module.exports = {
   resolveClubAccess,
   archiveWindowEnd,
   planDurationMonths,
+  clubMonthKeysForPurchase,
   coveredClubMonthKeys,
   clubMonthKey,
 };

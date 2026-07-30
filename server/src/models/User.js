@@ -44,6 +44,16 @@ const userSchema = new mongoose.Schema(
     subscriptionOriginalTransactionId: String,
     gracePeriodExpiresAt: Date,
 
+    // Клубные месяцы, ОПЛАЧЕННЫЕ подпиской (ключи 'YYYY-M', month 1..12).
+    // Пополняется в purchase.service.applyTransaction при каждой успешной
+    // транзакции подписки; при возврате денег (refunded) оплаченные той
+    // транзакцией месяцы снимаются. Доступ к клубу и к книге клуба сверяется
+    // РОВНО с этим набором (а не вычисляется из subscriptionExpiresAt) — см.
+    // resolveClubAccess и userHasBookAccess. Появилось 30.07.2026 при переходе
+    // на хранимый оплаченный набор. Существующим подписчикам засевается
+    // одноразовым scripts/backfill-club-entitlements.js.
+    clubMonthsEntitled: { type: [String], default: [] },
+
     hasArchiveAccess: { type: Boolean, default: false },
     purchasedBooks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Book' }],
     purchasedPackages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Package' }],

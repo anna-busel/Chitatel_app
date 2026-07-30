@@ -3,6 +3,7 @@ const path = require('path');
 const config = require('../config');
 const logger = require('../config/logger');
 const { AppError } = require('../middleware/error');
+const { clubMonthKeysForPurchase } = require('../middleware/subscription');
 const User = require('../models/User');
 const Book = require('../models/Book');
 const Package = require('../models/Package');
@@ -194,6 +195,34 @@ async function applyTransaction({
     if (gracePeriodExpiresAt !== undefined) {
       user.gracePeriodExpiresAt = gracePeriodExpiresAt;
     }
+
+    // Хранимый оплаченный набор клубных месяцев (30.07.2026). Фиксируем ИМЕННО
+    // в момент платежа: какие клубы оплатила ЭТА транзакция (дата покупки +
+    // план). Доступ к клубу сверяется с этим набором, а не пересчитывается из
+    // expiresAt — см. resolveClubAccess, userHasBookAccess.
+    const grantedKeys = clubMonthKeysForPurchase(
+      tx.purchaseDate ? new Date(tx.purchaseDate) : new Date(),
+      user.subscriptionPlan
+    );
+    if (!Array.isArray(user.clubMonthsEntitled)) {
+      user.clubMonthsEntitled = [];
+    }
+    if (status === 'refunded') {
+      // Возврат денег — снять оплаченные этой транзакцией месяцы.
+      user.clubMonthsEntitled = user.clubMonthsEntitled.filter(
+        (k) => !grantedKeys.includes(k)
+      );
+    } else if (active) {
+      // Успешная оплата/продление — добавить без дублей.
+      grantedKeys.forEach((k) => {
+        if (!user.clubMonthsEntitled.includes(k)) {
+          user.clubMonthsEntitled.push(k);
+        }
+      });
+    }
+    // status 'expired'/'cancelled' — набор НЕ трогаем: оплаченный месяц
+    // остаётся за человеком, а ограничивает доступ уже временное окно клуба
+    // (текущий/архив). Отмена авто-продления не должна отбирать оплаченный клуб.
   } else if (mapped.itemType === 'archive') {
     user.hasArchiveAccess = !revoked;
   } else if (mapped.itemType === 'book') {
