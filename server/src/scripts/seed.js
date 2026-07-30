@@ -1,23 +1,30 @@
 /**
- * Seed-скрипт для заливки каталога Анны в MongoDB.
+ * Seed-скрипт каталога Анны (ПРОДАКШН-БЕЗОПАСНЫЙ, idempotent UPSERT).
  *
  * Использование:
  *   cd server
  *   npm run seed
  *
+ * ⚠️ 30.07.2026 — ПЕРЕПИСАН НА UPSERT (без delete+insert).
+ * Раньше скрипт делал Book.deleteMany()+insertMany() → каждый разбор получал
+ * НОВЫЙ _id, из-за чего осиротевал прогресс (Progress.bookId), клубные ссылки
+ * и покупки. Теперь книги/пакеты обновляются НА МЕСТЕ по slug — _id сохраняются,
+ * пользовательские данные переживают любое обновление каталога.
+ *
  * Что делает:
- * 1. Подключается к MongoDB (config.mongoUri)
- * 2. Очищает коллекции Book и Package (скрипт идемпотентный — можно гонять повторно)
- * 3. Читает reader-bot-catalog.json (54 разбора + 10 пакетов)
- * 4. Вставляет 54 платных разбора + 3 бесплатных (Alice/EatPrayLove/Маленький принц)
- *    — Маленький принц получает 6 частей с реальными аудиофайлами (задача 2.3)
- * 5. Вставляет 10 пакетов, сопоставляя bookSlugs → ObjectId уже вставленных книг
+ * 1. Подключается к MongoDB (config.mongoUri).
+ * 2. UPSERT каждого разбора по bookSlug и каждого пакета по packageSlug.
+ *    - Обновляются ТОЛЬКО каталожные поля (название, автор, описание, цена,
+ *      категории, обложка, публикация).
+ *    - НЕ трогаются пользовательские/контентные поля существующих книг:
+ *      parts (аудио Анны), rating, reviewCount, isPartOfClub, clubMonth,
+ *      publishedAt — они ставятся ТОЛЬКО при первом создании ($setOnInsert).
+ * 3. Разборы/пакеты, которых больше нет в каталоге, НЕ удаляются, а снимаются
+ *    с публикации (isPublished:false) — чтобы не осиротить прогресс.
  *
- * Цены: priceUsd берётся из каталога (округлён под ценовые точки Apple .99); bynToUsd — фоллбек.
- * coverImageUrl указывает на Flutter-ассеты (app/assets/book-covers/{slug}.png).
- * audioFilename у большинства книг пустой — аудио пришлёт Анна позже.
- *
- * Шаг 2.3.5-c из AI-CONTEXT + задача 2.3 (заполнение Маленького принца).
+ * Клуб (месяц, книга, даты), чат, тестовые юзеры — этот скрипт НЕ трогает.
+ * Ими управляет админка. seed-club.js — только dev-тестовые данные, на проде
+ * запускать НЕЛЬЗЯ (он затирает чат).
  */
 
 const path = require('path');
@@ -58,16 +65,6 @@ const packageCoverFilenames = {
 };
 
 // --- Маленький принц: 6 частей с реальными аудиофайлами (задача 2.3) ---
-//
-// Файлы лежат в AUDIO_BASE_PATH/malenkii_princ/part-{N}.mp3.
-// В разработке: ~/Chitatel_app/audio-storage/malenkii_princ/part-N.mp3
-// В продакшене: /var/audio/chitatel/malenkii_princ/part-N.mp3
-//
-// duration — точные значения из ffprobe на реальных MP3 (192 kbps).
-// audioFilename — относительный путь от AUDIO_BASE_PATH.
-//
-// Книга бесплатная (isFree: true) — все части доступны без покупки.
-// isPreviewAvailable не нужно (актуально только для платных).
 
 const MALENKII_PRINC_PARTS = [
   { number: 1, title: 'Часть 1', duration: 855, audioFilename: 'malenkii_princ/part-1.mp3' },
@@ -79,7 +76,6 @@ const MALENKII_PRINC_PARTS = [
 ];
 
 // --- Список бесплатных промо-разборов (без цены, isFree: true) ---
-// См. g1orgi89/reader-bot/mini-app/assets/audio-covers/ — у этих 3 есть обложки плеера.
 
 const FREE_BOOKS = [
   {
@@ -137,202 +133,207 @@ const FREE_BOOKS = [
   },
 ];
 
-// --- Маппинг одной записи из JSON в документ Book ---
+// --- Маппинг: каталожные поля, которые ОБНОВЛЯЮТСЯ при каждом сиде ---
 
-function mapPaidBook(src) {
+function paidUpdateFields(src) {
   return {
     title: src.title,
     author: src.author || '',
     description: src.description,
-
     coverImageUrl: `asset://book-covers/${src.bookSlug}.png`,
     coverGradientColors: ['#1A0E08', '#3A2018'],
     coverLabel: '',
-
-    durationTotal: 0,
-
     categories: src.categories || [],
     tags: src.targetThemes || [],
-
     priceUsd: src.priceUsd != null ? src.priceUsd : bynToUsd(src.priceByn),
     priceRub: null,
     priceByn: src.priceByn,
     isFree: false,
     appleProductId: `book.${src.bookSlug}`,
-
-    bookSlug: src.bookSlug,
     purchaseUrl: src.purchaseUrl || '',
-
-    isPartOfClub: false,
-    clubMonth: null,
-    freeChapterIndex: 0,
-
-    rating: 0,
-    reviewCount: 0,
-
-    parts: [],
-
     isPublished: true,
-    publishedAt: new Date(),
   };
 }
 
-function mapFreeBook(src) {
-  const partsTotal = (src.parts || []).reduce((acc, p) => acc + (p.duration || 0), 0);
+function freeUpdateFields(src) {
   return {
     title: src.title,
     author: src.author,
     description: src.description,
-
     coverImageUrl: `asset://book-covers/${src.bookSlug}.png`,
     coverGradientColors: ['#1A0E08', '#3A2018'],
     coverLabel: '',
-
-    durationTotal: partsTotal,
-
-    categories: src.categories,
-    tags: src.tags,
-
+    categories: src.categories || [],
+    tags: src.tags || [],
     priceUsd: null,
     priceRub: null,
     priceByn: null,
     isFree: true,
     appleProductId: null,
-
-    bookSlug: src.bookSlug,
     purchaseUrl: '',
+    isPublished: true,
+  };
+}
 
+// --- Поля, которые ставятся ТОЛЬКО при создании (не затираем прогресс/аудио/оценки) ---
+
+function paidInsertOnly() {
+  return {
+    durationTotal: 0,
     isPartOfClub: false,
     clubMonth: null,
     freeChapterIndex: 0,
-
     rating: 0,
     reviewCount: 0,
-
-    parts: src.parts || [],
-
-    isPublished: true,
+    parts: [],
     publishedAt: new Date(),
   };
 }
 
-async function mapPackage(src, bookSlugToId) {
-  const bookIds = src.booksInPackage
-    .map((slug) => bookSlugToId.get(slug))
-    .filter((id) => id != null);
-
-  const coverFilename = packageCoverFilenames[src.packageSlug];
-  const coverImageUrl = coverFilename ? `asset://book-covers/${coverFilename}.png` : '';
-
+function freeInsertOnly(src) {
+  const partsTotal = (src.parts || []).reduce((acc, p) => acc + (p.duration || 0), 0);
   return {
-    title: src.title,
-    description: src.description,
-
-    coverImageUrl,
-    coverGradientColors: ['#1A0E08', '#3A2018'],
-    coverLabel: '',
-
-    packageSlug: src.packageSlug,
-
-    books: bookIds,
-    bookSlugs: src.booksInPackage,
-
-    priceUsd: src.priceUsd != null ? src.priceUsd : bynToUsd(src.priceByn),
-    priceRub: src.priceRub || null,
-    priceByn: src.priceByn,
-
-    appleProductId: `package.${src.packageSlug}`,
-
-    purchaseUrl: src.purchaseUrl || '',
-
-    isPublished: true,
+    durationTotal: partsTotal,
+    parts: src.parts || [],
+    isPartOfClub: false,
+    clubMonth: null,
+    freeChapterIndex: 0,
+    rating: 0,
+    reviewCount: 0,
+    publishedAt: new Date(),
   };
+}
+
+// --- UPSERT одной книги по bookSlug ---
+
+async function upsertBook(slug, updateFields, insertOnly) {
+  const res = await Book.updateOne(
+    { bookSlug: slug },
+    { $set: updateFields, $setOnInsert: insertOnly },
+    { upsert: true }
+  );
+  // upsertedCount=1 → создана; иначе обновлена существующая.
+  return res.upsertedCount === 1 ? 'created' : 'updated';
 }
 
 // --- Основная функция seed ---
 
 async function seed() {
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('🌱 Seed каталога ЧИТАТЕЛЬ');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('=== Seed каталога ЧИТАТЕЛЬ (UPSERT, без потери данных) ===');
 
-  console.log(`\n📡 Подключение к MongoDB: ${config.mongoUri}`);
+  console.log(`Подключение к MongoDB: ${config.mongoUri}`);
   await mongoose.connect(config.mongoUri);
-  console.log('✅ Подключено');
+  console.log('Подключено');
 
   const jsonPath = path.join(__dirname, 'reader-bot-catalog.json');
-  console.log(`\n📖 Чтение каталога: ${jsonPath}`);
+  console.log(`Чтение каталога: ${jsonPath}`);
   const raw = fs.readFileSync(jsonPath, 'utf8');
   const data = JSON.parse(raw);
-  console.log(`✅ Прочитано: ${data.books.length} книг, ${data.packages.length} пакетов`);
+  console.log(`Прочитано: ${data.books.length} книг, ${data.packages.length} пакетов`);
 
-  console.log('\n🧹 Очистка коллекций Book и Package...');
-  await Book.deleteMany({});
-  await Package.deleteMany({});
-  console.log('✅ Коллекции очищены');
+  // 1) Платные разборы — upsert по bookSlug.
+  let paidCreated = 0;
+  let paidUpdated = 0;
+  for (const src of data.books) {
+    const r = await upsertBook(src.bookSlug, paidUpdateFields(src), paidInsertOnly());
+    if (r === 'created') paidCreated += 1;
+    else paidUpdated += 1;
+  }
+  console.log(`Платные: создано ${paidCreated}, обновлено ${paidUpdated}`);
 
-  console.log(`\n📚 Вставка ${data.books.length} платных разборов...`);
-  const paidBookDocs = data.books.map(mapPaidBook);
-  const insertedPaid = await Book.insertMany(paidBookDocs);
-  console.log(`✅ Вставлено: ${insertedPaid.length} платных`);
+  // 2) Бесплатные промо-разборы — upsert по bookSlug.
+  let freeCreated = 0;
+  let freeUpdated = 0;
+  for (const src of FREE_BOOKS) {
+    const r = await upsertBook(src.bookSlug, freeUpdateFields(src), freeInsertOnly(src));
+    if (r === 'created') freeCreated += 1;
+    else freeUpdated += 1;
+  }
+  console.log(`Бесплатные: создано ${freeCreated}, обновлено ${freeUpdated}`);
 
-  console.log(`\n🎁 Вставка ${FREE_BOOKS.length} бесплатных промо-разборов...`);
-  const freeBookDocs = FREE_BOOKS.map(mapFreeBook);
-  const insertedFree = await Book.insertMany(freeBookDocs);
-  console.log(`✅ Вставлено: ${insertedFree.length} бесплатных`);
-
-  // Логируем какие бесплатные с реальным аудио
-  const withAudio = insertedFree.filter((b) => b.parts.length > 0);
-  if (withAudio.length > 0) {
-    console.log(`   🎧 С аудиофайлами:`);
-    for (const b of withAudio) {
-      const minutes = Math.round(b.durationTotal / 60);
-      console.log(`      ${b.title}: ${b.parts.length} частей, ~${minutes} мин`);
-    }
+  // 3) Разборы, которых больше нет в каталоге — снять с публикации (НЕ удалять).
+  const allBookSlugs = [
+    ...data.books.map((b) => b.bookSlug),
+    ...FREE_BOOKS.map((b) => b.bookSlug),
+  ];
+  const unpubBooks = await Book.updateMany(
+    { bookSlug: { $nin: allBookSlugs }, isPublished: true },
+    { $set: { isPublished: false } }
+  );
+  if (unpubBooks.modifiedCount > 0) {
+    console.log(`Снято с публикации разборов (нет в каталоге): ${unpubBooks.modifiedCount}`);
   }
 
-  const bookSlugToId = new Map();
-  for (const book of [...insertedPaid, ...insertedFree]) {
-    bookSlugToId.set(book.bookSlug, book._id);
-  }
+  // 4) Пакеты — upsert по packageSlug. books[] пересобираем по slug (id уже стабильны).
+  const allBooks = await Book.find({}).select('_id bookSlug').lean();
+  const bookSlugToId = new Map(allBooks.map((b) => [b.bookSlug, b._id]));
 
-  console.log(`\n📦 Вставка ${data.packages.length} пакетов...`);
-  const packageDocs = await Promise.all(data.packages.map((p) => mapPackage(p, bookSlugToId)));
-  const insertedPackages = await Package.insertMany(packageDocs);
-
-  for (let i = 0; i < data.packages.length; i++) {
-    const src = data.packages[i];
-    const inserted = insertedPackages[i];
-    const missingSlugs = src.booksInPackage.filter((s) => !bookSlugToId.has(s));
+  let pkgCreated = 0;
+  let pkgUpdated = 0;
+  for (const p of data.packages) {
+    const bookIds = p.booksInPackage
+      .map((s) => bookSlugToId.get(s))
+      .filter((id) => id != null);
+    const missingSlugs = p.booksInPackage.filter((s) => !bookSlugToId.has(s));
     if (missingSlugs.length > 0) {
-      console.log(
-        `   ⚠️  ${src.title}: отсутствует в каталоге ${missingSlugs.length}/${src.booksInPackage.length} — ${missingSlugs.join(', ')}`
-      );
+      console.log(`  ! ${p.title}: нет в каталоге ${missingSlugs.length}/${p.booksInPackage.length} — ${missingSlugs.join(', ')}`);
     }
-    if (!inserted.coverImageUrl) {
-      console.log(`   ⚠️  ${src.title}: нет обложки (packageSlug=${src.packageSlug})`);
-    }
-  }
-  console.log(`✅ Вставлено: ${insertedPackages.length} пакетов`);
 
-  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('📊 Итого в БД:');
-  console.log(`   Книг платных:     ${insertedPaid.length}`);
-  console.log(`   Книг бесплатных:  ${insertedFree.length}`);
-  console.log(`   Пакетов:          ${insertedPackages.length}`);
-  console.log(`   ВСЕГО книг:       ${insertedPaid.length + insertedFree.length}`);
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    const coverFilename = packageCoverFilenames[p.packageSlug];
+    const coverImageUrl = coverFilename ? `asset://book-covers/${coverFilename}.png` : '';
+
+    const res = await Package.updateOne(
+      { packageSlug: p.packageSlug },
+      {
+        $set: {
+          title: p.title,
+          description: p.description,
+          coverImageUrl,
+          coverGradientColors: ['#1A0E08', '#3A2018'],
+          coverLabel: '',
+          books: bookIds,
+          bookSlugs: p.booksInPackage,
+          priceUsd: p.priceUsd != null ? p.priceUsd : bynToUsd(p.priceByn),
+          priceRub: p.priceRub || null,
+          priceByn: p.priceByn,
+          appleProductId: `package.${p.packageSlug}`,
+          purchaseUrl: p.purchaseUrl || '',
+          isPublished: true,
+        },
+      },
+      { upsert: true }
+    );
+    if (res.upsertedCount === 1) pkgCreated += 1;
+    else pkgUpdated += 1;
+  }
+  console.log(`Пакеты: создано ${pkgCreated}, обновлено ${pkgUpdated}`);
+
+  // 5) Пакеты, которых больше нет — снять с публикации.
+  const pkgSlugs = data.packages.map((p) => p.packageSlug);
+  const unpubPkgs = await Package.updateMany(
+    { packageSlug: { $nin: pkgSlugs }, isPublished: true },
+    { $set: { isPublished: false } }
+  );
+  if (unpubPkgs.modifiedCount > 0) {
+    console.log(`Снято с публикации пакетов (нет в каталоге): ${unpubPkgs.modifiedCount}`);
+  }
+
+  const totalBooks = await Book.countDocuments({ isPublished: true });
+  const totalPkgs = await Package.countDocuments({ isPublished: true });
+  console.log('=== Итого опубликовано ===');
+  console.log(`  Книг:    ${totalBooks}`);
+  console.log(`  Пакетов: ${totalPkgs}`);
 
   await mongoose.disconnect();
-  console.log('\n👋 Отключено от MongoDB');
+  console.log('Отключено от MongoDB');
 }
 
 seed()
   .then(() => {
-    console.log('\n✅ Seed завершён успешно');
+    console.log('Seed завершён успешно');
     process.exit(0);
   })
   .catch((err) => {
-    console.error('\n❌ Seed упал:', err);
+    console.error('Seed упал:', err);
     mongoose.disconnect().finally(() => process.exit(1));
   });
