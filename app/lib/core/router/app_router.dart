@@ -17,6 +17,7 @@ import '../../features/catalog/screens/catalog_screen.dart';
 import '../../features/club/screens/club_screen.dart';
 import '../../features/book/screens/book_screen.dart';
 import '../../features/search/screens/search_screen.dart';
+import '../../features/catalog/screens/package_screen.dart';
 import '../../features/player/screens/player_screen.dart';
 import '../../features/player/widgets/mini_player.dart';
 import '../../features/payments/screens/paywall_screen.dart';
@@ -180,6 +181,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.search,
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const SearchScreen(),
+      ),
+      GoRoute(
+        path: Routes.packagePath,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) {
+          final id = state.pathParameters['id'] ?? '';
+          return PackageScreen(packageId: id);
+        },
       ),
       GoRoute(
         path: Routes.paywall,

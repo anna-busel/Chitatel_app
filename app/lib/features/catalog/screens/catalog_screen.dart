@@ -8,7 +8,9 @@ import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
 import '../providers/catalog_provider.dart';
+import '../providers/packages_provider.dart';
 import '../widgets/book_grid_card.dart';
+import '../widgets/package_card.dart';
 import '../widgets/category_chips.dart';
 
 /// Экран каталога. MASTER 4.10.
@@ -33,7 +35,11 @@ class CatalogScreen extends ConsumerWidget {
         const SizedBox(height: 4),
         const CategoryChips(),
         const SizedBox(height: 12),
-        Expanded(child: _buildBody(context, ref, state)),
+        Expanded(
+          child: state.filter is PackagesFilter
+              ? const _PackagesGrid()
+              : _buildBody(context, ref, state),
+        ),
       ],
     );
   }
@@ -194,6 +200,59 @@ class _EmptyState extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Сетка пакетов (фильтр «Пакеты»). Данные из packagesProvider.
+class _PackagesGrid extends ConsumerWidget {
+  const _PackagesGrid();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(packagesProvider);
+    return async.when(
+      loading: () => const _CatalogShimmer(),
+      error: (_, __) => ErrorView(
+        message: 'Не удалось загрузить пакеты',
+        onRetry: () => ref.invalidate(packagesProvider),
+      ),
+      data: (packages) {
+        if (packages.isEmpty) {
+          return const _EmptyState();
+        }
+        const horizontalPadding = AppSpacing.screenPadding;
+        const crossAxisSpacing = 12.0;
+        const mainAxisSpacing = 20.0;
+        final screenWidth = MediaQuery.of(context).size.width;
+        final coverWidth =
+            (screenWidth - horizontalPadding * 2 - crossAxisSpacing) / 2;
+        final coverHeight = coverWidth * 1.5;
+        final cardHeight = coverHeight + 100;
+
+        return RefreshIndicator(
+          color: AppColors.terracotta,
+          onRefresh: () async => ref.invalidate(packagesProvider),
+          child: GridView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: 4,
+            ).copyWith(bottom: 32),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: crossAxisSpacing,
+              mainAxisSpacing: mainAxisSpacing,
+              mainAxisExtent: cardHeight,
+            ),
+            itemCount: packages.length,
+            itemBuilder: (context, index) => PackageCard(
+              package: packages[index],
+              coverWidth: coverWidth,
+            ),
+          ),
+        );
+      },
     );
   }
 }
