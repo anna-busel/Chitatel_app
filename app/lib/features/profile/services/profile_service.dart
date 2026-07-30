@@ -150,6 +150,8 @@ class PurchaseItem {
     required this.itemType,
     required this.appleProductId,
     required this.status,
+    this.title,
+    this.targetId,
     this.purchasedAt,
     this.expiresAt,
   });
@@ -160,6 +162,14 @@ class PurchaseItem {
 
   /// active | expired | refunded | cancelled
   final String status;
+
+  /// Конкретное название разбора/пакета (сервер резолвит по slug). У подписок
+  /// и архива null — клиент подписывает их сам по типу.
+  final String? title;
+
+  /// _id разбора/пакета для перехода на его экран. null у подписок/архива.
+  final String? targetId;
+
   final DateTime? purchasedAt;
   final DateTime? expiresAt;
 
@@ -169,10 +179,17 @@ class PurchaseItem {
       return null;
     }
 
+    String? nonEmpty(dynamic v) {
+      final s = v?.toString();
+      return (s != null && s.isNotEmpty) ? s : null;
+    }
+
     return PurchaseItem(
       itemType: (j['itemType'] ?? '').toString(),
       appleProductId: (j['appleProductId'] ?? '').toString(),
       status: (j['status'] ?? '').toString(),
+      title: nonEmpty(j['title']),
+      targetId: nonEmpty(j['targetId']),
       purchasedAt: parseDate(j['purchasedAt']),
       expiresAt: parseDate(j['expiresAt']),
     );

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
@@ -65,6 +67,9 @@ class _PurchaseCard extends StatelessWidget {
   final PurchaseItem item;
 
   String get _title {
+    // Сервер отдаёт конкретное название разбора/пакета — показываем его.
+    final t = item.title;
+    if (t != null && t.isNotEmpty) return t;
     switch (item.itemType) {
       case 'subscription':
         return item.appleProductId.endsWith('season')
@@ -116,10 +121,21 @@ class _PurchaseCard extends StatelessWidget {
     return '$dd.$mm.${l.year}';
   }
 
+  /// Маршрут на экран разбора/пакета, если покупка кликабельна.
+  /// У подписок/архива targetId == null — карточка не кликабельна.
+  String? get _route {
+    final id = item.targetId;
+    if (id == null) return null;
+    if (item.itemType == 'book') return Routes.book(id);
+    if (item.itemType == 'package') return Routes.package(id);
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+    final route = _route;
+
+    final inner = Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
@@ -150,6 +166,14 @@ class _PurchaseCard extends StatelessWidget {
                   ),
                 ),
               ),
+              if (route != null) ...[
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: AppColors.textTertiary,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 6),
@@ -160,6 +184,21 @@ class _PurchaseCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: route == null
+          ? inner
+          : Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+              child: InkWell(
+                onTap: () => context.push(route),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+                child: inner,
+              ),
+            ),
     );
   }
 }
