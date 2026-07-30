@@ -17,6 +17,11 @@ class FreeOnlyFilter extends CatalogFilter {
   const FreeOnlyFilter();
 }
 
+/// Пакеты разборов (отдельная выдача — packagesProvider, не книги каталога).
+class PackagesFilter extends CatalogFilter {
+  const PackagesFilter();
+}
+
 /// Конкретная категория («КРИЗИСЫ», «ЛЮБОВЬ» и т.д.).
 class CategoryFilter extends CatalogFilter {
   const CategoryFilter(this.category);
@@ -68,6 +73,16 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
   final CatalogService _service;
 
   Future<void> load() async {
+    // Пакеты грузятся отдельным провайдером (packagesProvider); для фильтра
+    // «Пакеты» список книг каталога не запрашиваем.
+    if (state.filter is PackagesFilter) {
+      state = state.copyWith(
+        isLoading: false,
+        books: const [],
+        clearError: true,
+      );
+      return;
+    }
     state = state.copyWith(isLoading: true, clearError: true);
     try {
       final query = _buildQuery(state.filter);
@@ -95,12 +110,14 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
       AllBooksFilter() => const CatalogQuery(),
       FreeOnlyFilter() => const CatalogQuery(isFree: true),
       CategoryFilter(category: final c) => CatalogQuery(category: c),
+      PackagesFilter() => const CatalogQuery(),
     };
   }
 
   bool _isSameFilter(CatalogFilter a, CatalogFilter b) {
     if (a is AllBooksFilter && b is AllBooksFilter) return true;
     if (a is FreeOnlyFilter && b is FreeOnlyFilter) return true;
+    if (a is PackagesFilter && b is PackagesFilter) return true;
     if (a is CategoryFilter && b is CategoryFilter) {
       return a.category == b.category;
     }

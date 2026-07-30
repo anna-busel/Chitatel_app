@@ -52,6 +52,8 @@ class Routes {
   static const String bookPath = '/book/:id';
   static String player(String bookId) => '/player/$bookId';
   static const String playerPath = '/player/:bookId';
+  static String package(String id) => '/package/$id';
+  static const String packagePath = '/package/:id';
   static const String search = '/search';
   static const String paywall = '/paywall';
   static const String notifications = '/notifications';

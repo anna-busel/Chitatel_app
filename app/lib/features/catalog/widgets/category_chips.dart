@@ -8,7 +8,7 @@ import '../providers/catalog_provider.dart';
 
 /// Горизонтальная лента чипов-фильтров каталога.
 ///
-/// Состав: [Все] [Бесплатные] [14 категорий Анны].
+/// Состав: [Все] [Бесплатные] [Пакеты] [14 категорий Анны].
 /// Один активный чип в любой момент времени (radio-поведение).
 ///
 /// ВАЖНО (13.05.2026): label чипа = `BookCategories.labelFor(category)`
@@ -33,6 +33,11 @@ class CategoryChips extends ConsumerWidget {
         label: 'Бесплатные',
         isActive: filter is FreeOnlyFilter,
         onTap: () => notifier.setFilter(const FreeOnlyFilter()),
+      ),
+      _ChipItem(
+        label: 'Пакеты',
+        isActive: filter is PackagesFilter,
+        onTap: () => notifier.setFilter(const PackagesFilter()),
       ),
       ...BookCategories.all.map((category) {
         final isActive =
