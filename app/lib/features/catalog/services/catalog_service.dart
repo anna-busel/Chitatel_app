@@ -20,7 +20,7 @@ class CatalogQuery {
 
   Map<String, dynamic> toQueryParams() {
     final params = <String, dynamic>{
-      'limit': 50, // все 45 книг приходят за один запрос
+      'limit': 100, // весь каталог за один запрос (сервер режет до 100)
     };
     if (category != null) params['category'] = category;
     if (isFree != null) params['isFree'] = isFree.toString();
