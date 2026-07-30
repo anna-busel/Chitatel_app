@@ -25,6 +25,67 @@ function archiveWindowEnd(endsAt) {
 }
 
 /**
+ * Длительность оплаченного периода подписки в КЛУБНЫХ МЕСЯЦАХ по плану.
+ * monthly=1, season=3, semiannual=6, annual=12. Неизвестный/пустой план →
+ * трактуем как месячный (минимальный доступ — 1 клуб), чтобы никогда не
+ * открыть лишнего.
+ */
+function planDurationMonths(plan) {
+  switch (plan) {
+    case 'season':
+      return 3;
+    case 'semiannual':
+      return 6;
+    case 'annual':
+      return 12;
+    case 'monthly':
+    default:
+      return 1;
+  }
+}
+
+/**
+ * Набор клубных месяцев, которые ОПЛАЧЕНЫ текущим периодом подписки.
+ *
+ * Период = [expiresAt − длительность_плана; expiresAt]. Первый оплаченный
+ * клуб = месяц НАЧАЛА этого периода, далее подряд `duration` месяцев.
+ * Пример (monthly, истекает 5 сентября) → период [5 авг; 5 сен], оплачен
+ * ТОЛЬКО август. Сентябрьский клуб (даже если стартовал 1 сен и подписка ещё
+ * активна до 5 сен) в набор НЕ входит — откроется только после продления,
+ * когда expiresAt сдвинется на октябрь и якорь станет сентябрём.
+ * Пример (season, истекает 10 декабря) → период [10 сен; 10 дек], оплачены
+ * сентябрь+октябрь+ноябрь.
+ *
+ * Возвращает Set строк-ключей вида `${year}-${month}` (month 1..12), чтобы
+ * сравнивать с ClubMonth (у него поля month 1..12 и year).
+ */
+function coveredClubMonthKeys(expiresAt, plan) {
+  const set = new Set();
+  if (!expiresAt) return set;
+  const exp = new Date(expiresAt);
+  const duration = planDurationMonths(plan);
+  // Абсолютный индекс месяца конца оплаченного периода (год*12 + мес.0-11).
+  const expAbs = exp.getFullYear() * 12 + exp.getMonth();
+  // Начало периода = конец − duration месяцев = первый оплаченный клуб.
+  const startAbs = expAbs - duration;
+  for (let i = 0; i < duration; i += 1) {
+    const abs = startAbs + i;
+    const year = Math.floor(abs / 12);
+    const month = (abs % 12) + 1; // 0-11 → 1-12
+    set.add(`${year}-${month}`);
+  }
+  return set;
+}
+
+/**
+ * Ключ клубного месяца для сравнения с coveredClubMonthKeys.
+ * ClubMonth хранит month (1..12) и year.
+ */
+function clubMonthKey(club) {
+  return `${club.year}-${club.month}`;
+}
+
+/**
  * Middleware проверки подписки на клуб.
  *
  * Стек проверок:
@@ -137,40 +198,40 @@ const requireAdmin = async (req, _res, next) => {
 /**
  * Middleware определения уровня доступа к КОНКРЕТНОМУ клубу.
  *
- * МОДЕЛЬ ДОСТУПА (согласована 15.06, финализирована 08.07.2026 — КАЛЕНДАРНАЯ):
- * Клуб доступен ПОЛНОЦЕННО (чтение + запись) весь свой календарный месяц +
- * весь следующий календарный месяц (архив). Народ дообсуждает прошлую книгу
- * ещё месяц. Привязка к календарю, а не к датам Apple — устраняет расхождение
- * «дата платежа vs календарь клуба».
+ * МОДЕЛЬ ДОСТУПА (пересмотрена 30.07.2026 — ПРИВЯЗКА К ОПЛАЧЕННОМУ МЕСЯЦУ):
+ * Подписка открывает клуб НЕ «какой сейчас по календарю», а РОВНО те клубные
+ * месяцы, что входят в оплаченный период (см. coveredClubMonthKeys). Месячная
+ * подписка = 1 клуб (месяц покупки), сезон = 3, полугодие = 6, год = 12.
  *
- * Пример: июльский клуб → пишешь весь июль (текущий) И весь август (архив
- * июля). С 1 августа параллельно открывается августовский клуб. Июльский
- * закрывается 1 сентября.
+ * Почему так (баг, который чиним): раньше любой активный подписчик получал
+ * ТЕКУЩИЙ по календарю клуб. Из-за расхождения «клуб с 1 числа» vs «оплата
+ * Apple с 5 числа» августовский плательщик 1–5 сентября хватал сентябрьский
+ * клуб бесплатно. Теперь клуб доступен, только если его (месяц,год) в
+ * оплаченном наборе.
  *
- * ⚠️ ВАЖНО (08.07): в архиве МОЖНО ПИСАТЬ (canPost=true) — по требованию Анны
- * обсуждение прошлого клуба продолжается весь следующий месяц. Раньше архив
- * был read-only — исправлено.
+ * Архив (обсуждение прошлого клуба) сохраняется отдельным правилом: любой,
+ * кто когда-либо был подписчиком, дообсуждает прошлый клуб весь следующий
+ * календарный месяц (canPost=true). Это не зависит от оплаченного набора —
+ * человек этот клуб когда-то оплатил.
  *
- * 12.07.2026: в clubAccess добавлено поле plan ('monthly'|'season'|null) —
+ * 12.07.2026: в clubAccess есть поле plan ('monthly'|'season'|...|null) —
  * клиент скрывает плашку «оформите сезон» у тех, кто уже на сезоне.
- * На решения доступа plan не влияет.
  *
  * Правила по запрошенному клубу:
  * 1. Бан → 403 CLUB_BLOCKED
  * 2. Админ → полный доступ к любому клубу (kind='admin')
  * 3. Клуб ТЕКУЩИЙ (startsAt <= now <= endsAt):
- *      - активная подписка → kind='active', canPost=true (если не мьют)
- *      - нет подписки → 403 SUBSCRIPTION_REQUIRED (клиент покажет paywall)
- * 4. Клуб АРХИВНЫЙ в календарном окне (endsAt < now <= конец след. месяца):
- *      - есть/была подписка → kind='archive', canPost=true (если не мьют)
- *        (дописать/дообсудить прошлый клуб весь следующий месяц)
- *      - free (никогда не платил) → 403 SUBSCRIPTION_REQUIRED
- * 5. Клуб БУДУЩИЙ (startsAt > now):
- *      - активная подписка/админ → kind='future', read-only (анонс, canPost=false)
+ *      - активная подписка И клуб в оплаченном наборе → kind='active', canPost
+ *      - иначе → 403 SUBSCRIPTION_REQUIRED (paywall)
+ * 4. Клуб БУДУЩИЙ (startsAt > now):
+ *      - активная подписка И клуб в оплаченном наборе (напр. сезон оплатил
+ *        вперёд) → kind='future', read-only (анонс, canPost=false)
  *      - иначе → 403 SUBSCRIPTION_REQUIRED
- * 6. Клуб СТАРЫЙ (now > конец след. месяца — прошло больше архивного окна):
+ * 5. Клуб АРХИВНЫЙ в календарном окне (endsAt < now <= конец след. месяца):
+ *      - был/есть подписчиком (everSubscribed) → kind='archive', canPost
+ *      - free (никогда не платил) → 403 SUBSCRIPTION_REQUIRED
+ * 6. Клуб СТАРЫЙ (now > конец архивного окна):
  *      - доступа нет никому кроме админа → 403 SUBSCRIPTION_REQUIRED
- *      - (данные в БД остаются — просто закрыт доступ)
  *
  * Mute не блокирует чтение, только запись (canPost=false).
  *
@@ -246,6 +307,13 @@ const resolveClubAccess = async (req, _res, next) => {
 
     const plan = user.subscriptionPlan || null;
 
+    // Оплаченный набор клубных месяцев для текущего периода подписки.
+    const coveredKeys = coveredClubMonthKeys(
+      user.subscriptionExpiresAt,
+      plan
+    );
+    const isPaidClub = coveredKeys.has(clubMonthKey(club));
+
     // Классифицируем запрошенный клуб по времени (КАЛЕНДАРНО).
     const isCurrent = club.startsAt <= now && club.endsAt >= now;
     const isFuture = club.startsAt > now;
@@ -254,9 +322,9 @@ const resolveClubAccess = async (req, _res, next) => {
     const isInArchiveWindow = club.endsAt < now && now <= archiveEnd;
     // isTooOld: club.endsAt < now && now > archiveEnd — старше архивного окна.
 
-    // — Текущий клуб —
+    // — Текущий клуб — доступ только если он в оплаченном наборе —
     if (isCurrent) {
-      if (hasActiveSub) {
+      if (hasActiveSub && isPaidClub) {
         req.club = club;
         req.clubAccess = {
           kind: 'active',
@@ -268,7 +336,7 @@ const resolveClubAccess = async (req, _res, next) => {
         };
         return next();
       }
-      // Нет подписки на текущий клуб → paywall.
+      // Нет подписки/не оплачен этот клуб → paywall.
       return next(
         new AppError(
           'SUBSCRIPTION_REQUIRED',
@@ -278,9 +346,9 @@ const resolveClubAccess = async (req, _res, next) => {
       );
     }
 
-    // — Будущий клуб (анонс) — только подписчик, read-only —
+    // — Будущий клуб (анонс) — только если оплачен вперёд (сезон), read-only —
     if (isFuture) {
-      if (hasActiveSub) {
+      if (hasActiveSub && isPaidClub) {
         req.club = club;
         req.clubAccess = {
           kind: 'future',
@@ -302,8 +370,8 @@ const resolveClubAccess = async (req, _res, next) => {
 
     // — Архивный клуб в календарном окне (следующий месяц) — МОЖНО ПИСАТЬ —
     // Дообсудить прошлый клуб весь следующий месяц (требование Анны 08.07).
-    // Доступ и активному, и недавно истёкшему (у кого был этот клуб). Free,
-    // кто никогда не платил, — не пускаем.
+    // Доступ любому, кто когда-либо был подписчиком (он этот клуб оплачивал).
+    // Free, кто никогда не платил, — не пускаем.
     if (isInArchiveWindow) {
       const everSubscribed =
         hasActiveSub ||
@@ -343,4 +411,7 @@ module.exports = {
   requireAdmin,
   resolveClubAccess,
   archiveWindowEnd,
+  planDurationMonths,
+  coveredClubMonthKeys,
+  clubMonthKey,
 };

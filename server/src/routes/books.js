@@ -8,7 +8,11 @@ const Book = require('../models/Book');
 const User = require('../models/User');
 const ClubMonth = require('../models/ClubMonth');
 const Package = require('../models/Package');
-const { archiveWindowEnd } = require('../middleware/subscription');
+const {
+  archiveWindowEnd,
+  coveredClubMonthKeys,
+  clubMonthKey,
+} = require('../middleware/subscription');
 const { generateSignedUrl } = require('../services/audio.service');
 
 const router = Router();
@@ -220,20 +224,23 @@ async function checkPartAccess(book, part, userPayload) {
  * Полный доступ юзера к платной книге (без учёта isFree и превью — их
  * проверяют вызывающие).
  *
- * МОДЕЛЬ ДОСТУПА (согласована 08.07.2026, КАЛЕНДАРНАЯ — та же что у клуба,
- * см. resolveClubAccess в middleware/subscription.js):
+ * МОДЕЛЬ ДОСТУПА (пересмотрена 30.07.2026 — ПРИВЯЗКА К ОПЛАЧЕННОМУ МЕСЯЦУ,
+ * та же что у клуба, см. resolveClubAccess в middleware/subscription.js):
  * 1. Книга куплена отдельно (purchasedBooks) → доступ.
- * 2. Админ (Анна) → доступ ко всему.
- * 3. Активная подписка (basic/premium, не истекла ЛИБО grace period)
- *    включает ровно ОДИН разбор — книгу клуба, и только пока её клуб в
- *    календарном окне: месяц клуба + весь СЛЕДУЮЩИЙ месяц (архив).
- *    Пример: подписчик в июле слушает июльский разбор; продлил на август —
- *    с 1 августа открывается августовский, и до 31 августа доступен ещё
- *    июльский (архив). Будущие клубы подписка НЕ открывает.
- * 4. Остальной каталог подписка НЕ открывает — только за отдельную плату.
+ * 2. Книга входит в купленный пакет (purchasedPackages) → доступ.
+ * 3. Админ (Анна) → доступ ко всему.
+ * 4. Активная подписка (basic/premium, не истекла ЛИБО grace period)
+ *    открывает книгу клуба, ТОЛЬКО если этот клуб входит в оплаченный набор
+ *    месяцев (coveredClubMonthKeys) и сейчас его месяц, ЛИБО клуб в архивном
+ *    окне (следующий месяц) — тогда бывший подписчик дослушивает прошлый клуб.
+ *    Пример: месячный подписчик слушает клуб своего оплаченного месяца; клуб
+ *    следующего месяца подписка НЕ открывает, пока не продлит (чтобы оплата
+ *    Apple с 5 числа не давала бесплатно клуб, стартовавший 1 числа).
+ *    Сезон оплачивает 3 клуба вперёд — все они в наборе.
+ * 5. Остальной каталог подписка НЕ открывает — только за отдельную плату.
  *
- * Окно считается через archiveWindowEnd — единая функция с логикой клуба,
- * чтобы доступ к аудио и доступ к чату клуба не расходились.
+ * Архивное окно считается через archiveWindowEnd — единая функция с логикой
+ * клуба, чтобы доступ к аудио и доступ к чату клуба не расходились.
  */
 async function userHasBookAccess(book, user) {
   // Куплена ли книга отдельно
@@ -266,15 +273,26 @@ async function userHasBookAccess(book, user) {
       isInGrace);
   if (!hasActiveSub) return false;
 
-  // Подписка открывает книгу только если она — книга клуба, чей клуб сейчас
-  // в календарном окне (текущий месяц клуба либо следующий месяц-архив).
+  // Оплаченный набор клубных месяцев текущего периода подписки.
+  const coveredKeys = coveredClubMonthKeys(
+    user.subscriptionExpiresAt,
+    user.subscriptionPlan
+  );
+
+  // Подписка открывает книгу, только если она — книга клуба, и либо этот клуб
+  // в оплаченном наборе и сейчас его месяц, либо клуб в архивном окне
+  // (следующий месяц) — дослушать прошлый оплаченный клуб.
   const clubs = await ClubMonth.find({ bookId: book._id })
-    .select('startsAt endsAt')
+    .select('startsAt endsAt month year')
     .lean();
 
-  return clubs.some(
-    (club) => club.startsAt <= now && now <= archiveWindowEnd(club.endsAt)
-  );
+  return clubs.some((club) => {
+    const isCurrent = club.startsAt <= now && now <= club.endsAt;
+    if (isCurrent) return coveredKeys.has(clubMonthKey(club));
+    const inArchive = club.endsAt < now && now <= archiveWindowEnd(club.endsAt);
+    if (inArchive) return true; // hasActiveSub уже проверен — был подписчиком
+    return false; // будущий клуб аудио не открывает (даже сезон — до старта месяца)
+  });
 }
 
 module.exports = router;
