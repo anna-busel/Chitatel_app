@@ -101,6 +101,8 @@ class _BookContent extends StatelessWidget {
                   hasAccess: book.hasAccess,
                   progressPercent: _progressPercent,
                 ),
+                const SizedBox(height: 20),
+                _DescriptionBlock(description: book.description),
                 const SizedBox(height: 24),
                 BookPartsList(
                   book: book,
@@ -108,8 +110,6 @@ class _BookContent extends StatelessWidget {
                   listenedPartNumbers: _listenedPartNumbers,
                   onPartTap: (part) => _onPartTap(context, part),
                 ),
-                const SizedBox(height: 28),
-                _DescriptionBlock(description: book.description),
                 const SizedBox(height: 28),
                 _ReviewsPlaceholder(),
                 const SizedBox(height: 16),
@@ -688,13 +688,11 @@ class _DescriptionBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (description.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('О разборе', style: AppTypography.sectionHeader),
-        const SizedBox(height: 10),
-        Text(description, style: AppTypography.body),
-      ],
+    // Описание под кнопкой действия, без заголовка «О разборе», тем же шрифтом
+    // что в пакете (bodyMedium, вторичный цвет) — единый вид разбора и пакета.
+    return Text(
+      description,
+      style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
     );
   }
 }
