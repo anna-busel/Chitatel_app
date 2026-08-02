@@ -44,6 +44,9 @@ class AppColors {
   static const Color purple = Color(0xFF7B61FF);
   static const Color gold = Color(0xFFFFB800);
 
+  // Бейдж «Бесплатно» — тёмно-зелёный (был AppColors.success #2D7F5E).
+  static const Color freeBadge = Color(0xFF355542);
+
   // ── Фоновые поверхности ──
   static const Color surfaceLight = Color(0xFFF5F3EF);
   static const Color surfaceMedium = Color(0xFFF0EDE8);

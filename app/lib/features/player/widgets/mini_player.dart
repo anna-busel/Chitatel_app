@@ -12,7 +12,10 @@ import '../providers/player_provider.dart';
 ///
 /// ⚠️ 21.07.2026 — СВЕТЛЫЙ ПОД БРЕНД (был кофейный): бежевая полоса,
 /// тонкий серый хайрлайн сверху (отделяет от контента), чёрный текст,
-/// винные прогресс и кнопка play (контур).
+/// винный прогресс и кнопка play.
+///
+/// ⚠️ Дизайн-правка — полоса выше (72px), прогресс 6px во всю ширину СНИЗУ,
+/// кнопка play — залитая винная с белой иконкой (был тонкий контур).
 ///
 /// ⚠️ 12.07.2026 — ПОЛОСУ СТАЛО ВОЗМОЖНО ЗАКРЫТЬ.
 /// СВАЙП ВНИЗ → позиция сохраняется на сервер → воспроизведение
@@ -25,13 +28,13 @@ import '../providers/player_provider.dart';
 class MiniPlayer extends ConsumerStatefulWidget {
   const MiniPlayer({super.key});
 
-  static const double height = 64;
+  static const double height = 72;
 
   /// Скругление верхних углов.
   static const double topRadius = 14;
 
   /// Толщина полоски прогресса.
-  static const double progressHeight = 2;
+  static const double progressHeight = 6;
 
   /// Ключ разовой подсказки про свайп.
   static const String hintPrefsKey = 'mini_player_swipe_hint_seen';
@@ -136,12 +139,9 @@ class _MiniPlayerBar extends ConsumerWidget {
                   children: [
                     Column(
                       children: [
-                        // Полоска прогресса части — тонкая, во всю ширину.
-                        _ProgressLine(progress: state.progress),
-
                         Expanded(
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(14, 6, 14, 8),
+                            padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
                             child: Row(
                               children: [
                                 // Миниатюра обложки
@@ -151,8 +151,8 @@ class _MiniPlayerBar extends ConsumerWidget {
                                     imageUrl: book.coverImageUrl,
                                     gradientColors: book.coverGradientColors,
                                     label: book.coverLabel,
-                                    width: 40,
-                                    height: 40,
+                                    width: 44,
+                                    height: 44,
                                     borderRadius: 8,
                                   ),
                                 ),
@@ -206,18 +206,20 @@ class _MiniPlayerBar extends ConsumerWidget {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                // Кнопка play/pause с винным контуром
+                                // Кнопка play/pause — залитая винная
                                 _PlayPauseButton(playing: state.playing),
                               ],
                             ),
                           ),
                         ),
+                        // Полоска прогресса части — во всю ширину, снизу.
+                        _ProgressLine(progress: state.progress),
                       ],
                     ),
 
                     // «Ручка» — намёк, что полосу можно потянуть вниз.
                     Positioned(
-                      top: MiniPlayer.progressHeight + 3,
+                      top: 6,
                       left: 0,
                       right: 0,
                       child: Center(
@@ -242,7 +244,7 @@ class _MiniPlayerBar extends ConsumerWidget {
   }
 }
 
-/// Полоска прогресса текущей части (2px). Винная на серой подложке.
+/// Полоска прогресса текущей части (6px, снизу). Винная на серой подложке.
 class _ProgressLine extends StatelessWidget {
   const _ProgressLine({required this.progress});
 
@@ -268,7 +270,7 @@ class _ProgressLine extends StatelessWidget {
   }
 }
 
-/// Круглая кнопка play/pause с винным контуром.
+/// Круглая кнопка play/pause — залитая винная с белой иконкой.
 class _PlayPauseButton extends ConsumerWidget {
   const _PlayPauseButton({required this.playing});
   final bool playing;
@@ -296,19 +298,16 @@ class _PlayPauseButton extends ConsumerWidget {
             },
             child: Center(
               child: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
+                width: 36,
+                height: 36,
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.terracotta,
-                    width: 1.5,
-                  ),
+                  color: AppColors.terracotta,
                 ),
                 child: Icon(
                   playing ? Icons.pause : Icons.play_arrow,
-                  size: 18,
-                  color: AppColors.terracotta,
+                  size: 20,
+                  color: Colors.white,
                 ),
               ),
             ),
