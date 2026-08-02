@@ -1,7 +1,9 @@
 const { Router } = require('express');
+const { optionalAuth } = require('../middleware/auth');
 const { success } = require('../utils/response');
 const { AppError } = require('../middleware/error');
 const Package = require('../models/Package');
+const User = require('../models/User');
 
 const router = Router();
 
@@ -24,9 +26,19 @@ router.get('/', async (_req, res, next) => {
 
 /**
  * GET /api/packages/:id
- * MASTER 7.4: детали пакета
+ * MASTER 7.4: детали пакета.
+ *
+ * optionalAuth: если юзер авторизован — в объект пакета добавляется
+ * ВЫЧИСЛЯЕМОЕ поле hasAccess (true = пакет куплен как Non-Consumable IAP ИЛИ
+ * админ). Клиент (package_screen) по нему прячет кнопку «Купить пакет» после
+ * покупки. Без авторизации hasAccess = false.
+ *
+ * Семантика намеренно простая: пакет — отдельный товар, поэтому доступ = факт
+ * покупки ИМЕННО пакета (user.purchasedPackages). Наличие всех входящих
+ * разборов по отдельности/подписке пакет «купленным» НЕ делает (доступ к самим
+ * разборам при этом всё равно открыт — это считает GET /books/:id.hasAccess).
  */
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', optionalAuth, async (req, res, next) => {
   try {
     const pkg = await Package.findOne({
       _id: req.params.id,
@@ -39,7 +51,21 @@ router.get('/:id', async (req, res, next) => {
       throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
     }
 
-    return success(res, { package: pkg });
+    let hasAccess = false;
+    if (req.user && req.user.userId) {
+      const user = await User.findById(req.user.userId)
+        .select('purchasedPackages role')
+        .lean();
+      if (user) {
+        hasAccess = user.role === 'admin' ||
+          (Array.isArray(user.purchasedPackages) &&
+            user.purchasedPackages.some(
+              (id) => id.toString() === pkg._id.toString()
+            ));
+      }
+    }
+
+    return success(res, { package: { ...pkg, hasAccess } });
   } catch (err) {
     return next(err);
   }
