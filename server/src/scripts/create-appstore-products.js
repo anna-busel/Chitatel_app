@@ -72,6 +72,12 @@ function trunc(s, n) {
   return s.length <= n ? s : s.slice(0, n - 1).trim() + '…';
 }
 
+// Apple не принимает переносы строк/управляющие символы в имени и описании
+// локализации. Схлопываем любые пробельные (вкл. \n, \t) в один пробел.
+function clean(s) {
+  return (s || '').replace(/\s+/g, ' ').trim();
+}
+
 // ── JWT для App Store Connect API ──
 function makeToken() {
   if (!ISSUER_ID || !KEY_ID || !P8_PATH) {
@@ -174,8 +180,8 @@ async function addLocalization(iapId, locale, name, description) {
         type: 'inAppPurchaseLocalizations',
         attributes: {
           locale,
-          name: trunc(name, LIM_DISP_NAME),
-          description: trunc(description, LIM_DESC),
+          name: trunc(clean(name), LIM_DISP_NAME),
+          description: trunc(clean(description), LIM_DESC),
         },
         relationships: {
           inAppPurchaseV2: { data: { type: 'inAppPurchases', id: iapId } },
