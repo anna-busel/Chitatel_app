@@ -1,7 +1,11 @@
 const logger = require('../config/logger');
 const Purchase = require('../models/Purchase');
 const User = require('../models/User');
-const { getVerifier, applyTransaction } = require('./purchase.service');
+const {
+  getVerifier,
+  applyTransaction,
+  userIdFromAppAccountToken,
+} = require('./purchase.service');
 
 /**
  * Обработка App Store Server Notifications V2 (задача 3.4).
@@ -14,13 +18,18 @@ const { getVerifier, applyTransaction } = require('./purchase.service');
  *   автопродление ДО restore; family sharing; ASK_TO_BUY) — уведомление молча
  *   терялось и подписка в нашей БД не продлевалась. Теперь клиент при покупке
  *   передаёт appAccountToken (UUID, детерминированно из userId — см.
- *   userIdFromAppAccountToken ниже), и webhook находит юзера по нему.
+ *   userIdFromAppAccountToken в purchase.service), и webhook находит юзера по
+ *   нему.
  * - B3: DID_FAIL_TO_RENEW → льготный период. Раньше тип игнорировался, и при
  *   неудачном списании (истёкшая карта, billing retry) подписчица теряла
  *   доступ мгновенно, хотя Apple ещё несколько дней пытается списать. Теперь
  *   из signedRenewalInfo берём gracePeriodExpiresDate и выставляем
  *   User.gracePeriodExpiresAt (его уже читают resolveClubAccess и
  *   checkClubAccess сокета). Оплата прошла / истекло окончательно — снимаем.
+ *
+ * userIdFromAppAccountToken перенесён в purchase.service (02.08.2026), чтобы
+ * его переиспользовал и verify (защита от привязки чужого чека). Здесь —
+ * ре-экспорт для обратной совместимости импортов.
  */
 
 // Типы, после которых доступ отзывается / истекает.
@@ -28,27 +37,6 @@ const REVOKE_TYPES = new Set(['REFUND', 'REVOKE']);
 const EXPIRE_TYPES = new Set(['EXPIRED', 'GRACE_PERIOD_EXPIRED']);
 // Типы «оплата прошла» — льготный период (если был) снимается.
 const RENEW_TYPES = new Set(['DID_RENEW', 'SUBSCRIBED']);
-
-/**
- * Обратное преобразование appAccountToken (UUID) → userId (Mongo ObjectId).
- *
- * Формат токена задаёт клиент (PurchaseService.appAccountTokenFromUserId):
- * ObjectId — это 24 hex-символа (12 байт), UUID требует 32 hex (16 байт).
- * Клиент дополняет ObjectId восемью нулями справа и форматирует как
- * канонический UUID 8-4-4-4-12. Здесь снимаем дефисы, проверяем нулевой
- * хвост (наш формат, не чужой случайный UUID) и возвращаем первые 24 hex.
- *
- * @param {string|undefined} token — tx.appAccountToken из декодированной транзакции
- * @returns {string|null} hex-строка ObjectId или null если формат не наш
- */
-function userIdFromAppAccountToken(token) {
-  if (typeof token !== 'string' || token.length === 0) return null;
-  const hex = token.replace(/-/g, '').toLowerCase();
-  if (!/^[0-9a-f]{32}$/.test(hex)) return null;
-  // Хвост должен быть нашим нулевым паддингом — иначе это не наш токен.
-  if (hex.slice(24) !== '00000000') return null;
-  return hex.slice(0, 24);
-}
 
 /**
  * Верифицирует и обрабатывает одно уведомление Apple.
