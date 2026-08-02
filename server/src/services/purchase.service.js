@@ -16,6 +16,8 @@ const Purchase = require('../models/Purchase');
  * applyTransaction — общая логика (upsert Purchase + обновление прав User),
  *   переиспользуется webhook-сервисом (S2S-уведомления Apple).
  * getVerifier — общий SignedDataVerifier (тоже нужен webhook-сервису).
+ * userIdFromAppAccountToken — обратное преобразование appAccountToken → userId
+ *   (нужно и verify, и webhook-сервису).
  *
  * Маппинг productId → право живёт в mapProduct() — единственное место, где
  * «знают» про конкретные тарифы. Смена состава тарифов меняет только его.
@@ -42,6 +44,32 @@ const SUBSCRIPTION_TIER_ENUM = ['basic', 'premium'];
 // 'season' добавлен фиксом B4 аудита 07.07.2026 (сезонный тариф 3 мес,
 // club.basic.season) — синхронно с enum в models/User.js.
 const SUBSCRIPTION_PLAN_ENUM = ['monthly', 'season', 'semiannual', 'annual'];
+
+/**
+ * Обратное преобразование appAccountToken (UUID) → userId (Mongo ObjectId).
+ *
+ * Формат токена задаёт клиент (PurchaseService.appAccountTokenFromUserId):
+ * ObjectId — это 24 hex-символа (12 байт), UUID требует 32 hex (16 байт).
+ * Клиент дополняет ObjectId восемью нулями справа и форматирует как
+ * канонический UUID 8-4-4-4-12. Здесь снимаем дефисы, проверяем нулевой
+ * хвост (наш формат, не чужой случайный UUID) и возвращаем первые 24 hex.
+ *
+ * Используется:
+ * - verifyPurchase — сверить, что чек принадлежит именно текущему юзеру;
+ * - webhook.service — найти юзера по S2S-уведомлению, когда записи Purchase нет.
+ *
+ * @param {string|undefined} token — tx.appAccountToken из декодированной транзакции
+ * @returns {string|null} hex-строка ObjectId (24 lowercase hex) или null, если
+ *   формат не наш
+ */
+function userIdFromAppAccountToken(token) {
+  if (typeof token !== 'string' || token.length === 0) return null;
+  const hex = token.replace(/-/g, '').toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(hex)) return null;
+  // Хвост должен быть нашим нулевым паддингом — иначе это не наш токен.
+  if (hex.slice(24) !== '00000000') return null;
+  return hex.slice(0, 24);
+}
 
 /**
  * productId → { itemType, tier?, period?, itemId }.
@@ -279,6 +307,25 @@ async function verifyPurchase({ userId, signedTransaction }) {
     throw new AppError('PURCHASE_INVALID', 'Не удалось проверить покупку', 400);
   }
 
+  // Защита от привязки чужого чека (02.08.2026, «вариант 2»). Клиент кладёт в
+  // транзакцию appAccountToken, детерминированно построенный из userId. Если
+  // токен есть и он НАШ, но указывает на другого юзера — значит кто-то подсунул
+  // чужой подписанный чек на свой аккаунт. Отклоняем. Токена нет / не наш формат
+  // (гостевые покупки старого формата) — пропускаем как раньше, привязка идёт по
+  // залогиненному userId из JWT.
+  const tokenUserId = userIdFromAppAccountToken(tx.appAccountToken);
+  if (tokenUserId && tokenUserId !== String(userId).toLowerCase()) {
+    logger.warn('Purchase verify: appAccountToken не совпадает с юзером', {
+      userId: String(userId),
+      originalTransactionId: tx.originalTransactionId || tx.transactionId,
+    });
+    throw new AppError(
+      'PURCHASE_INVALID',
+      'Покупка принадлежит другому аккаунту',
+      403
+    );
+  }
+
   const user = await applyTransaction({ userId, decodedTransaction: tx });
 
   return {
@@ -291,4 +338,10 @@ async function verifyPurchase({ userId, signedTransaction }) {
   };
 }
 
-module.exports = { verifyPurchase, applyTransaction, getVerifier, mapProduct };
+module.exports = {
+  verifyPurchase,
+  applyTransaction,
+  getVerifier,
+  mapProduct,
+  userIdFromAppAccountToken,
+};
