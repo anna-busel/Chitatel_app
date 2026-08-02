@@ -35,6 +35,18 @@ router.post('/verify', validate(verifySchema), async (req, res, next) => {
 });
 
 /**
+ * Обложка для карточки «Мои покупки» — минимальный набор полей, который
+ * рисует клиентский BookCoverImage (реальный ассет/сеть, иначе градиент+label).
+ */
+function coverOf(doc) {
+  return {
+    coverImageUrl: doc.coverImageUrl || '',
+    coverGradientColors: doc.coverGradientColors || [],
+    coverLabel: doc.coverLabel || '',
+  };
+}
+
+/**
  * GET /api/purchases/history
  * История покупок пользователя (экран «Мои покупки», 4.44, задача 6.2).
  *
@@ -42,10 +54,11 @@ router.post('/verify', validate(verifySchema), async (req, res, next) => {
  * сверху. Цену НЕ храним и не показываем: она живёт в App Store и зависит от
  * страны покупателя (правило проекта — цена только из StoreKit).
  *
- * Для разборов и пакетов резолвим itemId (slug) → конкретное название (title)
- * и targetId (_id книги/пакета), чтобы клиент показал реальное имя и дал
- * переход на экран разбора/пакета. Для subscription/archive title/targetId
- * = null (клиент подписывает их сам по типу).
+ * Для разборов и пакетов резолвим itemId (slug) → название (title), targetId
+ * (_id для перехода) + данные для оформления карточки:
+ *   - book: author + cover = обложка разбора;
+ *   - package: bookCount (всего разборов) + cover = СОБСТВЕННАЯ обложка пакета.
+ * Для subscription/archive title/cover пустые (клиент рисует эмблему).
  */
 router.get('/history', async (req, res, next) => {
   try {
@@ -64,12 +77,12 @@ router.get('/history', async (req, res, next) => {
     const [books, packages] = await Promise.all([
       bookSlugs.length
         ? Book.find({ bookSlug: { $in: bookSlugs } })
-            .select('_id bookSlug title')
+            .select('_id bookSlug title author coverImageUrl coverGradientColors coverLabel')
             .lean()
         : [],
       pkgSlugs.length
         ? Package.find({ packageSlug: { $in: pkgSlugs } })
-            .select('_id packageSlug title')
+            .select('_id packageSlug title coverImageUrl coverGradientColors coverLabel books')
             .lean()
         : [],
     ]);
@@ -80,20 +93,29 @@ router.get('/history', async (req, res, next) => {
     const enriched = purchases.map((p) => {
       let title = null;
       let targetId = null;
+      let author = null;
+      let bookCount = null;
+      let cover = null;
+
       if (p.itemType === 'book') {
         const b = bookBySlug.get(p.itemId);
         if (b) {
           title = b.title;
           targetId = String(b._id);
+          author = b.author || null;
+          cover = coverOf(b);
         }
       } else if (p.itemType === 'package') {
         const pkg = pkgBySlug.get(p.itemId);
         if (pkg) {
           title = pkg.title;
           targetId = String(pkg._id);
+          bookCount = Array.isArray(pkg.books) ? pkg.books.length : null;
+          cover = coverOf(pkg);
         }
       }
-      return { ...p, title, targetId };
+
+      return { ...p, title, targetId, author, bookCount, cover };
     });
 
     return success(res, { purchases: enriched });
