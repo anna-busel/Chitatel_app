@@ -8,17 +8,47 @@ const User = require('../models/User');
 const router = Router();
 
 /**
- * GET /api/packages
- * MASTER 7.4: список пакетов
+ * Набор id купленных пакетов (строками) для текущего юзера, ЛИБО 'admin'
+ * (полный доступ), ЛИБО null (гость / не найден). Один запрос User на весь
+ * список — не дёргаем БД на каждый пакет.
  */
-router.get('/', async (_req, res, next) => {
+async function ownedPackagesFor(req) {
+  if (!req.user || !req.user.userId) return null;
+  const user = await User.findById(req.user.userId)
+    .select('purchasedPackages role')
+    .lean();
+  if (!user) return null;
+  if (user.role === 'admin') return 'admin';
+  return new Set((user.purchasedPackages || []).map((id) => id.toString()));
+}
+
+function computeHasAccess(owned, pkgId) {
+  if (owned === 'admin') return true;
+  if (owned instanceof Set) return owned.has(pkgId.toString());
+  return false;
+}
+
+/**
+ * GET /api/packages
+ * MASTER 7.4: список пакетов.
+ *
+ * optionalAuth: авторизованному добавляем вычисляемое hasAccess по каждому
+ * пакету (куплен / админ) — каталог показывает «Куплено» вместо цены.
+ */
+router.get('/', optionalAuth, async (req, res, next) => {
   try {
     const packages = await Package.find({ isPublished: true })
       .populate('books', 'title author coverImageUrl coverGradientColors coverLabel durationTotal rating reviewCount')
       .sort({ createdAt: -1 })
       .lean();
 
-    return success(res, { packages });
+    const owned = await ownedPackagesFor(req);
+    const withAccess = packages.map((p) => ({
+      ...p,
+      hasAccess: computeHasAccess(owned, p._id),
+    }));
+
+    return success(res, { packages: withAccess });
   } catch (err) {
     return next(err);
   }
@@ -51,19 +81,8 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
       throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
     }
 
-    let hasAccess = false;
-    if (req.user && req.user.userId) {
-      const user = await User.findById(req.user.userId)
-        .select('purchasedPackages role')
-        .lean();
-      if (user) {
-        hasAccess = user.role === 'admin' ||
-          (Array.isArray(user.purchasedPackages) &&
-            user.purchasedPackages.some(
-              (id) => id.toString() === pkg._id.toString()
-            ));
-      }
-    }
+    const owned = await ownedPackagesFor(req);
+    const hasAccess = computeHasAccess(owned, pkg._id);
 
     return success(res, { package: { ...pkg, hasAccess } });
   } catch (err) {
