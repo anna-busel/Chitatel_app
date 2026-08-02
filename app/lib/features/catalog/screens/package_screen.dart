@@ -10,14 +10,18 @@ import '../../../shared/models/package_model.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
+import '../../book/providers/book_provider.dart';
+import '../../payments/providers/product_purchase_provider.dart';
+import '../../profile/providers/profile_provider.dart';
 import '../providers/packages_provider.dart';
 import '../widgets/package_card.dart';
 
 /// Экран пакета разборов (MASTER 3.9).
 ///
 /// Показывает обложку, название, описание, цену, кнопку «Купить пакет»
-/// (плейсхолдер — реальная StoreKit-покупка в задаче 3.2, как у разборов) и
-/// список входящих разборов (тап → экран книги).
+/// (StoreKit 2 покупка через productPurchaseProvider, как у разборов) и
+/// список входящих разборов (тап → экран книги). После покупки пакет
+/// открывает входящие разборы (сервер: purchasedPackages → userHasBookAccess).
 class PackageScreen extends ConsumerWidget {
   const PackageScreen({super.key, required this.packageId});
 
@@ -49,15 +53,54 @@ class PackageScreen extends ConsumerWidget {
   }
 }
 
-class _PackageBody extends StatelessWidget {
+class _PackageBody extends ConsumerWidget {
   const _PackageBody({required this.package});
 
   final PackageModel package;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final price = package.displayPriceUsd;
     final buyText = price != null ? 'Купить пакет за $price' : 'Купить пакет';
+    final productId = package.appleProductId;
+
+    // Реакция на результат покупки ИМЕННО этого пакета (провайдер общий на все
+    // товары, поэтому сверяем productId).
+    ref.listen<ProductPurchaseState>(productPurchaseProvider, (prev, next) {
+      if (productId == null || next.productId != productId) return;
+      if (next.status == ProductPurchaseStatus.success) {
+        ref.read(productPurchaseProvider.notifier).reset();
+        // Пакет открывает входящие разборы (сервер: purchasedPackages →
+        // userHasBookAccess). Обновляем детали пакета, историю покупок и
+        // провайдеры входящих разборов, чтобы доступ подхватился сразу.
+        ref.invalidate(packageDetailProvider(package.id));
+        ref.invalidate(purchaseHistoryProvider);
+        for (final book in package.books) {
+          ref.invalidate(bookProvider(book.id));
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Пакет открыт — разборы доступны'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      } else if (next.status == ProductPurchaseStatus.error) {
+        final message = next.errorMessage ?? 'Покупка не завершена';
+        ref.read(productPurchaseProvider.notifier).reset();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    });
+
+    final purchase = ref.watch(productPurchaseProvider);
+    final isBuying = productId != null &&
+        purchase.productId == productId &&
+        (purchase.status == ProductPurchaseStatus.purchasing ||
+            purchase.status == ProductPurchaseStatus.verifying);
 
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.screenPadding),
@@ -79,7 +122,13 @@ class _PackageBody extends StatelessWidget {
           style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
         ),
         const SizedBox(height: 16),
-        AppButton(text: buyText, onPressed: () => _onBuyPressed(context)),
+        AppButton(
+          text: buyText,
+          onPressed: productId != null
+              ? () => ref.read(productPurchaseProvider.notifier).buy(productId)
+              : null,
+          isLoading: isBuying,
+        ),
         const SizedBox(height: 20),
         if (package.description.isNotEmpty) ...[
           Text(
@@ -94,16 +143,6 @@ class _PackageBody extends StatelessWidget {
         const SizedBox(height: 8),
         ...package.books.map((b) => _PackageBookRow(book: b)),
       ],
-    );
-  }
-
-  // TODO задача 3.2: покупка пакета через StoreKit (после создания IAP-продуктов в ASC).
-  void _onBuyPressed(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Покупка через Apple появится в Фазе 3'),
-        duration: Duration(seconds: 2),
-      ),
     );
   }
 }
