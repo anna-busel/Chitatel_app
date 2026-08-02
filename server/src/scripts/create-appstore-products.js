@@ -150,27 +150,42 @@ async function createIap(appId, { productId, refName }) {
 }
 
 async function existingLocales(iapId) {
-  const r = await api(
-    'GET',
-    `/v1/inAppPurchases/${iapId}/inAppPurchaseLocalizations?limit=50`
-  );
-  return new Set((r.data || []).map((d) => d.attributes.locale));
+  // Читаем через include на v2-ресурсе — прямой to-many путь у Apple не отдаётся.
+  try {
+    const r = await api(
+      'GET',
+      `/v2/inAppPurchases/${iapId}?include=inAppPurchaseLocalizations`
+    );
+    const inc = r.included || [];
+    return new Set(
+      inc
+        .filter((x) => x.type === 'inAppPurchaseLocalizations')
+        .map((x) => x.attributes.locale)
+    );
+  } catch (_e) {
+    return new Set();
+  }
 }
 
 async function addLocalization(iapId, locale, name, description) {
-  await api('POST', '/v1/inAppPurchaseLocalizations', {
-    data: {
-      type: 'inAppPurchaseLocalizations',
-      attributes: {
-        locale,
-        name: trunc(name, LIM_DISP_NAME),
-        description: trunc(description, LIM_DESC),
+  try {
+    await api('POST', '/v1/inAppPurchaseLocalizations', {
+      data: {
+        type: 'inAppPurchaseLocalizations',
+        attributes: {
+          locale,
+          name: trunc(name, LIM_DISP_NAME),
+          description: trunc(description, LIM_DESC),
+        },
+        relationships: {
+          inAppPurchaseV2: { data: { type: 'inAppPurchases', id: iapId } },
+        },
       },
-      relationships: {
-        inAppPurchaseV2: { data: { type: 'inAppPurchases', id: iapId } },
-      },
-    },
-  });
+    });
+    console.log(`      локализация ${locale}`);
+  } catch (e) {
+    console.log(`      локализация ${locale}: пропущена (${e.message.slice(0, 120)})`);
+  }
 }
 
 // Найти price point в базовой витрине, совпадающий с ценой USD.
@@ -252,33 +267,36 @@ async function processItem(appId, item) {
 
   const iapId = iap.id;
 
-  // Локализации (добавляем недостающие).
+  // Локализации (добавляем недостающие). Каждая — устойчиво, не роняет прогон.
   if (!DRY_RUN) {
     const have = await existingLocales(iapId);
     for (const loc of LOCALES) {
       if (!have.has(loc)) {
         await addLocalization(iapId, loc, title, description);
-        console.log(`      локализация ${loc}`);
       }
     }
   }
 
-  // Цена.
-  const needPrice = FORCE_PRICE || !(await hasPriceSchedule(iapId));
-  if (needPrice) {
-    if (DRY_RUN) {
-      console.log(`      [dry] цена $${priceUsd}`);
-    } else {
-      const pp = await findPricePointId(iapId, priceUsd);
-      if (!pp) {
-        console.log(
-          `      ! price point для $${priceUsd} не найден (${productId}) — задать вручную`
-        );
+  // Цена. Весь блок в защите — ошибка цены не роняет продукт.
+  try {
+    const needPrice = FORCE_PRICE || !(await hasPriceSchedule(iapId));
+    if (needPrice) {
+      if (DRY_RUN) {
+        console.log(`      [dry] цена $${priceUsd}`);
       } else {
-        await setPrice(iapId, pp);
-        console.log(`      цена $${priceUsd} (base ${BASE_TERRITORY} → все регионы)`);
+        const pp = await findPricePointId(iapId, priceUsd);
+        if (!pp) {
+          console.log(
+            `      ! price point для $${priceUsd} не найден (${productId}) — задать вручную`
+          );
+        } else {
+          await setPrice(iapId, pp);
+          console.log(`      цена $${priceUsd} (base ${BASE_TERRITORY} → все регионы)`);
+        }
       }
     }
+  } catch (e) {
+    console.log(`      ! цена $${priceUsd}: ошибка — ${e.message.slice(0, 120)}`);
   }
 
   return { created: wasCreated };
@@ -361,26 +379,34 @@ async function main() {
 
   console.log('РАЗБОРЫ:');
   for (const b of books) {
-    const r = await processItem(appId, {
-      productId: b.appleProductId,
-      refName: `Разбор: ${b.title}`,
-      title: b.title,
-      description: b.description || b.title,
-      priceUsd: b.priceUsd,
-    });
-    if (r.created) created += 1;
+    try {
+      const r = await processItem(appId, {
+        productId: b.appleProductId,
+        refName: `Разбор: ${b.title}`,
+        title: b.title,
+        description: b.description || b.title,
+        priceUsd: b.priceUsd,
+      });
+      if (r.created) created += 1;
+    } catch (e) {
+      console.log(`  ОШИБКА ${b.appleProductId}: ${e.message.slice(0, 150)}`);
+    }
   }
 
   console.log('\nПАКЕТЫ:');
   for (const p of packages) {
-    const r = await processItem(appId, {
-      productId: p.appleProductId,
-      refName: `Пакет: ${p.title}`,
-      title: p.title,
-      description: p.description || p.title,
-      priceUsd: p.priceUsd,
-    });
-    if (r.created) created += 1;
+    try {
+      const r = await processItem(appId, {
+        productId: p.appleProductId,
+        refName: `Пакет: ${p.title}`,
+        title: p.title,
+        description: p.description || p.title,
+        priceUsd: p.priceUsd,
+      });
+      if (r.created) created += 1;
+    } catch (e) {
+      console.log(`  ОШИБКА ${p.appleProductId}: ${e.message.slice(0, 150)}`);
+    }
   }
 
   console.log(`\n=== Готово. Новых продуктов: ${created} ===`);
