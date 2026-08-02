@@ -5,15 +5,18 @@ import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
+import '../../catalog/widgets/package_card.dart' show razborWord;
 import '../providers/profile_provider.dart';
 import '../services/profile_service.dart';
 
 /// «Мои покупки» (экран 4.44, задача 6.2).
 ///
-/// Показываем подписки и разовые покупки, новые сверху. Цену НЕ показываем:
-/// она живёт в App Store и зависит от страны покупателя (правило проекта —
-/// цена только из StoreKit, никогда из нашей базы).
+/// Две секции: «Подписка» (клуб) и «Разборы и пакеты» (разовые покупки).
+/// У разовых покупок — обложка (реальная, из каталога), название и подпись
+/// (автор / число разборов + дата). Цену НЕ показываем: она живёт в App Store
+/// и зависит от страны (правило проекта — цена только из StoreKit).
 class MyPurchasesScreen extends ConsumerWidget {
   const MyPurchasesScreen({super.key});
 
@@ -45,14 +48,36 @@ class MyPurchasesScreen extends ConsumerWidget {
             onRetry: () => ref.invalidate(purchaseHistoryProvider),
           ),
           data: (purchases) {
-            if (purchases.isEmpty) return const _Empty();
+            final subs = purchases
+                .where((p) => p.itemType == 'subscription')
+                .toList(growable: false);
+            final items = purchases
+                .where((p) => p.itemType != 'subscription')
+                .toList(growable: false);
+
+            if (subs.isEmpty && items.isEmpty) return const _Empty();
+
             return RefreshIndicator(
               color: AppColors.terracotta,
               onRefresh: () async => ref.invalidate(purchaseHistoryProvider),
-              child: ListView.builder(
-                padding: const EdgeInsets.all(AppSpacing.screenPadding),
-                itemCount: purchases.length,
-                itemBuilder: (_, i) => _PurchaseCard(item: purchases[i]),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screenPadding,
+                  4,
+                  AppSpacing.screenPadding,
+                  24,
+                ),
+                children: [
+                  if (subs.isNotEmpty) ...[
+                    const _SectionLabel('Подписка'),
+                    ...subs.map((s) => _SubscriptionCard(item: s)),
+                  ],
+                  if (items.isNotEmpty) ...[
+                    if (subs.isNotEmpty) const SizedBox(height: 8),
+                    const _SectionLabel('Разборы и пакеты'),
+                    ...items.map((i) => _ItemCard(item: i)),
+                  ],
+                ],
               ),
             );
           },
@@ -62,67 +87,99 @@ class MyPurchasesScreen extends ConsumerWidget {
   }
 }
 
-class _PurchaseCard extends StatelessWidget {
-  const _PurchaseCard({required this.item});
+// ─────────────────────────── SECTION LABEL ───────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 16, 4, 10),
+      child: Text(
+        text.toUpperCase(),
+        style: AppTypography.caption.copyWith(
+          color: AppColors.textSecondary,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────── SUBSCRIPTION CARD ───────────────────────────
+
+class _SubscriptionCard extends StatelessWidget {
+  const _SubscriptionCard({required this.item});
   final PurchaseItem item;
 
-  String get _title {
-    // Сервер отдаёт конкретное название разбора/пакета — показываем его.
-    final t = item.title;
-    if (t != null && t.isNotEmpty) return t;
-    switch (item.itemType) {
-      case 'subscription':
-        return item.appleProductId.endsWith('season')
-            ? 'Сезонная подписка на клуб'
-            : 'Месячная подписка на клуб';
-      case 'book':
-        return 'Аудиоразбор';
-      case 'package':
-        return 'Пакет разборов';
-      case 'archive':
-        return 'Доступ к архиву';
-      default:
-        return 'Покупка';
-    }
-  }
+  String get _title => item.appleProductId.endsWith('season')
+      ? 'Сезонная подписка на клуб'
+      : 'Месячная подписка на клуб';
 
-  String get _statusLabel {
-    switch (item.status) {
-      case 'active':
-        return 'Активна';
-      case 'expired':
-        return 'Истекла';
-      case 'refunded':
-        return 'Возврат';
-      case 'cancelled':
-        return 'Отменена';
-      default:
-        return item.status;
-    }
-  }
+  @override
+  Widget build(BuildContext context) {
+    final expires = item.expiresAt;
+    final meta = expires != null
+        ? 'Действует до ${_fmtDate(expires)}'
+        : 'Оформлено ${_fmtDate(item.purchasedAt)}';
 
-  Color get _statusColor {
-    switch (item.status) {
-      case 'active':
-        return AppColors.success;
-      case 'refunded':
-      case 'cancelled':
-        return AppColors.error;
-      default:
-        return AppColors.textTertiary;
-    }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+        border: Border.all(color: AppColors.beigeDeep),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: AppColors.terracotta,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.workspace_premium_outlined,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _title,
+                  style: AppTypography.bodyMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                Text(meta, style: AppTypography.caption),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _StatusTag(status: item.status),
+        ],
+      ),
+    );
   }
+}
 
-  String _fmt(DateTime? dt) {
-    if (dt == null) return '—';
-    final l = dt.toLocal();
-    final dd = l.day.toString().padLeft(2, '0');
-    final mm = l.month.toString().padLeft(2, '0');
-    return '$dd.$mm.${l.year}';
-  }
+// ─────────────────────────── ITEM CARD (book / package) ───────────────────────────
 
-  /// Маршрут на экран разбора/пакета, если покупка кликабельна.
-  /// У подписок/архива targetId == null — карточка не кликабельна.
+class _ItemCard extends StatelessWidget {
+  const _ItemCard({required this.item});
+  final PurchaseItem item;
+
   String? get _route {
     final id = item.targetId;
     if (id == null) return null;
@@ -131,57 +188,68 @@ class _PurchaseCard extends StatelessWidget {
     return null;
   }
 
+  String get _meta {
+    final date = _fmtDate(item.purchasedAt);
+    if (item.itemType == 'package') {
+      final n = item.bookCount ?? 0;
+      return n > 0 ? '$n ${razborWord(n)} · оформлено $date' : 'оформлено $date';
+    }
+    // book
+    final author = item.author;
+    return author != null
+        ? '$author · оформлено $date'
+        : 'оформлено $date';
+  }
+
   @override
   Widget build(BuildContext context) {
     final route = _route;
+    final showTag = item.status != 'active';
 
     final inner = Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.beigeDeep),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(_title, style: AppTypography.bodyMedium),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceMedium,
-                  borderRadius: BorderRadius.circular(10),
+          _CoverThumb(cover: item.cover),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  item.title ?? 'Покупка',
+                  style: AppTypography.bodyMedium,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                child: Text(
-                  _statusLabel,
-                  style: AppTypography.micro.copyWith(
-                    color: _statusColor,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              if (route != null) ...[
-                const SizedBox(width: 4),
-                const Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: AppColors.textTertiary,
+                const SizedBox(height: 3),
+                Text(
+                  _meta,
+                  style: AppTypography.caption,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
-            ],
+            ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Оформлено: ${_fmt(item.purchasedAt)}'
-            '${item.expiresAt != null ? ' · действует до ${_fmt(item.expiresAt)}' : ''}',
-            style: AppTypography.caption,
-          ),
+          if (showTag) ...[
+            const SizedBox(width: 8),
+            _StatusTag(status: item.status),
+          ],
+          if (route != null) ...[
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: AppColors.textTertiary,
+            ),
+          ],
         ],
       ),
     );
@@ -202,6 +270,96 @@ class _PurchaseCard extends StatelessWidget {
     );
   }
 }
+
+/// Обложка покупки 48×68. Реальный ассет/сеть через BookCoverImage, иначе
+/// градиент + label (тот же фоллбек, что в каталоге). Нет обложки (подписка не
+/// сюда попадает, но на всякий) — нейтральная плашка с иконкой.
+class _CoverThumb extends StatelessWidget {
+  const _CoverThumb({required this.cover});
+  final PurchaseCover? cover;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = cover;
+    if (c == null) {
+      return Container(
+        width: 48,
+        height: 68,
+        decoration: BoxDecoration(
+          color: AppColors.surfaceMedium,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.receipt_long_outlined,
+          color: AppColors.textTertiary,
+          size: 22,
+        ),
+      );
+    }
+    return BookCoverImage(
+      imageUrl: c.coverImageUrl,
+      gradientColors: c.coverGradientColors,
+      label: c.coverLabel,
+      width: 48,
+      height: 68,
+      borderRadius: 8,
+    );
+  }
+}
+
+// ─────────────────────────── STATUS TAG ───────────────────────────
+
+class _StatusTag extends StatelessWidget {
+  const _StatusTag({required this.status});
+  final String status;
+
+  String get _label {
+    switch (status) {
+      case 'active':
+        return 'Активна';
+      case 'expired':
+        return 'Истекла';
+      case 'refunded':
+        return 'Возврат';
+      case 'cancelled':
+        return 'Отменена';
+      default:
+        return status;
+    }
+  }
+
+  Color get _color {
+    switch (status) {
+      case 'active':
+        return AppColors.success;
+      case 'refunded':
+      case 'cancelled':
+        return AppColors.error;
+      default:
+        return AppColors.textTertiary;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceMedium,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        _label,
+        style: AppTypography.micro.copyWith(
+          color: _color,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────── EMPTY ───────────────────────────
 
 class _Empty extends StatelessWidget {
   const _Empty();
@@ -237,4 +395,13 @@ class _Empty extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Дата для UI — «дд.мм.гггг» в локальном времени.
+String _fmtDate(DateTime? dt) {
+  if (dt == null) return '—';
+  final l = dt.toLocal();
+  final dd = l.day.toString().padLeft(2, '0');
+  final mm = l.month.toString().padLeft(2, '0');
+  return '$dd.$mm.${l.year}';
 }

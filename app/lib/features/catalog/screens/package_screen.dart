@@ -42,6 +42,7 @@ class PackageScreen extends ConsumerWidget {
         title: Text('Пакет', style: AppTypography.serifSectionTitle),
       ),
       body: async.when(
+        skipLoadingOnReload: true,
         loading: () => const Center(
           child: CircularProgressIndicator(color: AppColors.terracotta),
         ),
@@ -125,13 +126,11 @@ class _PackageBody extends ConsumerWidget {
           style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
         ),
         const SizedBox(height: 16),
-        // Куплен → подпись вместо кнопки (у пакета нет действия «слушать» —
-        // разборы слушаются со своих экранов, они уже разблокированы).
+        // Куплен → тёмно-зелёная «кнопка» «Куплено» на месте «Купить пакет»
+        // (не нажимается — разборы слушаются со своих экранов, они уже
+        // разблокированы). Иначе — кнопка покупки.
         if (package.hasAccess)
-          Text(
-            'У вас есть доступ к пакету',
-            style: AppTypography.caption.copyWith(color: AppColors.success),
-          )
+          const _BoughtButton()
         else
           AppButton(
             text: buyText,
@@ -154,6 +153,38 @@ class _PackageBody extends ConsumerWidget {
         const SizedBox(height: 8),
         ...package.books.map((b) => _PackageBookRow(book: b)),
       ],
+    );
+  }
+}
+
+/// Тёмно-зелёная «кнопка» статуса «Куплено» — той же формы/размера, что
+/// AppButton, но не интерактивная. Показывается на месте «Купить пакет» сразу
+/// после покупки (package.hasAccess).
+class _BoughtButton extends StatelessWidget {
+  const _BoughtButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.freeBadge,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.check_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'Куплено',
+              style: AppTypography.button.copyWith(color: Colors.white),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
