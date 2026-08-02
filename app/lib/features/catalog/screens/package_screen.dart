@@ -21,7 +21,9 @@ import '../widgets/package_card.dart';
 /// Показывает обложку, название, описание, цену, кнопку «Купить пакет»
 /// (StoreKit 2 покупка через productPurchaseProvider, как у разборов) и
 /// список входящих разборов (тап → экран книги). После покупки пакет
-/// открывает входящие разборы (сервер: purchasedPackages → userHasBookAccess).
+/// открывает входящие разборы (сервер: purchasedPackages → userHasBookAccess),
+/// а кнопка «Купить пакет» заменяется подписью «У вас есть доступ» (сервер
+/// отдаёт package.hasAccess в GET /packages/:id).
 class PackageScreen extends ConsumerWidget {
   const PackageScreen({super.key, required this.packageId});
 
@@ -71,8 +73,9 @@ class _PackageBody extends ConsumerWidget {
       if (next.status == ProductPurchaseStatus.success) {
         ref.read(productPurchaseProvider.notifier).reset();
         // Пакет открывает входящие разборы (сервер: purchasedPackages →
-        // userHasBookAccess). Обновляем детали пакета, историю покупок и
-        // провайдеры входящих разборов, чтобы доступ подхватился сразу.
+        // userHasBookAccess). Обновляем детали пакета (package.hasAccess → true,
+        // кнопка сменится подписью), историю покупок и провайдеры входящих
+        // разборов, чтобы доступ подхватился сразу.
         ref.invalidate(packageDetailProvider(package.id));
         ref.invalidate(purchaseHistoryProvider);
         for (final book in package.books) {
@@ -122,13 +125,21 @@ class _PackageBody extends ConsumerWidget {
           style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
         ),
         const SizedBox(height: 16),
-        AppButton(
-          text: buyText,
-          onPressed: productId != null
-              ? () => ref.read(productPurchaseProvider.notifier).buy(productId)
-              : null,
-          isLoading: isBuying,
-        ),
+        // Куплен → подпись вместо кнопки (у пакета нет действия «слушать» —
+        // разборы слушаются со своих экранов, они уже разблокированы).
+        if (package.hasAccess)
+          Text(
+            'У вас есть доступ к пакету',
+            style: AppTypography.caption.copyWith(color: AppColors.success),
+          )
+        else
+          AppButton(
+            text: buyText,
+            onPressed: productId != null
+                ? () => ref.read(productPurchaseProvider.notifier).buy(productId)
+                : null,
+            isLoading: isBuying,
+          ),
         const SizedBox(height: 20),
         if (package.description.isNotEmpty) ...[
           Text(
