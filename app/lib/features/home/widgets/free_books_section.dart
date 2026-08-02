@@ -78,7 +78,7 @@ class _FreeBookCard extends StatelessWidget {
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.success,
+                      color: AppColors.freeBadge,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: const Text(
