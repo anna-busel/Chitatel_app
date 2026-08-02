@@ -143,6 +143,33 @@ class ProgressItem {
   }
 }
 
+/// Обложка для карточки покупки (реальный ассет/сеть, иначе градиент + label).
+/// Соответствует объекту `cover` из GET /api/purchases/history.
+class PurchaseCover {
+  const PurchaseCover({
+    this.coverImageUrl = '',
+    this.coverGradientColors = const ['#1A0E08', '#3A2018'],
+    this.coverLabel = '',
+  });
+
+  final String coverImageUrl;
+  final List<String> coverGradientColors;
+  final String coverLabel;
+
+  factory PurchaseCover.fromJson(Map<String, dynamic> j) {
+    final raw = j['coverGradientColors'];
+    final gradient = raw is List
+        ? raw.map((e) => e.toString()).toList(growable: false)
+        : const ['#1A0E08', '#3A2018'];
+    return PurchaseCover(
+      coverImageUrl: (j['coverImageUrl'] ?? '').toString(),
+      coverGradientColors:
+          gradient.isNotEmpty ? gradient : const ['#1A0E08', '#3A2018'],
+      coverLabel: (j['coverLabel'] ?? '').toString(),
+    );
+  }
+}
+
 /// Одна покупка (экран «Мои покупки», 4.44).
 /// Цену не показываем: она живёт в App Store и зависит от страны.
 class PurchaseItem {
@@ -152,6 +179,9 @@ class PurchaseItem {
     required this.status,
     this.title,
     this.targetId,
+    this.author,
+    this.bookCount,
+    this.cover,
     this.purchasedAt,
     this.expiresAt,
   });
@@ -170,6 +200,16 @@ class PurchaseItem {
   /// _id разбора/пакета для перехода на его экран. null у подписок/архива.
   final String? targetId;
 
+  /// Автор разбора (только book). null у пакета/подписки/архива.
+  final String? author;
+
+  /// Число разборов в пакете (только package). null у прочих.
+  final int? bookCount;
+
+  /// Обложка: у book — обложка разбора, у package — собственная обложка пакета.
+  /// null у подписки/архива (клиент рисует эмблему).
+  final PurchaseCover? cover;
+
   final DateTime? purchasedAt;
   final DateTime? expiresAt;
 
@@ -184,12 +224,18 @@ class PurchaseItem {
       return (s != null && s.isNotEmpty) ? s : null;
     }
 
+    final rawCover = j['cover'];
     return PurchaseItem(
       itemType: (j['itemType'] ?? '').toString(),
       appleProductId: (j['appleProductId'] ?? '').toString(),
       status: (j['status'] ?? '').toString(),
       title: nonEmpty(j['title']),
       targetId: nonEmpty(j['targetId']),
+      author: nonEmpty(j['author']),
+      bookCount: (j['bookCount'] as num?)?.toInt(),
+      cover: rawCover is Map<String, dynamic>
+          ? PurchaseCover.fromJson(rawCover)
+          : null,
       purchasedAt: parseDate(j['purchasedAt']),
       expiresAt: parseDate(j['expiresAt']),
     );
