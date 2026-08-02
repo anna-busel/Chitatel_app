@@ -10,7 +10,8 @@ import '../../../shared/widgets/book_cover_image.dart';
 /// Карточка книги в сетке каталога.
 /// Тап → экран книги (Routes.book).
 ///
-/// Структура: обложка (соотношение 2:3) + название + автор + цена/бейдж.
+/// Структура: обложка (соотношение 2:3) + название + автор + статус/цена.
+/// Нижняя строка: «Бесплатно» / «Куплено» (тёмно-зелёный) либо цена (винный).
 /// Без рейтинга и длительности — этих данных в БД пока нет.
 class BookGridCard extends StatelessWidget {
   const BookGridCard({
@@ -26,6 +27,8 @@ class BookGridCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final coverHeight = coverWidth * 1.5; // соотношение 2:3
     final price = book.displayPriceUsd;
+    // «Куплено» показываем только для платных купленных (у бесплатных свой бейдж).
+    final showBought = !book.isFree && book.isOwned;
 
     return InkWell(
       onTap: () => context.push(Routes.book(book.id)),
@@ -53,7 +56,7 @@ class BookGridCard extends StatelessWidget {
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.success,
+                      color: AppColors.freeBadge,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: const Text(
@@ -83,7 +86,14 @@ class BookGridCard extends StatelessWidget {
             Text(
               'Бесплатно',
               style: AppTypography.bodyBold.copyWith(
-                color: AppColors.success,
+                color: AppColors.freeBadge,
+              ),
+            )
+          else if (showBought)
+            Text(
+              'Куплено',
+              style: AppTypography.bodyBold.copyWith(
+                color: AppColors.freeBadge,
               ),
             )
           else if (price != null)
