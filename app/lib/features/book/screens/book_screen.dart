@@ -52,6 +52,7 @@ class BookScreen extends ConsumerWidget {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: bookAsync.when(
+          skipLoadingOnReload: true,
           data: (book) => _BookContent(book: book),
           loading: () => const _BookShimmer(),
           error: (err, _) => Center(
