@@ -14,14 +14,53 @@ const { generateSignedUrl } = require('../services/audio.service');
 const router = Router();
 
 /**
+ * Множество _id разборов (строками), которые юзер УЖЕ КУПИЛ — по отдельности
+ * (purchasedBooks) ИЛИ в составе купленного пакета (purchasedPackages). Нужно
+ * каталогу/поиску, чтобы на карточке показать «Куплено» вместо цены.
+ *
+ * ВАЖНО: это «куплено», а НЕ полный доступ. Клуб-подписка сюда НЕ входит
+ * (доступ по подписке — не покупка). Полный доступ к разбору (вкл. подписку и
+ * пакет) по-прежнему считает userHasBookAccess в GET /books/:id.
+ *
+ * Один запрос User + (если есть пакеты) один Package.find на весь список.
+ */
+async function ownedBookIdsFor(req) {
+  if (!req.user || !req.user.userId) return new Set();
+  const user = await User.findById(req.user.userId)
+    .select('purchasedBooks purchasedPackages')
+    .lean();
+  if (!user) return new Set();
+
+  const ids = new Set((user.purchasedBooks || []).map((id) => id.toString()));
+
+  if (Array.isArray(user.purchasedPackages) && user.purchasedPackages.length) {
+    const pkgs = await Package.find({ _id: { $in: user.purchasedPackages } })
+      .select('books')
+      .lean();
+    pkgs.forEach((p) =>
+      (p.books || []).forEach((b) => ids.add(b.toString()))
+    );
+  }
+  return ids;
+}
+
+/** Добавляет вычисляемое isOwned каждой книге по множеству купленных id. */
+function markOwned(books, ownedIds) {
+  return books.map((b) => ({ ...b, isOwned: ownedIds.has(b._id.toString()) }));
+}
+
+/**
  * GET /api/books
  * MASTER 7.4: список всех книг (с пагинацией, фильтрами)
  * Query: ?category=&isFree=&page=&limit=
  *
+ * optionalAuth: авторизованному добавляем isOwned по каждому разбору (куплен
+ * отдельно / в пакете) — каталог показывает «Куплено» вместо цены.
+ *
  * Примечание: ?category=КРИЗИСЫ матчится против массива Book.categories
  * (одна книга может быть в нескольких категориях — см. AI-CONTEXT РАСХОЖДЕНИЯ).
  */
-router.get('/', async (req, res, next) => {
+router.get('/', optionalAuth, async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
@@ -45,7 +84,13 @@ router.get('/', async (req, res, next) => {
       Book.countDocuments(filter),
     ]);
 
-    return paginated(res, { items: books, total, page, limit });
+    const ownedIds = await ownedBookIdsFor(req);
+    return paginated(res, {
+      items: markOwned(books, ownedIds),
+      total,
+      page,
+      limit,
+    });
   } catch (err) {
     return next(err);
   }
@@ -53,9 +98,10 @@ router.get('/', async (req, res, next) => {
 
 /**
  * GET /api/books/featured
- * MASTER 7.4: рекомендованные для главной
+ * MASTER 7.4: рекомендованные для главной.
+ * optionalAuth: добавляем isOwned (главная показывает «Куплено» вместо цены).
  */
-router.get('/featured', async (_req, res, next) => {
+router.get('/featured', optionalAuth, async (req, res, next) => {
   try {
     const freeBooks = await Book.find({ isPublished: true, isFree: true })
       .select('-parts.audioFilename')
@@ -69,7 +115,11 @@ router.get('/featured', async (_req, res, next) => {
       .limit(6)
       .lean();
 
-    return success(res, { freeBooks, popularBooks });
+    const ownedIds = await ownedBookIdsFor(req);
+    return success(res, {
+      freeBooks: markOwned(freeBooks, ownedIds),
+      popularBooks: markOwned(popularBooks, ownedIds),
+    });
   } catch (err) {
     return next(err);
   }
@@ -79,8 +129,9 @@ router.get('/featured', async (_req, res, next) => {
  * GET /api/books/search
  * MASTER 4.11: поиск по названию/автору в реальном времени.
  * Query: ?q=
+ * optionalAuth: добавляем isOwned (результаты показывают «Куплено» вместо цены).
  */
-router.get('/search', async (req, res, next) => {
+router.get('/search', optionalAuth, async (req, res, next) => {
   try {
     const query = req.query.q;
     if (!query || query.trim().length === 0) {
@@ -102,7 +153,8 @@ router.get('/search', async (req, res, next) => {
       .limit(20)
       .lean();
 
-    return success(res, { books });
+    const ownedIds = await ownedBookIdsFor(req);
+    return success(res, { books: markOwned(books, ownedIds) });
   } catch (err) {
     return next(err);
   }
@@ -114,9 +166,9 @@ router.get('/search', async (req, res, next) => {
  *
  * optionalAuth: если юзер авторизован — в объект книги добавляется
  * ВЫЧИСЛЯЕМОЕ поле hasAccess (true = полный доступ: куплена отдельно /
- * бесплатная / открыта подпиской как книга клуба в календарном окне /
- * админ). Клиент (book_screen) по нему решает «Слушать» vs «Купить».
- * Без авторизации hasAccess = isFree.
+ * бесплатная / входит в купленный пакет / открыта подпиской как книга клуба в
+ * календарном окне / админ). Клиент (book_screen) по нему решает «Слушать» vs
+ * «Купить». Без авторизации hasAccess = isFree.
  */
 router.get('/:id', optionalAuth, async (req, res, next) => {
   try {
