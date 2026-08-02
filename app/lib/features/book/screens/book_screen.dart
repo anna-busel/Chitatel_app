@@ -264,7 +264,7 @@ class _Badge extends StatelessWidget {
   });
 
   factory _Badge.free() =>
-      const _Badge(text: 'БЕСПЛАТНО', background: AppColors.success);
+      const _Badge(text: 'БЕСПЛАТНО', background: AppColors.freeBadge);
 
   final String text;
   final Color background;
@@ -529,8 +529,8 @@ class _PaidActions extends StatelessWidget {
 
 // — 4.14 есть полный доступ (куплена ИЛИ открыта подпиской на клуб) —
 // Бейдж «КУПЛЕНО» убран (08.07.2026): клиент не различает покупку и подписку
-// (сервер отдаёт единый hasAccess), бейдж врал бы подписчику. Оставлена
-// нейтральная подпись «У вас есть полный доступ» (согласовано с юзером).
+// (сервер отдаёт единый hasAccess), бейдж врал бы подписчику. Подпись «У вас
+// есть полный доступ» тоже убрана (02.08.2026) — кнопка «Слушать» самодостаточна.
 
 class _PurchasedActions extends StatelessWidget {
   const _PurchasedActions({
@@ -548,11 +548,6 @@ class _PurchasedActions extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'У вас есть полный доступ',
-          style: AppTypography.caption,
-        ),
-        const SizedBox(height: 14),
         _GreenListenButton(
           label: progressPercent > 0 ? 'Продолжить' : 'Слушать',
           onTap: onListen,
