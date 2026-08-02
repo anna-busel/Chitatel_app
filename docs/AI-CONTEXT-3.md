@@ -27,8 +27,8 @@
 **Заметки / хвосты:**
 - **Пакет: кнопка «Купить пакет» после покупки сменяется подписью «У вас есть доступ»** — добавил `hasAccess` в `GET /packages/:id` (`optionalAuth`, по `user.purchasedPackages`/админ) + поле в `PackageModel` + условие в `package_screen` (те же коммиты PR #7). Семантика: доступ пакета = факт покупки ИМЕННО пакета (наличие всех входящих разборов по отдельности/подписке пакет «купленным» НЕ делает; доступ к самим разборам при этом всё равно открыт — его считает `GET /books/:id.hasAccess`).
 - `archive.forever` намеренно не обрабатывается (POST-MVP, MASTER 4.43, продукт не создан). Если появится — нужен владелец-провайдер, иначе его транзакции никто не завершит (`complete`).
-- **Отложенный security-пункт (НЕ этой задачи, из комментария в purchase_provider):** сверка `appAccountToken` транзакции с юзером на сервере при verify пока не сделана — JWS привязывается к тому, кто залогинен и вызвал verify. Для Sandbox не мешает, но до прод-пролива стоит закрыть (вариант 2).
-- **Серверная верификация Apple требует настройки:** корневые сертификаты Apple PKI (`config.apple.rootCertsPath`) + верный `bundleId`/`environment` (Sandbox для теста), иначе `verify` → 503 `PURCHASE_VERIFICATION_UNAVAILABLE`. Проверить перед тестом.
+- **Защита от привязки чужого чека («вариант 2») — СДЕЛАНО 02.08.2026 (PR #7).** На `verify` (`purchase.service.verifyPurchase`) декодируем `appAccountToken` чека → userId: если токен наш и указывает на ДРУГОГО юзера → 403. Токена нет / не наш формат (гостевые старые покупки) — пропускаем как раньше. `userIdFromAppAccountToken` перенесён из webhook.service в purchase.service (webhook импортирует + ре-экспортит).
+- **Серверная верификация Apple — ПОДТВЕРЖДЕНА на VPS 02.08.2026.** Сертификаты Apple Root CA лежат в `/home/deploy/chitatel/apple-root-certs/` (G2, G3 + 2 старых); в `.env` (`/home/deploy/chitatel/Chitatel_app/.env`, процесс pm2 `chitatel-api` id 5) заданы `APPLE_ROOT_CERTS_PATH=/home/deploy/chitatel/apple-root-certs`, `APPLE_ENVIRONMENT=sandbox`, `APPLE_BUNDLE_ID=app.chitatel.ios`, `APPLE_APP_APPLE_ID=6779357856`. Т.е. `verify` 503 не отдаст. Перед тестом: убедиться, что `chitatel-api` рестартнут после последней правки `.env` (`pm2 restart chitatel-api`). Для прода позже: `APPLE_ENVIRONMENT=production` + URL вебхука S2S V2 в App Store Connect. `APPLE_ISSUER_ID` пуст — ок (App Store Server API сейчас не вызывается, `SignedDataVerifier` работает офлайн).
 - **Не проверено в билде.** Тест — Sandbox на реальном устройстве (в контейнере не собирается). Тест-план в описании PR #7.
 - Ревью кода (subagent): импорты/`ref.listen`/switch/Riverpod — чисто.
 
@@ -104,6 +104,7 @@
 - Онбординг-гейт против «тонких» отчётов; {userContext} хук под будущий онбординг (пока пусто).
 - AI-сбой отчёта = пропуск юзера (не сохраняем сломанное), повтор при catch-up.
 - Категория «ДРУГОЕ» — служебный предохранитель: на экране разбора чипом НЕ показывается (хранится только в базе). Тап по push monthly_report → экран месячного отчёта, news → лента уведомлений.
+- Рекомендации покажутся ТОЛЬКО когда каталог опубликован (isPublished:true) и книги затегированы (Book.categories/tags, 14 категорий Анны). Сейчас каталог почти весь isPublished:false → рекомендации пустые до публикации (делает Анна).
 
 **PENDING по этому блоку:**
 1. `OPENAI_API_KEY` в .env → `pm2 restart`. Node ≥20 (на сервере v18 — при странных ошибках ИИ обновить).
