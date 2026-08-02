@@ -227,14 +227,14 @@ async function setPrice(iapId, pricePointId) {
           data: { type: 'territories', id: BASE_TERRITORY },
         },
         manualPrices: {
-          data: [{ type: 'inAppPurchasePrices', id: 'price-1' }],
+          data: [{ type: 'inAppPurchasePrices', id: '${price1}' }],
         },
       },
     },
     included: [
       {
         type: 'inAppPurchasePrices',
-        id: 'price-1',
+        id: '${price1}',
         attributes: { startDate: null },
         relationships: {
           inAppPurchasePricePoint: {
@@ -296,7 +296,7 @@ async function processItem(appId, item) {
       }
     }
   } catch (e) {
-    console.log(`      ! цена $${priceUsd}: ошибка — ${e.message.slice(0, 120)}`);
+    console.log(`      ! цена $${priceUsd}: ошибка — ${e.message.slice(0, 220)}`);
   }
 
   return { created: wasCreated };
