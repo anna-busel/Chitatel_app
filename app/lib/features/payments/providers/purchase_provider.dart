@@ -148,6 +148,15 @@ class PurchaseNotifier extends StateNotifier<PaywallState> {
 
   Future<void> _onPurchaseUpdates(List<PurchaseDetails> purchases) async {
     for (final purchase in purchases) {
+      // Единый purchaseStream плагина слышат ОБА провайдера: этот (подписка
+      // «Клуб») и productPurchaseProvider (отдельные разборы/пакеты). Здесь
+      // обрабатываем ТОЛЬКО клубную подписку — иначе покупка book.*/package.*
+      // включила бы клубный success («переход в клуб») и прошла бы вторую,
+      // ненужную верификацию. Отдельные товары завершает и верифицирует их
+      // владелец — productPurchaseProvider.
+      if (!PurchaseService.clubProductIds.contains(purchase.productID)) {
+        continue;
+      }
       switch (purchase.status) {
         case PurchaseStatus.pending:
           state = state.copyWith(status: PaywallStatus.purchasing);
