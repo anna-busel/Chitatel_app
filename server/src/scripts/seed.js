@@ -58,6 +58,7 @@ const packageCoverFilenames = {
   paket_love_rel: 'paket_love_rel',
   paket_goals_ach: 'paket_goals_ach',
   paket_understand_yourself: 'paket_understand_yourself',
+  paket_latypov_frankl: 'paket_latypov_frankl',
   facultativ_dostoevsky: 'facultativ_dostoevsky',
   facultativ_tolstoy: 'facultativ_tolstoy',
   facultativ_foreign: 'facultativ_foreign_classics',
