@@ -8,6 +8,32 @@
 
 ---
 
+## ✅ 02.08.2026 — ПЛАТЕЖИ ОТДЕЛЬНЫХ ТОВАРОВ (разбор/пакет) — StoreKit 2 подключён · PR #7
+
+**Проблема:** кнопки «Купить» на `book_screen` и «Купить пакет» на `package_screen` были заглушками (SnackBar «появится в Фазе 3»). Инфраструктура покупок уже была готова целиком — не хватало клиентской обвязки. Расширение задачи 3.2 (в STEP-BY-STEP 3.2 описана только подписка «Клуб»; отдельные товары обсуждены с Gio).
+
+**Что было готово (проверено чтением кода):**
+- `PurchaseService` намеренно универсальный — грузит/покупает ЛЮБОЙ productId (`buy` = `buyNonConsumable`), `verifyOnServer(jws)` → `POST /api/purchases/verify` (контракт `{signedTransaction}` → `data`).
+- Сервер: `mapProduct()` понимает `book.<slug>`/`package.<slug>`; `applyTransaction()` пишет `purchasedBooks`/`purchasedPackages`; **`userHasBookAccess` (routes/books.js) открывает разбор и при покупке отдельно, И при покупке пакета** (`purchasedPackages` → `Package.exists({books})`) — тот же гейт у аудио (`checkPartAccess`). Server-часть багов НЕ имеет.
+- Экран «Мои покупки» (`profile/screens/my_purchases_screen.dart`, `purchaseHistoryProvider` → `GET /purchases/history`) уже рендерит book/package и линкует на экран.
+- Продукты `book.*`/`package.*` заведены в ASC (сессия ~31.07).
+
+**Сделано (PR #7, ветка `feat/individual-product-purchase`):**
+- **Новый** `payments/providers/product_purchase_provider.dart` — покупка `book.<slug>`/`package.<slug>` через тот же `PurchaseService`. Свой слушатель `purchaseStream`, строго фильтрует `book.*`/`package.*`. НЕ autoDispose (ловит событие даже если экран закрыт). `restored` не верифицирует повторно (доступ считает сервер по БД) — модель безопасности как в paywall (11.07).
+- `book_screen.dart` — `_onBuyPressed` → `productPurchaseProvider.buy(productId)`; после verify: `invalidate(bookProvider)` (`hasAccess→true`, экран → 4.14 «Слушать») + `purchaseHistoryProvider`; кнопка со спиннером; тост «Разбор открыт».
+- `package_screen.dart` — аналогично; после покупки инвалидируются входящие разборы; тост «Пакет открыт».
+- `purchase_provider.dart` (клуб) — **добавлен фильтр**: обрабатывает ТОЛЬКО `club.*`. Единый `purchaseStream` плагина слышат ОБА провайдера; без фильтра покупка разбора включила бы клубный `success` + лишнюю верификацию. Регрессии нет: `book.*` транзакций в проде ещё не было (кнопка была заглушкой).
+
+**Заметки / хвосты:**
+- **Пакет — кнопка не меняется на «Куплено»**: у `PackageModel` нет поля `hasAccess` (в `GET /packages/:id` не отдаётся). Входящие разборы разблокируются и пакет попадает в «Мои покупки», но сама кнопка «Купить пакет» остаётся. Если надо — отдельная микро-задача: добавить `hasAccess` в ответ `/packages/:id` + в `PackageModel`.
+- `archive.forever` намеренно не обрабатывается (POST-MVP, MASTER 4.43, продукт не создан). Если появится — нужен владелец-провайдер, иначе его транзакции никто не завершит (`complete`).
+- **Не проверено в билде.** Тест — Sandbox на реальном устройстве (в контейнере не собирается). Тест-план в описании PR #7.
+- Ревью кода (subagent): импорты/`ref.listen`/switch/Riverpod — чисто.
+
+**Хвосты по Apple (из прошлых сессий, не закрыты):** все 64 IAP + 2 подписки клуба в статусе MISSING_METADATA — ждут скриншоты ревью (Gio выложит ближе к ревью, спросит как назвать). Цена `paket_woman` выставляется вручную (нет точного price point, ~$239.99/$229.99). Ошибка входа в «Распространение» приложения — на стороне Apple (reference 4b70a45b-…), советовали саппорт.
+
+---
+
 ## ✅ 29.07.2026 — КАТАЛОГ: ЧИСТКА + 3 НОВЫХ РАЗБОРА + ОПИСАНИЯ · ОБЛОЖКИ · ФИКС ОБРАЩЕНИЯ ПО ИМЕНИ · ОНБОРДИНГ (спека)
 
 Работа с каталогом/обложками — правки в git, на сервере НЕ применены (нужен `git pull` + `npm run seed` + рестарт).
@@ -351,7 +377,6 @@ anna@ (админ, `anna123456` ⚠️ сменить); test-premium/test-basic 
 ## ✅ СЕССИЯ 07.07.2026 — АУДИТ + ФИКСЫ ПЛАТЕЖЕЙ B2/B3/B4
 
 Полный чек-лист — `docs/AUDIT-2026-07.md`.
-
 - **B2 🔴:** webhook находил юзера ТОЛЬКО по сохранённой Purchase → продление по неизвестной транзакции терялось. — **ИСПРАВЛЕНО.**
 - **B3 🟡:** `DID_FAIL_TO_RENEW` игнорировался; `gracePeriodExpiresAt` никем не писался. — **ИСПРАВЛЕНО.**
 - **B4 🟡:** enum `subscriptionPlan` не знал `'season'`. — **ИСПРАВЛЕНО.**
