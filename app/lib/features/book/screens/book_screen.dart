@@ -10,6 +10,8 @@ import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
+import '../../payments/providers/product_purchase_provider.dart';
+import '../../profile/providers/profile_provider.dart';
 import '../providers/book_provider.dart';
 import '../widgets/book_parts_list.dart';
 
@@ -19,15 +21,17 @@ import '../widgets/book_parts_list.dart';
 /// 3 варианта отображения переключаются по флагам:
 /// - `book.isFree == true` → 4.12 (зелёная кнопка «Слушать бесплатно»)
 /// - `book.hasAccess == true` → 4.14 (кнопка «Слушать» + прогресс).
-///   hasAccess считает СЕРВЕР в GET /books/:id: куплена отдельно ИЛИ
-///   открыта подпиской как книга клуба в календарном окне (месяц клуба +
-///   следующий месяц-архив; модель 08.07.2026) ИЛИ админ.
+///   hasAccess считает СЕРВЕР в GET /books/:id: куплена отдельно ИЛИ входит в
+///   купленный пакет ИЛИ открыта подпиской как книга клуба в календарном окне
+///   (месяц клуба + следующий месяц-архив; модель 08.07.2026) ИЛИ админ.
 /// - иначе → 4.13 (цена + «Купить» + замки на частях 2-4)
 ///
 /// onTap кнопок:
 /// - «Слушать» / «Продолжить» / «Превью» → переход на /player/:bookId
 ///   Плеер сам определит стартовую часть и позицию из прогресса.
-/// - «Купить» → задача 3.2 (Flutter — StoreKit 2 покупки), пока SnackBar.
+/// - «Купить» → StoreKit 2 покупка разбора через productPurchaseProvider.
+///   После подтверждения сервером книга перезапрашивается (hasAccess → true)
+///   и экран переключается на 4.14.
 ///
 /// Если у книги нет частей с аудио (parts.isEmpty) — кнопка прослушивания
 /// disabled с текстом «Аудио загружается». Apple Guideline 2.1: не открывать
@@ -354,7 +358,7 @@ class _MetaRow extends StatelessWidget {
 
 // ─────────────────────────── ACTIONS (3 варианта) ───────────────────────────
 
-class _ActionSection extends StatelessWidget {
+class _ActionSection extends ConsumerWidget {
   const _ActionSection({
     required this.book,
     required this.hasAccess,
@@ -364,15 +368,45 @@ class _ActionSection extends StatelessWidget {
   final BookModel book;
 
   /// Полный доступ к платной книге (считает сервер, см. BookModel.hasAccess):
-  /// куплена отдельно ИЛИ открыта подпиской как книга клуба в календарном окне.
+  /// куплена отдельно ИЛИ входит в купленный пакет ИЛИ открыта подпиской как
+  /// книга клуба в календарном окне.
   final bool hasAccess;
   final double progressPercent;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // Если у книги нет аудио — все варианты показывают disabled-кнопку.
     // Apple Guideline 2.1: не открывать плеер пустого контента.
     final hasAudio = book.parts.isNotEmpty;
+    final productId = book.appleProductId;
+
+    // Реакция на результат покупки ИМЕННО этого разбора. Провайдер общий на все
+    // товары, поэтому сверяем productId, чтобы не среагировать на чужую покупку.
+    ref.listen<ProductPurchaseState>(productPurchaseProvider, (prev, next) {
+      if (productId == null || next.productId != productId) return;
+      if (next.status == ProductPurchaseStatus.success) {
+        ref.read(productPurchaseProvider.notifier).reset();
+        // Доступ пересчитывает сервер — перезапрашиваем книгу (hasAccess → true,
+        // экран переключится на «Слушать») и историю покупок («Мои покупки»).
+        ref.invalidate(bookProvider(book.id));
+        ref.invalidate(purchaseHistoryProvider);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Разбор открыт'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      } else if (next.status == ProductPurchaseStatus.error) {
+        final message = next.errorMessage ?? 'Покупка не завершена';
+        ref.read(productPurchaseProvider.notifier).reset();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    });
 
     // Вариант 4.12: бесплатная
     if (book.isFree) {
@@ -382,7 +416,7 @@ class _ActionSection extends StatelessWidget {
       );
     }
 
-    // Вариант 4.14: есть полный доступ (куплена / подписка на клуб)
+    // Вариант 4.14: есть полный доступ (куплена / пакет / подписка на клуб)
     if (hasAccess) {
       return _PurchasedActions(
         hasAudio: hasAudio,
@@ -392,10 +426,21 @@ class _ActionSection extends StatelessWidget {
     }
 
     // Вариант 4.13: платная без доступа
+    final purchase = ref.watch(productPurchaseProvider);
+    final isBuying = productId != null &&
+        purchase.productId == productId &&
+        (purchase.status == ProductPurchaseStatus.purchasing ||
+            purchase.status == ProductPurchaseStatus.verifying);
+
     return _PaidActions(
       book: book,
       hasAudio: hasAudio,
-      onBuy: () => _onBuyPressed(context),
+      isBuying: isBuying,
+      canBuy: productId != null,
+      onBuy: () {
+        if (productId == null) return;
+        ref.read(productPurchaseProvider.notifier).buy(productId);
+      },
       onPreview: () => _onListenPressed(context),
     );
   }
@@ -403,16 +448,6 @@ class _ActionSection extends StatelessWidget {
   /// Переход в плеер — без extra, плеер сам подтянет прогресс с сервера.
   void _onListenPressed(BuildContext context) {
     context.push(Routes.player(book.id));
-  }
-
-  // TODO задача 3.2: запуск StoreKit 2 покупки через purchase_provider
-  void _onBuyPressed(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Покупка через Apple появится в Фазе 3'),
-        duration: Duration(seconds: 2),
-      ),
-    );
   }
 }
 
@@ -446,12 +481,20 @@ class _PaidActions extends StatelessWidget {
   const _PaidActions({
     required this.book,
     required this.hasAudio,
+    required this.isBuying,
+    required this.canBuy,
     required this.onBuy,
     required this.onPreview,
   });
 
   final BookModel book;
   final bool hasAudio;
+
+  /// Идёт покупка/верификация — кнопка показывает спиннер и не нажимается.
+  final bool isBuying;
+
+  /// У разбора есть appleProductId — иначе покупка невозможна (кнопка неактивна).
+  final bool canBuy;
   final VoidCallback onBuy;
   final VoidCallback onPreview;
 
@@ -464,7 +507,11 @@ class _PaidActions extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AppButton(text: buyText, onPressed: onBuy),
+        AppButton(
+          text: buyText,
+          onPressed: canBuy ? onBuy : null,
+          isLoading: isBuying,
+        ),
         const SizedBox(height: 10),
         // Превью доступно только если есть аудио.
         if (hasAudio)
