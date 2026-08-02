@@ -75,7 +75,16 @@ class PackageCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 6),
-          if (price != null)
+          // Куплен → «Куплено» тёмно-зелёным вместо цены (как бейдж «Бесплатно»).
+          // Иначе — цена. Доступ считает сервер (package.hasAccess в списке).
+          if (package.hasAccess)
+            Text(
+              'Куплено',
+              style: AppTypography.bodyBold.copyWith(
+                color: AppColors.freeBadge,
+              ),
+            )
+          else if (price != null)
             Text(
               price,
               style: AppTypography.bodyBold.copyWith(
