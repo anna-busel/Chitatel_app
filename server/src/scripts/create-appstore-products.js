@@ -339,6 +339,7 @@ async function main() {
   console.log(`Mongo: ${config.mongoUri}`);
 
   const books = await Book.find({
+    isPublished: true,
     isFree: false,
     priceUsd: { $ne: null },
     appleProductId: { $ne: null },
@@ -347,6 +348,7 @@ async function main() {
     .lean();
 
   const packages = await Package.find({
+    isPublished: true,
     priceUsd: { $ne: null },
     appleProductId: { $ne: null },
   })
