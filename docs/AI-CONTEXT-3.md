@@ -25,8 +25,10 @@
 - `purchase_provider.dart` (клуб) — **добавлен фильтр**: обрабатывает ТОЛЬКО `club.*`. Единый `purchaseStream` плагина слышат ОБА провайдера; без фильтра покупка разбора включила бы клубный `success` + лишнюю верификацию. Регрессии нет: `book.*` транзакций в проде ещё не было (кнопка была заглушкой).
 
 **Заметки / хвосты:**
-- **Пакет — кнопка не меняется на «Куплено»**: у `PackageModel` нет поля `hasAccess` (в `GET /packages/:id` не отдаётся). Входящие разборы разблокируются и пакет попадает в «Мои покупки», но сама кнопка «Купить пакет» остаётся. Если надо — отдельная микро-задача: добавить `hasAccess` в ответ `/packages/:id` + в `PackageModel`.
+- **Пакет: кнопка «Купить пакет» после покупки сменяется подписью «У вас есть доступ»** — добавил `hasAccess` в `GET /packages/:id` (`optionalAuth`, по `user.purchasedPackages`/админ) + поле в `PackageModel` + условие в `package_screen` (те же коммиты PR #7). Семантика: доступ пакета = факт покупки ИМЕННО пакета (наличие всех входящих разборов по отдельности/подписке пакет «купленным» НЕ делает; доступ к самим разборам при этом всё равно открыт — его считает `GET /books/:id.hasAccess`).
 - `archive.forever` намеренно не обрабатывается (POST-MVP, MASTER 4.43, продукт не создан). Если появится — нужен владелец-провайдер, иначе его транзакции никто не завершит (`complete`).
+- **Защита от привязки чужого чека («вариант 2») — СДЕЛАНО 02.08.2026 (PR #7).** На `verify` (`purchase.service.verifyPurchase`) декодируем `appAccountToken` чека → userId: если токен наш и указывает на ДРУГОГО юзера → 403. Токена нет / не наш формат (гостевые старые покупки) — пропускаем как раньше. `userIdFromAppAccountToken` перенесён из webhook.service в purchase.service (webhook импортирует + ре-экспортит).
+- **Серверная верификация Apple — ПОДТВЕРЖДЕНА на VPS 02.08.2026.** Сертификаты Apple Root CA лежат в `/home/deploy/chitatel/apple-root-certs/` (G2, G3 + 2 старых); в `.env` (`/home/deploy/chitatel/Chitatel_app/.env`, процесс pm2 `chitatel-api` id 5) заданы `APPLE_ROOT_CERTS_PATH=/home/deploy/chitatel/apple-root-certs`, `APPLE_ENVIRONMENT=sandbox`, `APPLE_BUNDLE_ID=app.chitatel.ios`, `APPLE_APP_APPLE_ID=6779357856`. Т.е. `verify` 503 не отдаст. Перед тестом: убедиться, что `chitatel-api` рестартнут после последней правки `.env` (`pm2 restart chitatel-api`). Для прода позже: `APPLE_ENVIRONMENT=production` + URL вебхука S2S V2 в App Store Connect. `APPLE_ISSUER_ID` пуст — ок (App Store Server API сейчас не вызывается, `SignedDataVerifier` работает офлайн).
 - **Не проверено в билде.** Тест — Sandbox на реальном устройстве (в контейнере не собирается). Тест-план в описании PR #7.
 - Ревью кода (subagent): импорты/`ref.listen`/switch/Riverpod — чисто.
 
@@ -377,6 +379,7 @@ anna@ (админ, `anna123456` ⚠️ сменить); test-premium/test-basic 
 ## ✅ СЕССИЯ 07.07.2026 — АУДИТ + ФИКСЫ ПЛАТЕЖЕЙ B2/B3/B4
 
 Полный чек-лист — `docs/AUDIT-2026-07.md`.
+
 - **B2 🔴:** webhook находил юзера ТОЛЬКО по сохранённой Purchase → продление по неизвестной транзакции терялось. — **ИСПРАВЛЕНО.**
 - **B3 🟡:** `DID_FAIL_TO_RENEW` игнорировался; `gracePeriodExpiresAt` никем не писался. — **ИСПРАВЛЕНО.**
 - **B4 🟡:** enum `subscriptionPlan` не знал `'season'`. — **ИСПРАВЛЕНО.**

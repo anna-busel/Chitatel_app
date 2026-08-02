@@ -21,6 +21,7 @@ class PackageModel {
     this.priceByn,
     this.appleProductId,
     this.purchaseUrl = '',
+    this.hasAccess = false,
   });
 
   /// MongoDB ObjectId (строкой).
@@ -48,6 +49,13 @@ class PackageModel {
   /// Ссылка на покупку на внешнем сайте (фоллбек).
   final String purchaseUrl;
 
+  /// ВЫЧИСЛЯЕМОЕ СЕРВЕРОМ поле (НЕ из схемы Package.js): куплен ли пакет
+  /// текущим юзером (Non-Consumable IAP) ИЛИ админ. Сервер кладёт его ТОЛЬКО
+  /// в GET /api/packages/:id (с optionalAuth); в списке пакетов поля нет →
+  /// здесь будет false по дефолту. Используется package_screen, чтобы после
+  /// покупки скрыть кнопку «Купить пакет».
+  final bool hasAccess;
+
   /// Количество разборов в пакете.
   int get bookCount => books.length;
 
@@ -71,6 +79,7 @@ class PackageModel {
       priceByn: (json['priceByn'] as num?)?.toDouble(),
       appleProductId: json['appleProductId'] as String?,
       purchaseUrl: json['purchaseUrl'] as String? ?? '',
+      hasAccess: json['hasAccess'] as bool? ?? false,
     );
   }
 
