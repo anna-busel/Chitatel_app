@@ -59,6 +59,13 @@ class PackageModel {
   /// Количество разборов в пакете.
   int get bookCount => books.length;
 
+  /// Факультатив (по packageSlug: `facultativ_*`) — иначе обычный пакет.
+  /// Тип берём из слага, чтобы не заводить отдельное поле на сервере.
+  bool get isFacultativ => packageSlug.startsWith('facultativ');
+
+  /// Метка типа для бейджа: «ФАКУЛЬТАТИВ» или «ПАКЕТ».
+  String get typeLabel => isFacultativ ? 'ФАКУЛЬТАТИВ' : 'ПАКЕТ';
+
   /// Цена для отображения в UI (USD с долларом).
   String? get displayPriceUsd =>
       priceUsd != null ? '\$${priceUsd!.toStringAsFixed(2)}' : null;
