@@ -106,15 +106,24 @@ class _BookContent extends StatelessWidget {
                   hasAccess: book.hasAccess,
                   progressPercent: _progressPercent,
                 ),
+                // Апселл: если платный разбор ещё не доступен и входит в пакет —
+                // карточка «Входит в пакет … / Вместе выгоднее» (тап → пакет).
+                if (!book.isFree && !book.hasAccess && book.package != null)
+                  _PackageUpsellCard(package: book.package!),
                 const SizedBox(height: 20),
                 _DescriptionBlock(description: book.description),
-                const SizedBox(height: 24),
-                BookPartsList(
-                  book: book,
-                  isPurchased: book.hasAccess,
-                  listenedPartNumbers: _listenedPartNumbers,
-                  onPartTap: (part) => _onPartTap(context, part),
-                ),
+                // Список частей показываем ТОЛЬКО если частей несколько. При
+                // одной части «Часть 1» не выводим — разбор слушается кнопкой
+                // выше целиком (при 0 частей список сам покажет своё состояние).
+                if (book.parts.length != 1) ...[
+                  const SizedBox(height: 24),
+                  BookPartsList(
+                    book: book,
+                    isPurchased: book.hasAccess,
+                    listenedPartNumbers: _listenedPartNumbers,
+                    onPartTap: (part) => _onPartTap(context, part),
+                  ),
+                ],
                 const SizedBox(height: 28),
                 _ReviewsPlaceholder(),
                 const SizedBox(height: 16),
@@ -379,6 +388,9 @@ class _ActionSection extends ConsumerWidget {
     // Если у книги нет аудио — все варианты показывают disabled-кнопку.
     // Apple Guideline 2.1: не открывать плеер пустого контента.
     final hasAudio = book.parts.isNotEmpty;
+    // Бесплатный отрывок-превью есть, только если какая-то часть помечена
+    // isPreviewAvailable (её ставит импорт-аудио: отдельный 5-мин отрывок).
+    final hasPreview = book.parts.any((p) => p.isPreviewAvailable);
     final productId = book.appleProductId;
 
     // Реакция на результат покупки ИМЕННО этого разбора. Провайдер общий на все
@@ -436,6 +448,7 @@ class _ActionSection extends ConsumerWidget {
     return _PaidActions(
       book: book,
       hasAudio: hasAudio,
+      hasPreview: hasPreview,
       isBuying: isBuying,
       canBuy: productId != null,
       onBuy: () {
@@ -482,6 +495,7 @@ class _PaidActions extends StatelessWidget {
   const _PaidActions({
     required this.book,
     required this.hasAudio,
+    required this.hasPreview,
     required this.isBuying,
     required this.canBuy,
     required this.onBuy,
@@ -490,6 +504,9 @@ class _PaidActions extends StatelessWidget {
 
   final BookModel book;
   final bool hasAudio;
+
+  /// У разбора есть бесплатный отрывок-превью (какая-то часть isPreviewAvailable).
+  final bool hasPreview;
 
   /// Идёт покупка/верификация — кнопка показывает спиннер и не нажимается.
   final bool isBuying;
@@ -513,16 +530,20 @@ class _PaidActions extends StatelessWidget {
           onPressed: canBuy ? onBuy : null,
           isLoading: isBuying,
         ),
-        const SizedBox(height: 10),
-        // Превью доступно только если есть аудио.
-        if (hasAudio)
+        // Кнопку превью показываем ТОЛЬКО когда реально есть бесплатный отрывок.
+        // Нет превью, но и аудио ещё нет — показываем подсказку «аудио скоро».
+        // Есть аудио, но превью не назначено — только кнопка «Купить».
+        if (hasPreview) ...[
+          const SizedBox(height: 10),
           AppButton(
             text: 'Слушать превью (5 мин)',
             onPressed: onPreview,
             variant: AppButtonVariant.outline,
-          )
-        else
+          ),
+        ] else if (!hasAudio) ...[
+          const SizedBox(height: 10),
           _DisabledAudioHint(),
+        ],
       ],
     );
   }
@@ -722,6 +743,86 @@ class _ProgressCard extends StatelessWidget {
 }
 
 // ─────────────────────────── DESCRIPTION ───────────────────────────
+
+// — Апселл-карточка «Входит в пакет» на экране разбора —
+// Названия пакетов уже содержат слово «Пакет»/«ФАКУЛЬТАТИВ», поэтому не
+// оборачиваем в «Входит в пакет «…»» (был бы «пакет пакет»): сверху метка
+// «ВХОДИТ В ПАКЕТ», ниже — само название, затем «Вместе выгоднее».
+
+class _PackageUpsellCard extends StatelessWidget {
+  const _PackageUpsellCard({required this.package});
+
+  final BookPackageRef package;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Material(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+        child: InkWell(
+          onTap: () => context.push(Routes.package(package.id)),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.terracotta.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.inventory_2_outlined,
+                    size: 20,
+                    color: AppColors.terracotta,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'ВХОДИТ В ПАКЕТ',
+                        style: AppTypography.badge.copyWith(
+                          color: AppColors.terracotta,
+                          fontSize: 10,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        package.title,
+                        style: AppTypography.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text('Вместе выгоднее', style: AppTypography.caption),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.chevron_right,
+                  size: 20,
+                  color: AppColors.textTertiary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _DescriptionBlock extends StatelessWidget {
   const _DescriptionBlock({required this.description});

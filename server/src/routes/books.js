@@ -191,7 +191,25 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
       }
     }
 
-    return success(res, { book: { ...book, hasAccess } });
+    // В каком опубликованном пакете лежит разбор (для апселла на экране книги:
+    // карточка «Входит в пакет … / Вместе выгоднее»). Берём первый найденный —
+    // разбор обычно входит максимум в один пакет.
+    let pkg = null;
+    const containing = await Package.findOne({
+      books: book._id,
+      isPublished: true,
+    })
+      .select('_id title books')
+      .lean();
+    if (containing) {
+      pkg = {
+        id: String(containing._id),
+        title: containing.title,
+        bookCount: Array.isArray(containing.books) ? containing.books.length : 0,
+      };
+    }
+
+    return success(res, { book: { ...book, hasAccess, package: pkg } });
   } catch (err) {
     return next(err);
   }
