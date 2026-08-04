@@ -11,6 +11,7 @@ import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
 import '../../payments/providers/product_purchase_provider.dart';
+import '../../player/providers/player_provider.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../providers/book_provider.dart';
 import '../widgets/book_parts_list.dart';
@@ -388,9 +389,9 @@ class _ActionSection extends ConsumerWidget {
     // Если у книги нет аудио — все варианты показывают disabled-кнопку.
     // Apple Guideline 2.1: не открывать плеер пустого контента.
     final hasAudio = book.parts.isNotEmpty;
-    // Бесплатный отрывок-превью есть, только если какая-то часть помечена
-    // isPreviewAvailable (её ставит импорт-аудио: отдельный 5-мин отрывок).
-    final hasPreview = book.parts.any((p) => p.isPreviewAvailable);
+    // Бесплатный отрывок-превью есть, если сервер отдал hasPreview
+    // (previewAudioFilename != null у платного разбора — генерит import-audio).
+    final hasPreview = book.hasPreview;
     final productId = book.appleProductId;
 
     // Реакция на результат покупки ИМЕННО этого разбора. Провайдер общий на все
@@ -455,7 +456,12 @@ class _ActionSection extends ConsumerWidget {
         if (productId == null) return;
         ref.read(productPurchaseProvider.notifier).buy(productId);
       },
-      onPreview: () => _onListenPressed(context),
+      onPreview: () {
+        // Превью-режим: грузим 5-мин отрывок (без записи в прогресс) и
+        // открываем плеер. Когда отрывок кончится — плеер покажет шторку.
+        ref.read(audioHandlerProvider).loadPreview(book);
+        context.push(Routes.player(book.id));
+      },
     );
   }
 
