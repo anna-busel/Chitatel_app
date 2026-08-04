@@ -89,6 +89,8 @@ class BookModel {
     this.hasAccess = false,
     this.isOwned = false,
     this.package,
+    this.hasPreview = false,
+    this.previewDuration = 0,
   });
 
   /// MongoDB ObjectId (строкой)
@@ -165,6 +167,15 @@ class BookModel {
   /// null, если разбор не входит ни в один опубликованный пакет.
   final BookPackageRef? package;
 
+  /// Есть ли у платного разбора бесплатное превью (5-мин отрывок). Сервер
+  /// кладёт в GET /books/:id (previewAudioFilename != null). По нему клиент
+  /// показывает кнопку «Слушать превью».
+  final bool hasPreview;
+
+  /// Длительность превью в секундах (обычно 300). Нужна плееру: после покупки
+  /// продолжаем часть 1 с этой секунды (где кончился отрывок).
+  final int previewDuration;
+
   /// Парсинг JSON-ответа бэкенда.
   /// Все поля optional — бэкенд может отдавать урезанный projection.
   factory BookModel.fromJson(Map<String, dynamic> json) {
@@ -197,6 +208,8 @@ class BookModel {
       package: json['package'] is Map<String, dynamic>
           ? BookPackageRef.fromJson(json['package'] as Map<String, dynamic>)
           : null,
+      hasPreview: json['hasPreview'] as bool? ?? false,
+      previewDuration: (json['previewDuration'] as num?)?.toInt() ?? 0,
     );
   }
 

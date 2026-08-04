@@ -8,6 +8,21 @@
 
 ---
 
+## ✅ 04.08.2026 — АУДИО ЗАЛИТО + ИМПОРТ-СКРИПТ + ПАYWALL В ПЛЕЕРЕ
+
+**Аудио (PR #12, смёржен).** 51 разбор залит на VPS в `/var/audio/chitatel/<slug>/part-N.mp3` (scp -r с Windows). Скрипт `server/src/scripts/import-audio.js` (ffprobe — длительности, ffmpeg — нарезка 5-мин превью `<slug>/preview.mp3`) зарегистрировал `parts` (number/title/duration/audioFilename) + `durationTotal` у всех 51 и `previewAudioFilename`/`previewDuration` (новые поля в `Book.js`) у платных. Все имена папок совпали с bookSlug (0 пропусков). Грабли: папки разборов пришли со scp без бита записи (`dr-x---r-x`) → превью не резались (Permission denied); фикс `chmod -R u+w /var/audio/chitatel`, потом реран — ок. Аудио играет; пересборка клиента не нужна (части тянутся с сервера).
+
+**Паywall в плеере (PR #13, открыт).** Превью-режим + шторка покупки — доделан «превью → купить → продолжить».
+- Сервер `books.js`: `GET /books/:id/preview` — signed URL 5-мин отрывка БЕЗ покупки; `GET /books/:id` отдаёт `hasPreview` + `previewDuration`.
+- Плеер `audio_service` (handler): `loadPreview` (контекст ставится синхронно до await, чтобы экран не перегрузил книгу как обычную), **прогресс в превью НЕ пишется** (`_flushProgress`/таймер/автопереход заглушены `_previewMode`), событие `paywallStream` при конце превью и при 403 на платной части, `resumeAfterPurchase` (продолжить = часть 1 с `previewDuration`). Аддитивно, рабочее воспроизведение не тронуто.
+- `player_provider`: `playerPaywallProvider` (стрим). `paywall_sheet.dart` (новый): «Это был бесплатный отрывок» + «Купить за $X» (`productPurchaseProvider`) + «Взять весь пакет» + «Позже». `player_screen`: слушает событие → шторка; Купить → `resumeAfterPurchase` + инвалидация bookProvider/purchaseHistoryProvider; Позже → `closePlayer` + назад к разбору; пакет → экран пакета.
+- `book_model`: `hasPreview`/`previewDuration`. `book_screen`: превью-кнопка по `book.hasPreview`; «Слушать превью» → `loadPreview` + переход в плеер.
+- Деплой: `git pull` + `pm2 restart chitatel-api` (для `/preview`) + пересборка клиента. Тест в Sandbox.
+
+**Ранее в PR #7 (смёржен):** покупка разбора/пакета (StoreKit), «Куплено» в каталоге и на экране (тёмно-зелёным #355542, бейдж «Бесплатно» тоже), «Мои покупки» переоформлены (секции подписка/разборы, реальные обложки), карточка «Входит в пакет — Вместе выгоднее» на разборе, защита verify по appAccountToken («вариант 2»). Экономия пакетов реально маленькая (5–16%, факультативы 29%) — процент не показываем, только «Вместе выгоднее».
+
+---
+
 ## ✅ 02.08.2026 — ПЛАТЕЖИ ОТДЕЛЬНЫХ ТОВАРОВ (разбор/пакет) — StoreKit 2 подключён · PR #7
 
 **Проблема:** кнопки «Купить» на `book_screen` и «Купить пакет» на `package_screen` были заглушками (SnackBar «появится в Фазе 3»). Инфраструктура покупок уже была готова целиком — не хватало клиентской обвязки. Расширение задачи 3.2 (в STEP-BY-STEP 3.2 описана только подписка «Клуб»; отдельные товары обсуждены с Gio).

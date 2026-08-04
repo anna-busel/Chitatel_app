@@ -20,6 +20,12 @@ final audioHandlerProvider = Provider<ChitatelAudioHandler>((ref) {
   return ChitatelAudioHandler.instance;
 });
 
+/// События «нужна покупка» из плеера: превью кончилось ИЛИ юзер упёрся в
+/// платную часть (403). Экран плеера слушает и показывает шторку покупки.
+final playerPaywallProvider = StreamProvider<BookModel>((ref) {
+  return ref.watch(audioHandlerProvider).paywallStream;
+});
+
 /// Объединённое состояние плеера для UI.
 class PlayerUiState {
   const PlayerUiState({

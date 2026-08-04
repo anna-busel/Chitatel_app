@@ -3,13 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
+import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../book/providers/book_provider.dart';
+import '../../profile/providers/profile_provider.dart';
 import '../providers/player_provider.dart';
+import '../widgets/paywall_sheet.dart';
 import '../widgets/speed_sheet.dart';
 import '../widgets/sleep_timer_sheet.dart';
 
@@ -42,13 +45,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// _ensureBookLoaded на каждом ребилде.
   bool _firstFrameProcessed = false;
 
+  /// Открыта ли шторка покупки (защита от двойного показа).
+  bool _paywallShowing = false;
+
   /// Загружает книгу в плеер с учётом параметров extra.
   ///
   /// Три кейса:
   /// 1. current == null или current.id != book.id → новая книга, грузим.
   /// 2. current.id == book.id, startPart задан и не совпадает с текущим →
   ///    юзер тапнул на другую часть в списке. Переключаем.
-  /// 3. Иначе → ничего (юзер пришёл из mini-player).
+  /// 3. Иначе → ничего (юзер пришёл из mini-player, ИЛИ уже открыт превью-режим).
   Future<void> _ensureBookLoaded(BookModel book) async {
     final handler = ref.read(audioHandlerProvider);
     final current = handler.currentBook;
@@ -63,6 +69,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       );
       return;
     }
+
+    // Превью-режим уже запущен для этой книги (из book_screen) — не трогаем.
+    if (handler.isPreviewMode) return;
 
     // Кейс 2: та же книга, но юзер явно попросил другую часть.
     if (widget.startPart != null &&
@@ -79,9 +88,57 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // Кейс 3: ничего не делаем (mini-player → плеер на той же части).
   }
 
+  /// Поднимает шторку покупки. «Купить» — покупка прямо тут, после оплаты плеер
+  /// продолжает. «Позже» — закрыть плеер, вернуться на разбор.
+  void _showPaywall(BookModel book) {
+    _paywallShowing = true;
+    final handler = ref.read(audioHandlerProvider);
+    final pkg = book.package;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      useRootNavigator: true,
+      builder: (sheetCtx) => PaywallSheet(
+        book: book,
+        onPurchased: () {
+          Navigator.of(sheetCtx).pop();
+          handler.resumeAfterPurchase();
+          // Экран разбора под плеером обновляем — доступ открылся.
+          ref.invalidate(bookProvider(book.id));
+          ref.invalidate(purchaseHistoryProvider);
+        },
+        onLater: () {
+          Navigator.of(sheetCtx).pop();
+          handler.closePlayer();
+          if (context.canPop()) context.pop();
+        },
+        onOpenPackage: pkg == null
+            ? null
+            : () {
+                Navigator.of(sheetCtx).pop();
+                handler.closePlayer();
+                if (context.canPop()) context.pop();
+                context.push(Routes.package(pkg.id));
+              },
+      ),
+    ).whenComplete(() => _paywallShowing = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final bookAsync = ref.watch(bookProvider(widget.bookId));
+
+    // Событие «нужна покупка» из плеера (превью кончилось / упёрся в платную
+    // часть) → поднимаем шторку.
+    ref.listen<AsyncValue<BookModel>>(playerPaywallProvider, (prev, next) {
+      next.whenData((book) {
+        if (mounted && !_paywallShowing) _showPaywall(book);
+      });
+    });
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       // Светлый фон плеера → тёмные иконки status bar.

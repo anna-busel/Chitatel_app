@@ -7,7 +7,7 @@ final playerApiServiceProvider = Provider<PlayerApiService>((ref) {
   return PlayerApiService(ref.read(apiClientProvider));
 });
 
-/// Ответ сервера на `GET /api/books/:id/audio/:partNumber`.
+/// Ответ сервера на `GET /api/books/:id/audio/:partNumber` (и `/preview`).
 /// Соответствует server/src/routes/books.js → success({ audioUrl, duration, partNumber, title, isPreview }).
 class AudioUrlResponse {
   const AudioUrlResponse({
@@ -62,6 +62,17 @@ class PlayerApiService {
   }) async {
     final response = await _api.dio.get(
       ApiEndpoints.bookAudio(bookId, partNumber),
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>? ?? const {};
+    return AudioUrlResponse.fromJson(data);
+  }
+
+  /// GET /api/books/:bookId/preview → подписанный URL 5-мин превью (без покупки).
+  /// 404, если у разбора нет превью (previewAudioFilename == null).
+  Future<AudioUrlResponse> fetchPreviewUrl({required String bookId}) async {
+    final response = await _api.dio.get(
+      '${ApiEndpoints.bookById(bookId)}/preview',
     );
     final body = response.data as Map<String, dynamic>;
     final data = body['data'] as Map<String, dynamic>? ?? const {};

@@ -28,6 +28,10 @@ import 'progress_service.dart';
 ///    + при pause/dispose + при автопереходе + при закрытии плеера.
 /// 7. Автоматически переключает части (часть 1 → 2 → 3 ...) при окончании.
 /// 8. Sleep timer: 15/30/45/60 мин или до конца части.
+/// 9. ПРЕВЬЮ-режим (loadPreview): проигрывает 5-мин тизер платного разбора БЕЗ
+///    записи в прогресс; когда отрывок кончается — шлёт событие в paywallStream
+///    (экран плеера показывает шторку покупки). Отказ в доступе к платной части
+///    (403) — тоже шлёт это событие.
 class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
   ChitatelAudioHandler({
     required PlayerApiService apiService,
@@ -69,6 +73,24 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Книга, которая сейчас загружена в плеер (null если ничего не играет).
   BookModel? get currentBook => _currentBook;
   int get currentPartNumber => _currentPartNumber;
+
+  // — Превью-режим (тизер платного разбора) —
+  // В превью НЕ пишем прогресс и НЕ переходим на следующую часть: когда 5-мин
+  // отрывок кончается, шлём событие в paywallStream, и экран плеера показывает
+  // шторку покупки.
+  bool _previewMode = false;
+  bool get isPreviewMode => _previewMode;
+
+  // Куда вернуться после успешной покупки: часть + позиция (сек). Для превью —
+  // часть 1 с секунды, где кончился отрывок; для платной части — её начало.
+  int? _resumePart;
+  int _resumePosition = 0;
+
+  // — События «нужна покупка» (превью кончилось / упёрся в платную часть) —
+  final _paywallController = StreamController<BookModel>.broadcast();
+
+  /// Экран плеера слушает и показывает шторку покупки.
+  Stream<BookModel> get paywallStream => _paywallController.stream;
 
   // — Таймер сохранения прогресса (каждые 30 сек) —
   Timer? _progressSaveTimer;
@@ -139,8 +161,10 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
       return;
     }
 
-    // Сохраняем прогресс предыдущей книги (если была).
+    // Сохраняем прогресс предыдущей книги (если была). Выходим из превью-режима
+    // — дальше настоящее воспроизведение, прогресс снова пишется.
     await _flushProgress();
+    _previewMode = false;
 
     // Если стартовая часть/позиция не заданы — запрашиваем прогресс с сервера.
     int targetPart = startPartNumber ?? 1;
@@ -168,6 +192,66 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
       startPositionSeconds: targetPosition,
       autoPlay: autoPlay,
     );
+  }
+
+  /// Загружает 5-мин ПРЕВЬЮ платного разбора (тизер без покупки).
+  ///
+  /// НЕ пишет прогресс и не помечает части прослушанными. Когда отрывок
+  /// кончится — _onPreviewEnded шлёт событие в paywallStream, и экран плеера
+  /// показывает шторку покупки.
+  ///
+  /// Контекст (_currentBook/_previewMode) выставляется СИНХРОННО до await —
+  /// чтобы экран плеера при открытии увидел, что эта книга уже загружена
+  /// (превью), и не перегрузил её как обычную (loadBook).
+  Future<void> loadPreview(BookModel book) async {
+    // Фиксируем контекст СИНХРОННО (до любого await): экран плеера при открытии
+    // должен увидеть превью-режим и НЕ перегрузить книгу как обычную (loadBook).
+    final prevBook = _currentBook;
+    final prevWasPreview = _previewMode;
+    final prevPart = _currentPartNumber;
+    final prevPos = _player.position.inSeconds;
+
+    _previewMode = true;
+    _currentBook = book;
+    _currentPartNumber = 1;
+    _resumePart = 1;
+    _resumePosition = book.previewDuration > 0 ? book.previewDuration : 300;
+
+    // Сохранить прогресс прошлого РЕАЛЬНОГО воспроизведения (в превью — нет).
+    if (!prevWasPreview && prevBook != null) {
+      await _progressService.saveProgress(
+        bookId: prevBook.id,
+        currentPartNumber: prevPart,
+        positionSeconds: prevPos,
+      );
+    }
+
+    _currentArtUri = await _coverCache.resolveArtUri(book.coverImageUrl);
+
+    try {
+      final audio = await _apiService.fetchPreviewUrl(bookId: book.id);
+
+      mediaItem.add(MediaItem(
+        id: '${book.id}_preview',
+        album: book.author,
+        title: 'Превью',
+        artist: book.title,
+        duration: Duration(seconds: audio.duration),
+        artUri: _currentArtUri,
+        extras: {'bookId': book.id, 'preview': true},
+      ));
+
+      await _player.setUrl(audio.audioUrl);
+      await _player.play();
+      // Прогресс-таймер в превью НЕ запускаем.
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AudioHandler] loadPreview failed: $e');
+      }
+      // Превью не загрузилось (сеть/404) — показываем шторку, чтобы плеер не
+      // завис пустым: человек всё равно сможет купить.
+      _paywallController.add(book);
+    }
   }
 
   /// Загружает конкретную часть текущей книги.
@@ -221,6 +305,18 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
       if (kDebugMode) {
         debugPrint('[AudioHandler] _loadPart failed: $e');
       }
+      // Отказ в доступе (платная часть без покупки/подписки) — просим показать
+      // шторку покупки. Отличаем от сетевых ошибок по 403/PURCHASE_REQUIRED.
+      // Истечение signed URL (410) сюда не относится — им занимается
+      // _onPlaybackError (перезапрос уже загруженного URL).
+      final s = e.toString();
+      if (s.contains('403') ||
+          s.contains('PURCHASE_REQUIRED') ||
+          s.contains('Forbidden')) {
+        _resumePart = part.number;
+        _resumePosition = startPositionSeconds;
+        _paywallController.add(book);
+      }
     }
   }
 
@@ -246,14 +342,18 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
 
     _isRecovering = true;
     try {
-      final savedPosition = _player.position;
-      final wasPlaying = _player.playing;
-
-      await _loadPart(
-        partNumber: _currentPartNumber,
-        startPositionSeconds: savedPosition.inSeconds,
-        autoPlay: wasPlaying,
-      );
+      if (_previewMode) {
+        // В превью перезапрашиваем ПРЕВЬЮ (не реальную часть).
+        await loadPreview(book);
+      } else {
+        final savedPosition = _player.position;
+        final wasPlaying = _player.playing;
+        await _loadPart(
+          partNumber: _currentPartNumber,
+          startPositionSeconds: savedPosition.inSeconds,
+          autoPlay: wasPlaying,
+        );
+      }
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[AudioHandler] recovery failed: $e');
@@ -315,6 +415,9 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
     _currentBook = null;
     _currentPartNumber = 1;
     _currentArtUri = null;
+    _previewMode = false;
+    _resumePart = null;
+    _resumePosition = 0;
 
     // Сбрасываем Now Playing — без этого мини-плеер вернётся.
     mediaItem.add(null);
@@ -354,10 +457,16 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   @override
-  Future<void> skipToNext() async => _skipToPart(_currentPartNumber + 1);
+  Future<void> skipToNext() async {
+    if (_previewMode) return; // в превью частей не листаем
+    return _skipToPart(_currentPartNumber + 1);
+  }
 
   @override
-  Future<void> skipToPrevious() async => _skipToPart(_currentPartNumber - 1);
+  Future<void> skipToPrevious() async {
+    if (_previewMode) return;
+    return _skipToPart(_currentPartNumber - 1);
+  }
 
   /// Переключение на часть с номером [target].
   Future<void> _skipToPart(int target) async {
@@ -379,12 +488,46 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Текущая скорость воспроизведения.
   double get speed => _player.speed;
 
+  /// Продолжить после успешной покупки из шторки: выходим из превью-режима и
+  /// грузим нужную часть с сохранённого места (для превью — часть 1 с секунды,
+  /// где кончился отрывок; для платной части — её начало). Доступ теперь есть,
+  /// прогресс снова пишется.
+  Future<void> resumeAfterPurchase() async {
+    final book = _currentBook;
+    if (book == null) return;
+    _previewMode = false;
+    final part = _resumePart ?? 1;
+    final pos = _resumePosition;
+    _resumePart = null;
+    _resumePosition = 0;
+    await loadBook(
+      book,
+      startPartNumber: part,
+      startPositionSeconds: pos,
+      autoPlay: true,
+    );
+  }
+
   // ─────────────────────────── АВТОПЕРЕХОД ───────────────────────────
 
   void _onProcessingStateChanged(ProcessingState state) {
     if (state == ProcessingState.completed) {
-      _onPartCompleted();
+      if (_previewMode) {
+        _onPreviewEnded();
+      } else {
+        _onPartCompleted();
+      }
     }
+  }
+
+  /// 5-мин превью закончилось — просим показать шторку покупки. Прогресс в
+  /// превью не пишется; _resumePart/_resumePosition уже выставлены в loadPreview
+  /// (часть 1 с секунды окончания отрывка).
+  Future<void> _onPreviewEnded() async {
+    final book = _currentBook;
+    if (book == null) return;
+    await _player.pause();
+    _paywallController.add(book);
   }
 
   /// Часть закончилась естественным путём — переходим к следующей
@@ -502,6 +645,7 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
   // ─────────────────────────── PROGRESS SAVE ───────────────────────────
 
   void _startProgressTimer() {
+    if (_previewMode) return; // в превью прогресс не пишем
     _progressSaveTimer?.cancel();
     _progressSaveTimer = Timer.periodic(_progressSaveInterval, (_) {
       _flushProgress();
@@ -513,8 +657,10 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
     _progressSaveTimer = null;
   }
 
-  /// Сохранить текущую позицию на сервер.
+  /// Сохранить текущую позицию на сервер. В превью-режиме — НЕ сохраняем
+  /// (тизер не должен попадать в «Продолжить слушать» / «Мой прогресс»).
   Future<void> _flushProgress() async {
+    if (_previewMode) return;
     final book = _currentBook;
     if (book == null) return;
     await _progressService.saveProgress(
@@ -589,6 +735,7 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
     await _positionSub?.cancel();
     await _eventSub?.cancel();
     await _sleepRemainingController.close();
+    await _paywallController.close();
     await _player.dispose();
   }
 }
