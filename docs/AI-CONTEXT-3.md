@@ -360,7 +360,6 @@
 ## ✅ СЕССИЯ 09-12.07.2026 — АПГРЕЙД СТЕКА, ПЛАТЕЖИ ЗАКРЫТЫ, СЕЗОНЫ, ЧАТ
 
 ### 1. Апгрейд стека (главный блокер решён)
-
 Verify падал `status:1` (INVALID_JWT_FORMAT): старый in_app_purchase/storekit давал битый JWS. Решение: Flutter 3.22→3.44.6, xcode latest (26.4); in_app_purchase ^3.3.0, record 5→6, just_audio ^0.10.4, audio_session ^0.2.2, rxdart ^0.28, go_router ^14.6.2, sdk>=3.6. После апгрейда verify проходит.
 
 ### 2. Платежи — все сценарии живьём
