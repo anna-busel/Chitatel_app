@@ -34,6 +34,29 @@ class BookPart {
   String get displayDuration => _formatDuration(duration);
 }
 
+/// Ссылка на пакет, в который входит разбор (апселл на экране разбора).
+/// Приходит в поле `package` из GET /api/books/:id.
+@immutable
+class BookPackageRef {
+  const BookPackageRef({
+    required this.id,
+    required this.title,
+    required this.bookCount,
+  });
+
+  final String id;
+  final String title;
+  final int bookCount;
+
+  factory BookPackageRef.fromJson(Map<String, dynamic> json) {
+    return BookPackageRef(
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      title: json['title'] as String? ?? '',
+      bookCount: (json['bookCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 /// Модель книги (аудиоразбора) на клиенте.
 /// Соответствует схеме server/src/models/Book.js (источник истины).
 ///
@@ -65,6 +88,7 @@ class BookModel {
     this.freeChapterIndex = 0,
     this.hasAccess = false,
     this.isOwned = false,
+    this.package,
   });
 
   /// MongoDB ObjectId (строкой)
@@ -136,6 +160,11 @@ class BookModel {
   /// карточкой каталога, чтобы показать «Куплено» вместо цены.
   final bool isOwned;
 
+  /// Пакет, в который входит разбор (если входит) — сервер кладёт в GET
+  /// /books/:id. Используется на экране разбора для апселла «Входит в пакет…».
+  /// null, если разбор не входит ни в один опубликованный пакет.
+  final BookPackageRef? package;
+
   /// Парсинг JSON-ответа бэкенда.
   /// Все поля optional — бэкенд может отдавать урезанный projection.
   factory BookModel.fromJson(Map<String, dynamic> json) {
@@ -165,6 +194,9 @@ class BookModel {
       freeChapterIndex: (json['freeChapterIndex'] as num?)?.toInt() ?? 0,
       hasAccess: json['hasAccess'] as bool? ?? false,
       isOwned: json['isOwned'] as bool? ?? false,
+      package: json['package'] is Map<String, dynamic>
+          ? BookPackageRef.fromJson(json['package'] as Map<String, dynamic>)
+          : null,
     );
   }
 
