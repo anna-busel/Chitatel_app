@@ -13,6 +13,7 @@ import '../../../shared/widgets/error_view.dart';
 import '../../book/providers/book_provider.dart';
 import '../../payments/providers/product_purchase_provider.dart';
 import '../../profile/providers/profile_provider.dart';
+import '../providers/catalog_provider.dart';
 import '../providers/packages_provider.dart';
 import '../widgets/package_card.dart';
 
@@ -82,6 +83,11 @@ class _PackageBody extends ConsumerWidget {
         for (final book in package.books) {
           ref.invalidate(bookProvider(book.id));
         }
+        // Каталог держит книги/пакеты отдельно и сам не перезагружается —
+        // просим перечитать: карточки входящих разборов и самого пакета
+        // сменятся на «Куплено» сразу после возврата в каталог.
+        ref.read(catalogProvider.notifier).load();
+        ref.invalidate(packagesProvider);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Пакет открыт — разборы доступны'),
@@ -221,15 +227,18 @@ class _PackageBookRow extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    book.author,
-                    style: AppTypography.caption.copyWith(
-                      color: AppColors.textSecondary,
+                  // Автор скрыт, если пустой (у биографий автора нет).
+                  if (book.author.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      book.author,
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  ],
                 ],
               ),
             ),

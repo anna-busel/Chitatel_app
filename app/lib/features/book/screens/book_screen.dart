@@ -10,6 +10,8 @@ import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
+import '../../catalog/providers/catalog_provider.dart';
+import '../../catalog/providers/packages_provider.dart';
 import '../../payments/providers/product_purchase_provider.dart';
 import '../../player/providers/player_provider.dart';
 import '../../profile/providers/profile_provider.dart';
@@ -306,11 +308,14 @@ class _TitleBlock extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(book.title, style: AppTypography.serifBookTitle),
-        const SizedBox(height: 4),
-        Text(
-          book.author,
-          style: AppTypography.body.copyWith(color: AppColors.textSecondary),
-        ),
+        // Автор скрыт, если пустой (у биографий автора нет — просьба Анны).
+        if (book.author.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            book.author,
+            style: AppTypography.body.copyWith(color: AppColors.textSecondary),
+          ),
+        ],
       ],
     );
   }
@@ -404,6 +409,11 @@ class _ActionSection extends ConsumerWidget {
         // экран переключится на «Слушать») и историю покупок («Мои покупки»).
         ref.invalidate(bookProvider(book.id));
         ref.invalidate(purchaseHistoryProvider);
+        // Каталог держит книги в StateNotifier и сам не перезагружается —
+        // просим его перечитать (isOwned → «Куплено» на карточке сразу) и
+        // обновляем список пакетов на случай, если разбор входит в пакет.
+        ref.read(catalogProvider.notifier).load();
+        ref.invalidate(packagesProvider);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Разбор открыт'),

@@ -19,6 +19,10 @@ import '../../player/providers/player_provider.dart';
 ///
 /// При этом в строке с заголовком "Часть N" рядом появляется бейдж "СЕЙЧАС"
 /// чтобы юзер заметил даже если иконка не в фокусе.
+///
+/// Заголовок «Содержание» убран (04.08.2026): у одночастных разборов список
+/// вовсе не показывается, поэтому заголовок выбивался — оставляем только сами
+/// части (или состояние «аудио загружается»).
 class BookPartsList extends ConsumerWidget {
   const BookPartsList({
     super.key,
@@ -53,8 +57,6 @@ class BookPartsList extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Содержание', style: AppTypography.sectionHeader),
-        const SizedBox(height: 12),
         ...book.parts.map(
           (part) => _buildPartRow(
             part,
@@ -69,8 +71,6 @@ class BookPartsList extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Содержание', style: AppTypography.sectionHeader),
-        const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
