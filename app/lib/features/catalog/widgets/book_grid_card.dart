@@ -74,13 +74,16 @@ class BookGridCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 2),
-          Text(
-            book.author,
-            style: AppTypography.caption,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          // Автор скрыт, если пустой (у биографий автора нет — просьба Анны).
+          if (book.author.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              book.author,
+              style: AppTypography.caption,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
           const SizedBox(height: 6),
           if (book.isFree)
             Text(
