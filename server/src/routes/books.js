@@ -209,7 +209,54 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
       };
     }
 
-    return success(res, { book: { ...book, hasAccess, package: pkg } });
+    return success(res, {
+      book: {
+        ...book,
+        hasAccess,
+        package: pkg,
+        hasPreview: !!book.previewAudioFilename,
+        previewDuration: book.previewDuration || 0,
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * GET /api/books/:id/preview
+ * Signed URL 5-минутного превью платного разбора. Доступно БЕЗ покупки (тизер).
+ * Клиент проигрывает его в превью-режиме; когда отрывок кончается — показывает
+ * шторку покупки. Превью генерит scripts/import-audio.js (ffmpeg) в
+ * <slug>/preview.mp3, путь лежит в Book.previewAudioFilename.
+ *
+ * Ответ той же формы, что /audio/:partNumber (audioUrl/duration/…), чтобы клиент
+ * разобрал его тем же AudioUrlResponse.
+ */
+router.get('/:id/preview', async (req, res, next) => {
+  try {
+    const book = await Book.findOne({
+      _id: req.params.id,
+      isPublished: true,
+    })
+      .select('previewAudioFilename previewDuration')
+      .lean();
+
+    if (!book) {
+      throw new AppError('BOOK_NOT_FOUND', 'Разбор не найден', 404);
+    }
+    if (!book.previewAudioFilename) {
+      throw new AppError('NOT_FOUND', 'Превью недоступно', 404);
+    }
+
+    const audioUrl = generateSignedUrl(book.previewAudioFilename);
+    return success(res, {
+      audioUrl,
+      duration: book.previewDuration || 0,
+      partNumber: 0,
+      title: 'Превью',
+      isPreview: true,
+    });
   } catch (err) {
     return next(err);
   }
