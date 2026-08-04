@@ -108,13 +108,18 @@ class _BookContent extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 _DescriptionBlock(description: book.description),
-                const SizedBox(height: 24),
-                BookPartsList(
-                  book: book,
-                  isPurchased: book.hasAccess,
-                  listenedPartNumbers: _listenedPartNumbers,
-                  onPartTap: (part) => _onPartTap(context, part),
-                ),
+                // Список частей показываем ТОЛЬКО если частей несколько. При
+                // одной части «Часть 1» не выводим — разбор слушается кнопкой
+                // выше целиком (при 0 частей список сам покажет своё состояние).
+                if (book.parts.length != 1) ...[
+                  const SizedBox(height: 24),
+                  BookPartsList(
+                    book: book,
+                    isPurchased: book.hasAccess,
+                    listenedPartNumbers: _listenedPartNumbers,
+                    onPartTap: (part) => _onPartTap(context, part),
+                  ),
+                ],
                 const SizedBox(height: 28),
                 _ReviewsPlaceholder(),
                 const SizedBox(height: 16),
@@ -379,6 +384,9 @@ class _ActionSection extends ConsumerWidget {
     // Если у книги нет аудио — все варианты показывают disabled-кнопку.
     // Apple Guideline 2.1: не открывать плеер пустого контента.
     final hasAudio = book.parts.isNotEmpty;
+    // Бесплатный отрывок-превью есть, только если какая-то часть помечена
+    // isPreviewAvailable (её ставит импорт-аудио: отдельный 5-мин отрывок).
+    final hasPreview = book.parts.any((p) => p.isPreviewAvailable);
     final productId = book.appleProductId;
 
     // Реакция на результат покупки ИМЕННО этого разбора. Провайдер общий на все
@@ -436,6 +444,7 @@ class _ActionSection extends ConsumerWidget {
     return _PaidActions(
       book: book,
       hasAudio: hasAudio,
+      hasPreview: hasPreview,
       isBuying: isBuying,
       canBuy: productId != null,
       onBuy: () {
@@ -482,6 +491,7 @@ class _PaidActions extends StatelessWidget {
   const _PaidActions({
     required this.book,
     required this.hasAudio,
+    required this.hasPreview,
     required this.isBuying,
     required this.canBuy,
     required this.onBuy,
@@ -490,6 +500,9 @@ class _PaidActions extends StatelessWidget {
 
   final BookModel book;
   final bool hasAudio;
+
+  /// У разбора есть бесплатный отрывок-превью (какая-то часть isPreviewAvailable).
+  final bool hasPreview;
 
   /// Идёт покупка/верификация — кнопка показывает спиннер и не нажимается.
   final bool isBuying;
@@ -513,16 +526,20 @@ class _PaidActions extends StatelessWidget {
           onPressed: canBuy ? onBuy : null,
           isLoading: isBuying,
         ),
-        const SizedBox(height: 10),
-        // Превью доступно только если есть аудио.
-        if (hasAudio)
+        // Кнопку превью показываем ТОЛЬКО когда реально есть бесплатный отрывок.
+        // Нет превью, но и аудио ещё нет — показываем подсказку «аудио скоро».
+        // Есть аудио, но превью не назначено — только кнопка «Купить».
+        if (hasPreview) ...[
+          const SizedBox(height: 10),
           AppButton(
             text: 'Слушать превью (5 мин)',
             onPressed: onPreview,
             variant: AppButtonVariant.outline,
-          )
-        else
+          ),
+        ] else if (!hasAudio) ...[
+          const SizedBox(height: 10),
           _DisabledAudioHint(),
+        ],
       ],
     );
   }
