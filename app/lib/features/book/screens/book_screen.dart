@@ -106,6 +106,10 @@ class _BookContent extends StatelessWidget {
                   hasAccess: book.hasAccess,
                   progressPercent: _progressPercent,
                 ),
+                // Апселл: если платный разбор ещё не доступен и входит в пакет —
+                // карточка «Входит в пакет … / Вместе выгоднее» (тап → пакет).
+                if (!book.isFree && !book.hasAccess && book.package != null)
+                  _PackageUpsellCard(package: book.package!),
                 const SizedBox(height: 20),
                 _DescriptionBlock(description: book.description),
                 // Список частей показываем ТОЛЬКО если частей несколько. При
@@ -739,6 +743,86 @@ class _ProgressCard extends StatelessWidget {
 }
 
 // ─────────────────────────── DESCRIPTION ───────────────────────────
+
+// — Апселл-карточка «Входит в пакет» на экране разбора —
+// Названия пакетов уже содержат слово «Пакет»/«ФАКУЛЬТАТИВ», поэтому не
+// оборачиваем в «Входит в пакет «…»» (был бы «пакет пакет»): сверху метка
+// «ВХОДИТ В ПАКЕТ», ниже — само название, затем «Вместе выгоднее».
+
+class _PackageUpsellCard extends StatelessWidget {
+  const _PackageUpsellCard({required this.package});
+
+  final BookPackageRef package;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Material(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+        child: InkWell(
+          onTap: () => context.push(Routes.package(package.id)),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.terracotta.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.inventory_2_outlined,
+                    size: 20,
+                    color: AppColors.terracotta,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'ВХОДИТ В ПАКЕТ',
+                        style: AppTypography.badge.copyWith(
+                          color: AppColors.terracotta,
+                          fontSize: 10,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        package.title,
+                        style: AppTypography.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text('Вместе выгоднее', style: AppTypography.caption),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.chevron_right,
+                  size: 20,
+                  color: AppColors.textTertiary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _DescriptionBlock extends StatelessWidget {
   const _DescriptionBlock({required this.description});
