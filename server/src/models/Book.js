@@ -64,6 +64,13 @@ const bookSchema = new mongoose.Schema(
     // Части
     parts: [partSchema],
 
+    // Превью — отдельный короткий отрывок (~5 мин из начала), генерится импорт-
+    // скриптом (scripts/import-audio.js, ffmpeg) в <slug>/preview.mp3. Отдаётся
+    // бесплатно не-владельцам платного разбора; когда отрывок кончается, клиент
+    // показывает шторку покупки. null/0 у бесплатных и у разборов без превью.
+    previewAudioFilename: { type: String, default: null }, // '<slug>/preview.mp3'
+    previewDuration: { type: Number, default: 0 }, // секунды (обычно 300)
+
     // Публикация
     isPublished: { type: Boolean, default: false },
     publishedAt: { type: Date, default: null },
