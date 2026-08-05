@@ -23,6 +23,7 @@ enum ProductPurchaseStatus {
   purchasing, // загрузка продукта / системный диалог Apple
   verifying, // проверка чека на бэкенде
   success, // покупка подтверждена сервером
+  restored, // товар уже куплен — StoreKit вернул restore (доступ есть по БД)
   error,
 }
 
@@ -147,12 +148,21 @@ class ProductPurchaseNotifier extends StateNotifier<ProductPurchaseState> {
           break;
         case PurchaseStatus.restored:
           // Non-consumable может прийти как restored (переустановка / авто-выдача
-          // StoreKit при запуске). Доступ к купленным товарам сервер и так
-          // считает по БД (userHasBookAccess: purchasedBooks/purchasedPackages),
-          // поэтому НЕ верифицируем повторно и НЕ привязываем — только завершаем
-          // транзакцию, чтобы StoreKit не повторял её. Та же модель
-          // безопасности, что в paywall (решение 11.07.2026).
+          // StoreKit при запуске, а также повторная покупка того же товара в
+          // Sandbox). Доступ к купленным товарам сервер и так считает по БД
+          // (userHasBookAccess: purchasedBooks/purchasedPackages), поэтому НЕ
+          // верифицируем повторно и НЕ привязываем — только завершаем транзакцию,
+          // чтобы StoreKit не повторял её. Та же модель безопасности, что в
+          // paywall (решение 11.07.2026).
           await _service.complete(purchase);
+          // Сообщаем экрану (если открыт), что доступ к этому товару подтверждён:
+          // пусть перечитает каталог/доступ, чтобы «Куплено» появилось сразу без
+          // ручного refresh. На холодном старте эти экраны не смонтированы, так
+          // что авто-restore при запуске лишних обновлений не вызовет.
+          state = ProductPurchaseState(
+            status: ProductPurchaseStatus.restored,
+            productId: purchase.productID,
+          );
           break;
       }
     }

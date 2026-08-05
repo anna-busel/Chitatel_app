@@ -46,7 +46,10 @@ class PaywallSheet extends ConsumerWidget {
     // Реакция на результат покупки ИМЕННО этого разбора.
     ref.listen<ProductPurchaseState>(productPurchaseProvider, (prev, next) {
       if (productId == null || next.productId != productId) return;
-      if (next.status == ProductPurchaseStatus.success) {
+      if (next.status == ProductPurchaseStatus.success ||
+          next.status == ProductPurchaseStatus.restored) {
+        // restored — разбор уже куплен (Sandbox повторная покупка / restore).
+        // Доступ у сервера уже есть → продолжаем воспроизведение как после покупки.
         ref.read(productPurchaseProvider.notifier).reset();
         onPurchased();
       } else if (next.status == ProductPurchaseStatus.error) {
