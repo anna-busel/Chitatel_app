@@ -72,7 +72,7 @@ class BookScreen extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────── BODY ───────────────────────────
+// ───────────────────────── BODY ─────────────────────────
 
 class _BookContent extends StatelessWidget {
   const _BookContent({required this.book});
@@ -82,7 +82,7 @@ class _BookContent extends StatelessWidget {
   // Доступ (куплено/подписка) теперь считает сервер — book.hasAccess
   // (GET /books/:id, 08.07.2026). listenedPartNumbers и progressPercent —
   // заглушки: будут подтягиваться из ProgressService когда BookScreen
-  // начнёт это делать (отдельная微 микро-задача).
+  // начнёт это делать (отдельная микро-задача).
   static const Set<int> _listenedPartNumbers = <int>{};
   static const double _progressPercent = 0.0;
 
@@ -118,7 +118,7 @@ class _BookContent extends StatelessWidget {
                 _DescriptionBlock(description: book.description),
                 // Список частей показываем ТОЛЬКО если частей несколько. При
                 // одной части «Часть 1» не выводим — разбор слушается кнопкой
-                // выше целиком (при 0 частей список сам покажет своё состояние).
+                // выше целиком (при 0 частях список сам покажет своё состояние).
                 if (book.parts.length != 1) ...[
                   const SizedBox(height: 24),
                   BookPartsList(
@@ -154,7 +154,7 @@ class _BookContent extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── TOP BAR ───────────────────────────
+// ───────────────────────── TOP BAR ─────────────────────────
 
 class _TopBar extends StatelessWidget {
   @override
@@ -201,7 +201,7 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── COVER ───────────────────────────
+// ───────────────────────── COVER ─────────────────────────
 
 /// Секция обложки книги.
 ///
@@ -269,7 +269,7 @@ class _CoverSection extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── BADGE ───────────────────────────
+// ───────────────────────── BADGE ─────────────────────────
 
 class _Badge extends StatelessWidget {
   const _Badge({
@@ -296,7 +296,7 @@ class _Badge extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── TITLE ───────────────────────────
+// ───────────────────────── TITLE ─────────────────────────
 
 class _TitleBlock extends StatelessWidget {
   const _TitleBlock({required this.book});
@@ -322,7 +322,7 @@ class _TitleBlock extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── META (рейтинг + длительность) ───────────────────────────
+// ───────────────────────── META (рейтинг + длительность) ─────────────────────────
 
 class _MetaRow extends StatelessWidget {
   const _MetaRow({required this.book});
@@ -373,7 +373,7 @@ class _MetaRow extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── ACTIONS (3 варианта) ───────────────────────────
+// ───────────────────────── ACTIONS (3 варианта) ─────────────────────────
 
 class _ActionSection extends ConsumerWidget {
   const _ActionSection({
@@ -404,7 +404,11 @@ class _ActionSection extends ConsumerWidget {
     // товары, поэтому сверяем productId, чтобы не среагировать на чужую покупку.
     ref.listen<ProductPurchaseState>(productPurchaseProvider, (prev, next) {
       if (productId == null || next.productId != productId) return;
-      if (next.status == ProductPurchaseStatus.success) {
+      if (next.status == ProductPurchaseStatus.success ||
+          next.status == ProductPurchaseStatus.restored) {
+        // restored — товар уже был куплен (Sandbox повторная покупка / restore).
+        // Доступ у сервера уже есть; обновляем UI так же, как после покупки.
+        final restored = next.status == ProductPurchaseStatus.restored;
         ref.read(productPurchaseProvider.notifier).reset();
         // Доступ пересчитывает сервер — перезапрашиваем книгу (hasAccess → true,
         // экран переключится на «Слушать») и историю покупок («Мои покупки»).
@@ -416,9 +420,9 @@ class _ActionSection extends ConsumerWidget {
         ref.read(catalogProvider.notifier).load();
         ref.invalidate(packagesProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Разбор открыт'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text(restored ? 'Покупка восстановлена' : 'Разбор открыт'),
+            duration: const Duration(seconds: 2),
           ),
         );
       } else if (next.status == ProductPurchaseStatus.error) {
@@ -765,7 +769,7 @@ class _ProgressCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── DESCRIPTION ───────────────────────────
+// ───────────────────────── DESCRIPTION ─────────────────────────
 
 // — Апселл-карточка «Входит в пакет» на экране разбора —
 // Названия пакетов уже содержат слово «Пакет»/«ФАКУЛЬТАТИВ», поэтому не
@@ -864,7 +868,7 @@ class _DescriptionBlock extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── REVIEWS (post-MVP placeholder) ───────────────────────────
+// ───────────────────────── REVIEWS (post-MVP placeholder) ─────────────────────────
 
 class _ReviewsPlaceholder extends StatelessWidget {
   @override
@@ -884,7 +888,7 @@ class _ReviewsPlaceholder extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── REPORT LINK (footer) ───────────────────────────
+// ───────────────────────── REPORT LINK (footer) ─────────────────────────
 
 class _ReportLink extends StatelessWidget {
   @override
@@ -911,7 +915,7 @@ class _ReportLink extends StatelessWidget {
   }
 }
 
-// ─────────────────────────── SHIMMER ───────────────────────────
+// ───────────────────────── SHIMMER ─────────────────────────
 
 class _BookShimmer extends StatelessWidget {
   const _BookShimmer();
