@@ -40,7 +40,6 @@ class PackageScreen extends ConsumerWidget {
         backgroundColor: AppColors.background,
         elevation: 0,
         foregroundColor: AppColors.textPrimary,
-        title: Text('Пакет', style: AppTypography.serifSectionTitle),
       ),
       body: async.when(
         skipLoadingOnReload: true,
@@ -125,6 +124,15 @@ class _PackageBody extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 16),
+        Text(
+          package.typeLabel,
+          style: AppTypography.badge.copyWith(
+            color: AppColors.terracotta,
+            fontSize: 10,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 6),
         Text(package.title, style: AppTypography.serifSectionTitle),
         const SizedBox(height: 4),
         Text(
@@ -155,7 +163,7 @@ class _PackageBody extends ConsumerWidget {
           ),
           const SizedBox(height: 20),
         ],
-        Text('Входит в пакет', style: AppTypography.bodyBold),
+        Text('Входит в набор', style: AppTypography.bodyBold),
         const SizedBox(height: 8),
         ...package.books.map((b) => _PackageBookRow(book: b)),
       ],

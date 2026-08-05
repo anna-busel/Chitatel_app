@@ -52,8 +52,8 @@ class PackageCard extends StatelessWidget {
                     color: AppColors.terracotta,
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Text(
-                    'ПАКЕТ',
+                  child: Text(
+                    package.typeLabel,
                     style: AppTypography.badge,
                   ),
                 ),
