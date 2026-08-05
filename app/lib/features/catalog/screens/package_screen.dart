@@ -10,6 +10,7 @@ import '../../../shared/models/package_model.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../book/providers/book_provider.dart';
 import '../../payments/providers/product_purchase_provider.dart';
 import '../../profile/providers/profile_provider.dart';
@@ -149,7 +150,14 @@ class _PackageBody extends ConsumerWidget {
           AppButton(
             text: buyText,
             onPressed: productId != null
-                ? () => ref.read(productPurchaseProvider.notifier).buy(productId)
+                ? () {
+                    if (ref.read(authProvider).status !=
+                        AuthStatus.authenticated) {
+                      context.push(Routes.login);
+                      return;
+                    }
+                    ref.read(productPurchaseProvider.notifier).buy(productId);
+                  }
                 : null,
             isLoading: isBuying,
           ),
