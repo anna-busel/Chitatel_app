@@ -10,6 +10,7 @@ import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../catalog/providers/catalog_provider.dart';
 import '../../catalog/providers/packages_provider.dart';
 import '../../payments/providers/product_purchase_provider.dart';
@@ -81,7 +82,7 @@ class _BookContent extends StatelessWidget {
   // Доступ (куплено/подписка) теперь считает сервер — book.hasAccess
   // (GET /books/:id, 08.07.2026). listenedPartNumbers и progressPercent —
   // заглушки: будут подтягиваться из ProgressService когда BookScreen
-  // начнёт это делать (отдельная микро-задача).
+  // начнёт это делать (отдельная微 микро-задача).
   static const Set<int> _listenedPartNumbers = <int>{};
   static const double _progressPercent = 0.0;
 
@@ -464,6 +465,12 @@ class _ActionSection extends ConsumerWidget {
       canBuy: productId != null,
       onBuy: () {
         if (productId == null) return;
+        // Без сессии покупку не начинаем — Apple спишет, а привязать не к кому.
+        // Ведём на вход (как в клубной подписке).
+        if (ref.read(authProvider).status != AuthStatus.authenticated) {
+          context.push(Routes.login);
+          return;
+        }
         ref.read(productPurchaseProvider.notifier).buy(productId);
       },
       onPreview: () {
@@ -648,7 +655,7 @@ class _GreenListenButton extends StatelessWidget {
       height: 48,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: AppColors.successLight,
+          color: AppColors.freeBadge,
           borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
         ),
         child: Material(
