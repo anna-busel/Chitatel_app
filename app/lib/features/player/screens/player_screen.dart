@@ -10,6 +10,8 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../book/providers/book_provider.dart';
+import '../../catalog/providers/catalog_provider.dart';
+import '../../catalog/providers/packages_provider.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../providers/player_provider.dart';
 import '../widgets/paywall_sheet.dart';
@@ -110,6 +112,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           // Экран разбора под плеером обновляем — доступ открылся.
           ref.invalidate(bookProvider(book.id));
           ref.invalidate(purchaseHistoryProvider);
+          // Каталог держит книги/пакеты отдельно — перечитываем, чтобы карточка
+          // разбора сразу стала «Куплено» после возврата в каталог.
+          ref.read(catalogProvider.notifier).load();
+          ref.invalidate(packagesProvider);
         },
         onLater: () {
           Navigator.of(sheetCtx).pop();
