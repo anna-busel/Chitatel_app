@@ -9,6 +9,9 @@ import '../../../shared/widgets/book_cover_image.dart';
 
 /// Карточка пакета в сетке каталога (фильтр «Пакеты»).
 /// Тап → экран пакета (Routes.package).
+///
+/// Тип (ПАКЕТ / ФАКУЛЬТАТИВ) показываем МЕТКОЙ-надстрочником над названием
+/// (по packageSlug), а не плашкой на обложке — чище и как на экране пакета.
 class PackageCard extends StatelessWidget {
   const PackageCard({
     super.key,
@@ -31,36 +34,24 @@ class PackageCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Stack(
-            children: [
-              BookCoverImage(
-                imageUrl: package.coverImageUrl,
-                gradientColors: package.coverGradientColors,
-                label: package.coverLabel,
-                width: coverWidth,
-                height: coverHeight,
-              ),
-              Positioned(
-                top: 8,
-                left: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.terracotta,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    package.typeLabel,
-                    style: AppTypography.badge,
-                  ),
-                ),
-              ),
-            ],
+          BookCoverImage(
+            imageUrl: package.coverImageUrl,
+            gradientColors: package.coverGradientColors,
+            label: package.coverLabel,
+            width: coverWidth,
+            height: coverHeight,
           ),
           const SizedBox(height: 8),
+          // Метка типа над названием: ПАКЕТ / ФАКУЛЬТАТИВ (по packageSlug).
+          Text(
+            package.typeLabel,
+            style: AppTypography.badge.copyWith(
+              color: AppColors.terracotta,
+              fontSize: 10,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 2),
           Text(
             package.title,
             style: AppTypography.bodyMedium,

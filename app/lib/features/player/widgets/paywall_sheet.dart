@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../payments/providers/product_purchase_provider.dart';
 
 /// Шторка покупки в плеере — поднимается, когда закончился 5-мин отрывок-превью
@@ -121,7 +124,14 @@ class PaywallSheet extends ConsumerWidget {
               text: buyText,
               onPressed: (productId == null || isBuying)
                   ? null
-                  : () => ref.read(productPurchaseProvider.notifier).buy(productId),
+                  : () {
+                      if (ref.read(authProvider).status !=
+                          AuthStatus.authenticated) {
+                        context.push(Routes.login);
+                        return;
+                      }
+                      ref.read(productPurchaseProvider.notifier).buy(productId);
+                    },
               isLoading: isBuying,
             ),
             if (pkg != null && onOpenPackage != null) ...[
