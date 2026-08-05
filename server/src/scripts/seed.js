@@ -136,6 +136,17 @@ const FREE_BOOKS = [
 
 // --- Маппинг: каталожные поля, которые ОБНОВЛЯЮТСЯ при каждом сиде ---
 
+// Разборы без аудио — временно скрыты из каталога (isPublished:false), чтобы не
+// висели пустыми. Синхронно с scripts/hide-pending-audio.js. Когда появится
+// аудио — убрать слаг отсюда (+ import-audio), и разбор снова опубликуется.
+const HIDDEN_UNTIL_AUDIO = [
+  'ada_ili_otrada',
+  'zaschita_luzhina',
+  'biografiya_vladimira_nabokova',
+  'dar',
+  'sobache_serdtse',
+];
+
 function paidUpdateFields(src) {
   return {
     title: src.title,
@@ -152,7 +163,7 @@ function paidUpdateFields(src) {
     isFree: false,
     appleProductId: `book.${src.bookSlug}`,
     purchaseUrl: src.purchaseUrl || '',
-    isPublished: true,
+    isPublished: !HIDDEN_UNTIL_AUDIO.includes(src.bookSlug),
   };
 }
 
