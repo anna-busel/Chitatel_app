@@ -72,7 +72,11 @@ class _PackageBody extends ConsumerWidget {
     // товары, поэтому сверяем productId).
     ref.listen<ProductPurchaseState>(productPurchaseProvider, (prev, next) {
       if (productId == null || next.productId != productId) return;
-      if (next.status == ProductPurchaseStatus.success) {
+      if (next.status == ProductPurchaseStatus.success ||
+          next.status == ProductPurchaseStatus.restored) {
+        // restored — пакет уже был куплен (Sandbox повторная покупка / restore).
+        // Доступ у сервера уже есть; обновляем UI так же, как после покупки.
+        final restored = next.status == ProductPurchaseStatus.restored;
         ref.read(productPurchaseProvider.notifier).reset();
         // Пакет открывает входящие разборы (сервер: purchasedPackages →
         // userHasBookAccess). Обновляем детали пакета (package.hasAccess → true,
@@ -89,9 +93,11 @@ class _PackageBody extends ConsumerWidget {
         ref.read(catalogProvider.notifier).load();
         ref.invalidate(packagesProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Пакет открыт — разборы доступны'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text(
+              restored ? 'Покупка восстановлена' : 'Пакет открыт — разборы доступны',
+            ),
+            duration: const Duration(seconds: 2),
           ),
         );
       } else if (next.status == ProductPurchaseStatus.error) {
