@@ -121,6 +121,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> _clearLocalUserFlags() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('ai_consent');
+    // resume-guard онбординга — строго на текущего юзера (задача 6.3).
+    await prefs.remove('onboarding_pending');
   }
 
   /// Проверка сохранённых токенов при запуске
@@ -349,6 +351,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('onboarding_seen', true);
     await prefs.remove('ai_consent');
+
+    // resume-guard онбординга (задача 6.3): если сервер говорит, что
+    // персонализация не пройдена (у существующих аккаунтов поля нет → не true),
+    // держим пользователя в цепочке онбординга до её завершения. Опрос при
+    // отправке ставит onboardingCompleted на сервере и снимает этот флаг.
+    final user = data['user'];
+    final completed =
+        user is Map && user['onboardingCompleted'] == true;
+    await prefs.setBool('onboarding_pending', !completed);
 
     _resetUserScopedState();
   }
