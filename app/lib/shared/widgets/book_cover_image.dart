@@ -34,12 +34,19 @@ class BookCoverImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: _buildContent(),
+    // Помечаем как изображение с общей подписью (6.4): VoiceOver называет это
+    // обложкой книги, а не пытается читать содержимое. Название книги обычно
+    // рядом отдельным текстом (в карточке/на экране книги).
+    return Semantics(
+      image: true,
+      label: 'Обложка книги',
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: _buildContent(),
+        ),
       ),
     );
   }

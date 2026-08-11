@@ -46,7 +46,10 @@ class HomeHeader extends ConsumerWidget {
       child: Row(
         children: [
           // Аватар → профиль
-          InkResponse(
+          Semantics(
+            button: true,
+            label: 'Открыть профиль',
+            child: InkResponse(
             onTap: () => context.go(Routes.profile),
             radius: AppSpacing.minTapTarget / 2,
             child: ClipOval(
@@ -63,6 +66,7 @@ class HomeHeader extends ConsumerWidget {
                     : const _AvatarFallback(),
               ),
             ),
+          ),
           ),
 
           // Логотип по центру
@@ -100,7 +104,10 @@ class _NotificationBell extends ConsumerWidget {
           orElse: () => 0,
         );
 
-    return InkResponse(
+    return Semantics(
+      button: true,
+      label: unread > 0 ? 'Уведомления, есть новые' : 'Уведомления',
+      child: InkResponse(
       onTap: () => context.push(Routes.notifications),
       radius: AppSpacing.minTapTarget / 2,
       child: SizedBox(
@@ -131,6 +138,7 @@ class _NotificationBell extends ConsumerWidget {
           ],
         ),
       ),
+    ),
     );
   }
 }
