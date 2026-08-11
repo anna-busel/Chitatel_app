@@ -171,6 +171,11 @@ const displayName = (user) => {
   return n && n !== NAME_PLACEHOLDER ? n : '';
 };
 
+// Имя для отчётов (недельный/месячный): там оно стоит в шаблоне «Дорогая
+// {userName}», поэтому пустое сломало бы фразу — при отсутствии настоящего
+// имени подставляем нейтральное обращение. Задача 6.3.
+const reportName = (user) => displayName(user) || 'читательница';
+
 // Жизненная ситуация из онбординга (экран «Расскажите о себе») → человекочитаемо
 // для контекста ИИ. Ключи — коды, которые шлёт клиент (survey_screen).
 const SURVEY_LIFE_SITUATION = {
@@ -323,7 +328,7 @@ const generateWeeklyReport = async (user, quotes, previousReportText = '') => {
 
   const userMessage = fillTemplate(WEEKLY_REPORT_PROMPT, {
     quotesText,
-    userName: user.name || '',
+    userName: reportName(user),
     previousReportBlock,
   });
 
@@ -388,7 +393,7 @@ const generateMonthlyReport = async (user, { weeklyReports = [], topQuotes = [],
     systemPrompt = MONTHLY_REPORT_SYSTEM;
     userMessage = fillTemplate(MONTHLY_REPORT_WEEKLY_PROMPT, {
       monthName,
-      userName: user.name || '',
+      userName: reportName(user),
       totalQuotes: metrics.totalQuotes ?? 0,
       uniqueAuthors: metrics.uniqueAuthors ?? 0,
       weeksActive: metrics.weeksActive ?? 0,
