@@ -277,6 +277,22 @@ router.post(
         .populate('answeredByUserId', 'name avatarUrl')
         .lean();
 
+      // Push автору вопроса: «Анна ответила» (задача 6.1). Fire-and-forget,
+      // гейтится настройкой chatMessages; себе не шлём.
+      if (String(question.userId) !== String(req.user.userId)) {
+        pushService
+          .sendToUser(
+            question.userId,
+            {
+              title: 'Анна ответила на ваш вопрос',
+              body: req.body.answerText.slice(0, 140),
+              data: { type: 'qa_answer', questionId: String(question._id) },
+            },
+            'chatMessages'
+          )
+          .catch(() => {});
+      }
+
       return success(res, { question: populated });
     } catch (err) {
       return next(err);
