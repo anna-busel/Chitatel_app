@@ -29,9 +29,9 @@ import '../providers/auth_provider.dart';
 /// Сам код кнопки и вызов `signInWithGoogle()` НЕ удалены — только скрыты.
 ///
 /// ⚠️ 12.07.2026 — ФИКС КРАША ПОСЛЕ РЕГИСТРАЦИИ: новый юзер отправлялся на
-/// `Routes.survey`, а этого маршрута в роутере НЕТ (опрос — волна 6Б, задача
-/// 6.3). go_router показал бы экран ошибки вместо приложения. Пока опроса нет,
-/// новый юзер идёт на главную, как и все.
+/// `Routes.survey`, а этого маршрута в роутере не было. Теперь онбординг
+/// зарегистрирован (задача 6.3): после входа непройденная персонализация
+/// ведёт на экран «Имя», пройденная — сразу на главную.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -69,9 +69,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     ref.listen<AuthState>(authProvider, (prev, next) {
       if (next.status == AuthStatus.authenticated) {
-        // ⚠️ Раньше здесь было: isNewUser → Routes.survey. Маршрута нет —
-        // краш. Опрос вернём вместе с онбордингом (задача 6.3).
-        context.go(Routes.home);
+        // Задача 6.3: не прошёл персонализацию (у существующих аккаунтов поля
+        // onboardingCompleted нет → не true) → в онбординг с экрана «Имя».
+        // Иначе — сразу на главную. Резервно ту же развилку страхует редирект
+        // роутера по флагу onboarding_pending.
+        final user = next.user;
+        final completed = user != null && user['onboardingCompleted'] == true;
+        context.go(completed ? Routes.home : Routes.onboardingName);
       }
       if (next.status == AuthStatus.error && next.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
