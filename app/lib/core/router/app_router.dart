@@ -7,6 +7,7 @@ import '../../shared/widgets/app_bottom_bar.dart';
 import '../../shared/widgets/guest_gate.dart';
 import '../../core/theme/app_colors.dart';
 import '../../features/auth/screens/login_screen.dart';
+import '../../features/onboarding/screens/onboarding_slides_screen.dart';
 import '../../features/onboarding/screens/name_screen.dart';
 import '../../features/onboarding/screens/survey_screen.dart';
 import '../../features/onboarding/screens/onboarding_extra_screen.dart';
@@ -47,7 +48,7 @@ final _shellNavigatorKey = GlobalKey<NavigatorState>();
 ///
 /// ⚠️ 12.07.2026 (Фаза 6, A6): все заглушки `_Placeholder` УДАЛЕНЫ — Apple
 /// отклоняет сборки с экранами «в разработке». Профиль и его подэкраны теперь
-/// настоящие (задача 6.2). Онбординг и опрос — волна 6Б (задача 6.3).
+/// настоящие (задача 6.2). Онбординг и опрос (задача 6.3) теперь тоже настоящие.
 /// Экран разрешения push (4.8) и лента уведомлений (4.30) — задача 6.1,
 /// теперь зарегистрированы.
 final routerProvider = Provider<GoRouter>((ref) {
@@ -59,15 +60,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       final onboardingSeen = prefs.getBool('onboarding_seen') ?? false;
       final location = state.matchedLocation;
 
-      // Первый запуск — на экран входа (слайды онбординга и опрос — волна 6Б).
+      // Первый запуск — на интро-слайды (MASTER 4.1, задача 6.3). Со слайдов
+      // «Начать»/«Пропустить» ставят onboarding_seen и ведут на вход.
       if (!onboardingSeen &&
+          location != Routes.onboarding &&
           location != Routes.login &&
           location != Routes.emailLogin &&
           location != Routes.register &&
           location != Routes.forgotPassword &&
           location != Routes.aiConsent &&
           location != Routes.pushConsent) {
-        return Routes.login;
+        return Routes.onboarding;
       }
 
       // Задача 6.3: персонализация не пройдена (флаг ставится при входе по
@@ -92,6 +95,11 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       // — Auth (без tab bar) —
+      // Интро-слайды (MASTER 4.1) — первый запуск, до входа.
+      GoRoute(
+        path: Routes.onboarding,
+        builder: (context, state) => const OnboardingSlidesScreen(),
+      ),
       GoRoute(
         path: Routes.login,
         builder: (context, state) => const LoginScreen(),
