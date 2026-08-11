@@ -12,6 +12,7 @@ const { AppError } = require('../middleware/error');
 const { emitToClub } = require('../socket');
 const imageService = require('../services/image.service');
 const voiceService = require('../services/voice.service');
+const pushService = require('../services/push.service');
 const User = require('../models/User');
 const ClubMonth = require('../models/ClubMonth');
 const ChatMessage = require('../models/ChatMessage');
@@ -698,14 +699,15 @@ router.post(
 
       // Запрет ссылок для не-админов (text-сообщения).
       const author = await User.findById(req.user.userId)
-        .select('role')
+        .select('role name')
         .lean();
       const isAdmin = author && author.role === 'admin';
       assertNoLinkForNonAdmin(req.body.text, isAdmin);
 
+      let parentAuthorId = null;
       if (req.body.replyToId) {
         const parent = await ChatMessage.findById(req.body.replyToId)
-          .select('clubMonthId')
+          .select('clubMonthId userId')
           .lean();
         if (!parent || !parent.clubMonthId.equals(req.club._id)) {
           throw new AppError(
@@ -714,6 +716,7 @@ router.post(
             404
           );
         }
+        parentAuthorId = parent.userId;
       }
 
       const mentions = await sanitizeMentions(req.body.mentions);
@@ -740,6 +743,43 @@ router.post(
 
       const io = req.app.get('io');
       emitToClub(io, req.club._id, 'chat:new_message', { message: populated });
+
+      // Push (задача 6.1): автору сообщения, на которое ответили (reply), и
+      // упомянутым через @ (по дизайну sanitizeMentions — только админы, т.е.
+      // @ уведомляет Анну). Fire-and-forget, гейт chatMessages, себе не шлём;
+      // reply приоритетнее mention для одного человека.
+      {
+        const senderName = author && author.name ? author.name : 'Участница';
+        const t = (req.body.text || '').trim();
+        const preview = t ? t.slice(0, 140) : 'Новое сообщение';
+        const senderIdStr = String(req.user.userId);
+        const targets = new Map();
+        if (parentAuthorId && String(parentAuthorId) !== senderIdStr) {
+          targets.set(String(parentAuthorId), 'chat_reply');
+        }
+        for (const m of mentions) {
+          const mid = String(m);
+          if (mid !== senderIdStr && !targets.has(mid)) {
+            targets.set(mid, 'mention');
+          }
+        }
+        for (const [uid, type] of targets) {
+          pushService
+            .sendToUser(
+              uid,
+              {
+                title:
+                  type === 'chat_reply'
+                    ? `${senderName} ответил(а) вам`
+                    : `${senderName} упомянул(а) вас`,
+                body: preview,
+                data: { type, clubMonthId: String(req.club._id) },
+              },
+              'chatMessages'
+            )
+            .catch(() => {});
+        }
+      }
 
       return success(res, { message: populated }, 201);
     } catch (err) {
