@@ -279,18 +279,21 @@ node src/scripts/fix-package-titles.js       # названия пакетов/�
 «вы»), а экран «Имя» даёт настоящее. Плюс `ai.service.buildUserContext()`
 заполняет плейсхолдер `{userContext}` разбора цитаты из ответов опроса
 (ситуация, книга детства, вопрос сейчас, желание на год). Отчёты (weekly/monthly)
-намеренно не трогали — там имя в шаблоне «Дорогая {userName}», пустое сломало бы
-фразу; отдельная задача при желании.
+тоже поправлены: `ai.service.reportName()` = настоящее имя, а если его нет —
+нейтральное «читательница» (пустое сломало бы шаблон «Дорогая {userName}»). Сам
+контекст опроса в отчёты не подмешиваем — они и так строятся из цитат юзера, а
+менять текст промптов Анны без спроса не стали.
 
 ### 7.5 Файлы (всё в `main`, коммиты 11.08.2026)
 
 Сервер: `models/User.js` (+onboardingCompleted, country, marketingEmail,
 marketingConsent), `routes/profile.js` (PATCH принимает новые поля; survey ставит
-onboardingCompleted), `services/ai.service.js` (displayName + buildUserContext).
-Клиент: новые `features/onboarding/{providers/onboarding_provider,screens/
-name_screen,survey_screen,onboarding_extra_screen}.dart`; правки
-`core/router/{routes,app_router}.dart`, `features/auth/screens/{login_screen,
-push_permission_screen}.dart`, `features/auth/providers/auth_provider.dart`,
+onboardingCompleted), `services/ai.service.js` (displayName + reportName +
+buildUserContext). Клиент: новые `features/onboarding/{providers/
+onboarding_provider,screens/name_screen,survey_screen,onboarding_extra_screen}
+.dart`; правки `core/router/{routes,app_router}.dart`,
+`features/auth/screens/{login_screen,push_permission_screen}.dart`,
+`features/auth/providers/auth_provider.dart`,
 `features/profile/services/profile_service.dart`.
 
 ### 7.6 Осталось / на владельце
