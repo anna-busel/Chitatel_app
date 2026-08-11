@@ -151,9 +151,9 @@ router.post('/logout', requireAuth, validate(logoutSchema), async (req, res, nex
  * 2. Удаляем ПОЛНОСТЬЮ личный контент: цитаты (Quote), еженедельные ИИ-отчёты
  *    (WeeklyReport), прогресс прослушивания (Progress).
  * 3. Стираем PII в User: email, имя, аватар, пароль, push-токен, ответы опроса,
- *    город, блок-лист, привязки Apple/Google, apple refresh token. Имя заменяем
- *    на «Удалённый аккаунт» — это же имя увидят участницы рядом со старыми
- *    сообщениями.
+ *    страна/город, почта для рассылки, блок-лист, привязки Apple/Google, apple
+ *    refresh token. Имя заменяем на «Удалённый аккаунт» — это же имя увидят
+ *    участницы рядом со старыми сообщениями.
  * 4. Сообщения чата НЕ удаляем — на них ссылаются ответы других участниц
  *    (reply-контекст рассыпался бы). Они анонимизируются автоматически: имя
  *    автора берётся из User, а там теперь «Удалённый аккаунт».
@@ -213,7 +213,11 @@ router.delete(
             passwordHash: null,
             pushToken: null,
             surveyAnswers: null,
+            onboardingCompleted: false,
+            country: null,
             city: null,
+            marketingEmail: null,
+            marketingConsent: false,
             aiConsent: false,
             blockedUsers: [],
             refreshTokens: [],
