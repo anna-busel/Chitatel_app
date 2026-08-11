@@ -115,16 +115,18 @@ router.get('/', optionalAuth, async (req, res, next) => {
     // (config/daily-thoughts). Один и тот же текст у всех участниц в течение
     // суток, каждый день следующий по списку, по кругу. Границу суток берём по
     // Москве (+3ч к UTC — аудитория клуба), чтобы мысль менялась в местную
-    // полночь, а не в 3 ночи. Автор — Анна Бусел, книги-источника нет
-    // (bookTitle пустой; клиент тогда не показывает часть «, «книга»»).
+    // полночь, а не в 3 ночи. Автор по умолчанию — Анна Бусел, книги-источника
+    // нет (bookTitle пустой; клиент тогда не показывает часть «, «книга»»).
     // Управление из админки появится позже (6.6).
+    // Элемент списка — строка (фраза Анны) или { text, author } (чужая цитата,
+    // например Ницше). Строке подставляем автора «Анна Бусел».
     const MSK_OFFSET_MS = 3 * 60 * 60 * 1000;
     const dayIndex = Math.floor((Date.now() + MSK_OFFSET_MS) / 86400000);
-    const dailyQuote = {
-      text: dailyThoughts[dayIndex % dailyThoughts.length],
-      author: 'Анна Бусел',
-      bookTitle: '',
-    };
+    const thought = dailyThoughts[dayIndex % dailyThoughts.length];
+    const dailyQuote =
+      typeof thought === 'string'
+        ? { text: thought, author: 'Анна Бусел', bookTitle: '' }
+        : { text: thought.text, author: thought.author, bookTitle: '' };
 
     return success(res, {
       clubMonth: clubBook
