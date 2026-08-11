@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'routes.dart';
+import '../../features/auth/providers/auth_provider.dart';
 import '../../shared/widgets/app_bottom_bar.dart';
 import '../../shared/widgets/guest_gate.dart';
 import '../../core/theme/app_colors.dart';
@@ -48,13 +49,16 @@ final _shellNavigatorKey = GlobalKey<NavigatorState>();
 ///
 /// ⚠️ 12.07.2026 (Фаза 6, A6): все заглушки `_Placeholder` УДАЛЕНЫ — Apple
 /// отклоняет сборки с экранами «в разработке». Профиль и его подэкраны теперь
-/// настоящие (задача 6.2). Онбординг и опрос (задача 6.3) теперь тоже настоящие.
+/// настоящие (задача 6.2). Онбординг и опрос — волна 6Б (задача 6.3).
 /// Экран разрешения push (4.8) и лента уведомлений (4.30) — задача 6.1,
 /// теперь зарегистрированы.
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: Routes.home,
+    // Перепроверять redirect при смене auth-статуса (вход/выход/протухшая
+    // сессия), чтобы гостя увести с защищённых экранов на вход (6.5).
+    refreshListenable: _AuthRefresh(ref),
     redirect: (context, state) async {
       final prefs = await SharedPreferences.getInstance();
       final onboardingSeen = prefs.getBool('onboarding_seen') ?? false;
@@ -89,6 +93,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           onboardingSeen &&
           !onboardingRoutes.contains(location)) {
         return Routes.onboardingName;
+      }
+
+      // Auth-гейт (6.5): экраны, требующие аккаунт (дневник, отчёты, лента,
+      // подэкраны профиля), гостю недоступны. Срабатывает только при твёрдом
+      // статусе guest (не initial/loading — на старте сессия ещё не разрешена).
+      // Клуб и Профиль здесь НЕ трогаем — у них своя внутритабовая заглушка
+      // GuestGate. Целевой путь кладём в ?from, чтобы вернуться после входа.
+      if (ref.read(authProvider).status == AuthStatus.guest &&
+          _authRequiresAccount(location)) {
+        return '${Routes.login}?from=${Uri.encodeComponent(location)}';
       }
 
       return null;
@@ -315,6 +329,37 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// Экраны, требующие аккаунт (6.5). Гость на них → редирект на вход.
+/// Клуб/Профиль сюда НЕ входят: у них внутритабовый GuestGate.
+bool _authRequiresAccount(String location) {
+  const authOnly = [
+    Routes.diary,
+    Routes.weeklyReport,
+    Routes.monthlyReport,
+    Routes.notifications,
+    Routes.editProfile,
+    Routes.myPurchases,
+    Routes.myProgress,
+    Routes.manageSub,
+    Routes.notificationSettings,
+    Routes.support,
+    Routes.blockedUsers,
+    Routes.deleteAccount,
+  ];
+  if (authOnly.contains(location)) return true;
+  // Анализ цитаты — с path-параметром (/analysis/:quoteId).
+  if (location.startsWith('/analysis/')) return true;
+  return false;
+}
+
+/// Мост auth → go_router: смена статуса дёргает refreshListenable, роутер
+/// перепроверяет redirect (6.5 — отзыв Apple Sign In / истёкшая сессия).
+class _AuthRefresh extends ChangeNotifier {
+  _AuthRefresh(Ref ref) {
+    ref.listen<AuthState>(authProvider, (_, __) => notifyListeners());
+  }
+}
 
 /// Scaffold с bottom bar для табовых экранов.
 ///
