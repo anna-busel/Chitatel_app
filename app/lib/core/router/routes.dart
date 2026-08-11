@@ -11,7 +11,11 @@ class Routes {
   static const String emailLogin = '/login/email';
   static const String register = '/register';
   static const String forgotPassword = '/forgot-password';
+  // Персонализация после входа (задача 6.3): имя → опрос → страна/рассылка →
+  // согласие на ИИ → push. Порядок цепочки задаётся навигацией самих экранов.
+  static const String onboardingName = '/onboarding/name';
   static const String survey = '/survey';
+  static const String onboardingExtra = '/onboarding/extra';
   static const String aiConsent = '/ai-consent';
   static const String pushConsent = '/push-consent';
 

@@ -7,6 +7,7 @@ import '../../../core/services/push_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../onboarding/providers/onboarding_provider.dart';
 
 /// Разрешение на push (MASTER 4.8) — шаг онбординга после согласия на ИИ.
 ///
@@ -35,11 +36,15 @@ class _PushPermissionScreenState extends ConsumerState<PushPermissionScreen> {
     // Системный диалог iOS. Результат не блокирует переход — экран в любом
     // случае ведёт дальше, разрешение можно поменять позже.
     await ref.read(pushServiceProvider).requestPermissionAndRegister();
+    // Последний шаг онбординга — снимаем resume-guard (задача 6.3).
+    await OnboardingController.clearPending();
     if (!mounted) return;
     context.go(Routes.home);
   }
 
-  void _skip() {
+  Future<void> _skip() async {
+    await OnboardingController.clearPending();
+    if (!mounted) return;
     context.go(Routes.home);
   }
 
