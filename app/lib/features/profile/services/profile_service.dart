@@ -263,13 +263,24 @@ class ProfileService {
     return _userFrom(response);
   }
 
-  /// Имя и город (экран 4.46). Почта не меняется.
-  Future<UserProfile> updateProfile({String? name, String? city}) async {
+  /// Имя, страна, город (экран 4.46 и онбординг 6.3). Аккаунтная почта не
+  /// меняется; marketingEmail — отдельная почта для рассылки с согласием
+  /// marketingConsent (шаг «Страна/город/рассылка» в онбординге).
+  Future<UserProfile> updateProfile({
+    String? name,
+    String? country,
+    String? city,
+    String? marketingEmail,
+    bool? marketingConsent,
+  }) async {
     final response = await _api.dio.patch(
       ApiEndpoints.profile,
       data: {
         if (name != null) 'name': name,
+        if (country != null) 'country': country,
         if (city != null) 'city': city,
+        if (marketingEmail != null) 'marketingEmail': marketingEmail,
+        if (marketingConsent != null) 'marketingConsent': marketingConsent,
       },
     );
     return _userFrom(response);
