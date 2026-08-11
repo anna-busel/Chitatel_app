@@ -14,10 +14,14 @@ import '../services/profile_service.dart';
 /// (push.service) читает эти флаги перед отправкой. «Отчёты» гейтит недельный
 /// и месячный отчёты; «Новости» — анонсы сезона и новинки клуба.
 ///
-/// Кнопка «Разрешить уведомления» вызывает системный запрос разрешения APNs.
-/// Нужна для существующих аккаунтов, которые логинятся мимо онбординга (экран
-/// 4.8) и потому никогда не получали запрос — без него iOS даже не показывает
-/// раздел уведомлений приложения, и пуши физически не приходят.
+/// В футере — действие «Запросить разрешение на этом устройстве» (вызывает
+/// системный запрос APNs). Оно нужно для тех, кто нажал «Не сейчас» на
+/// онбординге (4.8) или вошёл мимо него: пока приложение ни разу не запросило
+/// разрешение, iOS даже не показывает раздел уведомлений приложения в
+/// Настройках, и пуши физически не приходят. Раньше это была заметная карточка
+/// сверху — она висела навязчивым запросом даже когда разрешение уже выдано;
+/// перенесли в скромный футер (статус разрешения без нативного метода не
+/// прочитать, поэтому просто не выпячиваем).
 class NotificationSettingsScreen extends ConsumerWidget {
   const NotificationSettingsScreen({super.key});
 
@@ -155,40 +159,6 @@ class _Body extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.screenPadding),
       children: [
-        // Кнопка системного запроса разрешения (для тех, кто прошёл мимо 4.8).
-        GestureDetector(
-          onTap: onEnablePush,
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
-              border: Border.all(
-                color: AppColors.terracotta.withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.notifications_active_outlined,
-                  size: 18,
-                  color: AppColors.terracotta,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Разрешить уведомления на этом устройстве',
-                    style: AppTypography.bodyMedium
-                        .copyWith(color: AppColors.terracotta),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-
         Container(
           decoration: BoxDecoration(
             color: AppColors.cardBackground,
@@ -225,10 +195,30 @@ class _Body extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
+        // Футер: запрос разрешения (для тех, кто нажал «Не сейчас» на онбординге
+        // или вошёл мимо него) + путь в системные настройки. Скромно, внизу —
+        // чтобы не висеть навязчивым запросом сверху, когда всё уже включено.
         Text(
-          'Полностью отключить уведомления от приложения можно в Настройках '
-          'iPhone → Уведомления → ЧИТАТЕЛЬ.',
+          'Уведомления не приходят?',
+          style: AppTypography.captionMedium
+              .copyWith(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 4),
+        GestureDetector(
+          onTap: onEnablePush,
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Text(
+              'Запросить разрешение на этом устройстве',
+              style: AppTypography.bodyMedium
+                  .copyWith(color: AppColors.terracotta),
+            ),
+          ),
+        ),
+        Text(
+          'Либо включите вручную: Настройки iPhone → Уведомления → ЧИТАТЕЛЬ.',
           style: AppTypography.caption,
         ),
       ],
