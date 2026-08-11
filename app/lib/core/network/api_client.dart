@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api_endpoints.dart';
+import 'network_error.dart';
 import '../storage/secure_storage.dart';
 import '../../features/auth/providers/auth_provider.dart';
 
@@ -205,7 +206,12 @@ class ApiClient {
 
       await _logout();
       return null;
-    } catch (_) {
+    } catch (e) {
+      // Сетевой сбой (офлайн/таймаут) — НЕ разлогиниваем: сессия жива, просто
+      // нет сети. Возвращаем null без logout; исходный запрос упадёт и UI
+      // покажет экран 4.38 «Нет подключения». Разлогин только при реальном
+      // отказе сервера (см. ветки выше: нет refresh-токена / не-200 ответ).
+      if (isConnectionError(e)) return null;
       await _logout();
       return null;
     }

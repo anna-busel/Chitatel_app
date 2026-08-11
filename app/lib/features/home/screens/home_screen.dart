@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/network/network_error.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
 import '../../../shared/widgets/error_view.dart';
+import '../../../shared/widgets/no_connection.dart';
 import '../../diary/widgets/quote_sheet.dart';
 import '../../payments/screens/paywall_screen.dart';
 import '../../payments/season_window.dart';
@@ -110,10 +112,16 @@ class HomeScreen extends ConsumerWidget {
                     ),
                   ),
                   loading: () => const HomeShimmer(),
-                  error: (err, _) => ErrorView(
-                    message: 'Не удалось загрузить главную',
-                    onRetry: () => ref.invalidate(homeProvider),
-                  ),
+                  // Обрыв/отсутствие сети → экран 4.38 (не пустая ошибка).
+                  // Первый холодный старт без сети приходит именно сюда.
+                  error: (err, _) => isConnectionError(err)
+                      ? NoConnection(
+                          onRetry: () => ref.invalidate(homeProvider),
+                        )
+                      : ErrorView(
+                          message: 'Не удалось загрузить главную',
+                          onRetry: () => ref.invalidate(homeProvider),
+                        ),
                 ),
               ),
             ],

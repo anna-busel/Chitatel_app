@@ -35,7 +35,9 @@ class AppColors {
   static const Color textSecondary = Color(0xFF666666);
   static const Color textTertiary = Color(0xFF7A6E62);
   static const Color textPlaceholder = Color(0xFF757575);
-  static const Color textMetadata = Color(0xFFC0B8B0);
+  // Был #C0B8B0 — контраст ≈2:1 на светлом фоне (WCAG fail для мелкого текста,
+  // 6.4). Затемнён до ≥4.5:1 (даты/метаданные должны читаться).
+  static const Color textMetadata = Color(0xFF766B60);
 
   // ── Семантические ──
   static const Color success = Color(0xFF2D7F5E);
