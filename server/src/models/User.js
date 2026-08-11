@@ -73,9 +73,22 @@ const userSchema = new mongoose.Schema(
       reminders: { type: Boolean, default: true },
     },
     surveyAnswers: mongoose.Schema.Types.Mixed,
+    // Флаг прохождения персонализации (онбординг-опрос, задача 6.3). Ставится
+    // true при завершении опроса ИЛИ при «Пропустить» — чтобы больше не
+    // переспрашивать (вариант А). Гейтит показ опроса на сервере, поэтому
+    // переживает переустановку и вход на втором устройстве.
+    onboardingCompleted: { type: Boolean, default: false },
     referralCode: { type: String, unique: true, sparse: true },
     referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    country: String,
     city: String,
+    // Почта для рассылки/новостей вне приложения (экран онбординга «Страна/
+    // город/рассылка»). Отдельно от email аккаунта: при Apple «Скрыть email»
+    // аккаунтная почта техническая, поэтому реальную для рассылки спрашиваем
+    // явно и с отдельным согласием (marketingConsent) — под это нужна строка в
+    // Политике конфиденциальности.
+    marketingEmail: String,
+    marketingConsent: { type: Boolean, default: false },
 
     refreshTokens: [String],
 
