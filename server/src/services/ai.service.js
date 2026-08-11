@@ -157,6 +157,55 @@ const normalizeQuoteAnalysis = (result) => {
   };
 };
 
+// Плейсхолдер имени, который сервер подставляет при входе, если провайдер имя
+// не отдал (apple-auth/google-auth). В анализ его пускать нельзя — иначе ИИ
+// обращается «Пользователь». Настоящее имя приходит с онбординг-экрана «Имя».
+const NAME_PLACEHOLDER = 'Пользователь';
+
+/**
+ * Настоящее имя для обращения в анализе. Заглушку и пустое → '' (тогда промпт
+ * обращается на «вы»). Задача 6.3.
+ */
+const displayName = (user) => {
+  const n = (user && typeof user.name === 'string') ? user.name.trim() : '';
+  return n && n !== NAME_PLACEHOLDER ? n : '';
+};
+
+// Жизненная ситуация из онбординга (экран «Расскажите о себе») → человекочитаемо
+// для контекста ИИ. Ключи — коды, которые шлёт клиент (survey_screen).
+const SURVEY_LIFE_SITUATION = {
+  mom: 'в основном занята детьми, дети — главная забота',
+  married: 'замужем, балансирует дом, работу и себя',
+  single: 'вне отношений, изучает мир и себя',
+};
+
+/**
+ * Контекст о читателе из онбординг-опроса (задача 6.3) для плейсхолдера
+ * {userContext} промпта разбора цитаты — чтобы анализ был личным. Ответы лежат
+ * в user.surveyAnswers (Mixed, свободная схема). Берём только заполненные поля;
+ * ничего нет → ''. В контекст идут ситуация, книга детства, волнующий вопрос и
+ * желание на год — они задают тон; технические ответы (что мешает читать, что
+ * ценно в клубе) в разбор цитаты не тянем.
+ */
+const buildUserContext = (user) => {
+  const a = user && user.surveyAnswers;
+  if (!a || typeof a !== 'object') return '';
+  const parts = [];
+  const situation = SURVEY_LIFE_SITUATION[a.lifeSituation];
+  if (situation) parts.push(`жизненная ситуация: ${situation}`);
+  if (typeof a.childhoodBook === 'string' && a.childhoodBook.trim()) {
+    parts.push(`любимая книга детства — «${a.childhoodBook.trim()}»`);
+  }
+  if (typeof a.lifeQuestion === 'string' && a.lifeQuestion.trim()) {
+    parts.push(`сейчас её волнует: «${a.lifeQuestion.trim()}»`);
+  }
+  if (typeof a.yearWish === 'string' && a.yearWish.trim()) {
+    parts.push(`через год хочет: «${a.yearWish.trim()}»`);
+  }
+  if (parts.length === 0) return '';
+  return `Контекст о читателе (из анкеты, учитывай мягко, не перечисляй дословно): ${parts.join('; ')}.`;
+};
+
 /**
  * Анализ одной цитаты. Сохраняет результат в саму цитату.
  * Вызывается асинхронно после POST /api/quotes (без блокировки ответа клиенту).
@@ -175,12 +224,13 @@ const analyzeQuote = async (quote, user) => {
     );
   }
 
-  // {userContext} — хук под персонализацию из онбординга (пока не собран → пусто).
+  // {userName} — настоящее имя (заглушка отфильтрована); {userContext} —
+  // персонализация из онбординг-опроса (задача 6.3).
   const userMessage = fillTemplate(QUOTE_ANALYSIS_PROMPT, {
     text: quote.text,
     author: quote.author || 'не указан',
-    userName: user.name || '',
-    userContext: '',
+    userName: displayName(user),
+    userContext: buildUserContext(user),
     categories: QUOTE_CATEGORIES.join(', '),
   });
 
