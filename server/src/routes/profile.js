@@ -48,22 +48,34 @@ router.get('/', async (req, res, next) => {
 
 /**
  * PATCH /api/profile
- * Редактирование профиля (экран 4.46).
+ * Редактирование профиля (экран 4.46) и шаги онбординга «Имя» и «Страна/город/
+ * рассылка» (задача 6.3).
  *
- * Меняются только имя и город. Почта не меняется: у Apple/Google-входа она
- * приходит от провайдера, у email-входа это логин — смена логина отдельная
- * история с подтверждением, в MVP её нет.
+ * Аккаунтная почта (email) не меняется: у Apple/Google-входа она приходит от
+ * провайдера, у email-входа это логин — смена логина отдельная история с
+ * подтверждением, в MVP её нет. Почта для рассылки (marketingEmail) — отдельное
+ * необязательное поле, к логину отношения не имеет.
  */
 const updateSchema = z.object({
   name: z.string().min(1, 'Имя обязательно').max(100).trim().optional(),
+  country: z.string().max(100).trim().optional(),
   city: z.string().max(100).trim().optional(),
+  marketingEmail: z.string().max(200).trim().email('Некорректный email').optional(),
+  marketingConsent: z.boolean().optional(),
 });
 
 router.patch('/', validate(updateSchema), async (req, res, next) => {
   try {
     const update = {};
     if (typeof req.body.name === 'string') update.name = req.body.name;
+    if (typeof req.body.country === 'string') update.country = req.body.country;
     if (typeof req.body.city === 'string') update.city = req.body.city;
+    if (typeof req.body.marketingEmail === 'string') {
+      update.marketingEmail = req.body.marketingEmail;
+    }
+    if (typeof req.body.marketingConsent === 'boolean') {
+      update.marketingConsent = req.body.marketingConsent;
+    }
 
     if (Object.keys(update).length === 0) {
       throw new AppError('VALIDATION_ERROR', 'Нечего обновлять', 400);
@@ -224,6 +236,10 @@ router.patch(
  *
  * Схема ответов свободная (Mixed в модели): вопросы могут меняться, ломать
  * миграциями из-за этого базу незачем. Ограничиваем только размер.
+ *
+ * Завершение опроса (в т.ч. «Пропустить» — тогда answers пустой) помечает
+ * onboardingCompleted = true, поэтому персонализацию больше не показываем
+ * (вариант А). Ответы уходят в контекст ИИ-анализа (ai.service.buildUserContext).
  */
 const surveySchema = z.object({
   answers: z.record(z.any()),
@@ -239,7 +255,7 @@ router.post('/survey', validate(surveySchema), async (req, res, next) => {
 
     const user = await User.findByIdAndUpdate(
       req.user.userId,
-      { $set: { surveyAnswers: answers } },
+      { $set: { surveyAnswers: answers, onboardingCompleted: true } },
       { new: true }
     )
       .select(HIDDEN_FIELDS)
