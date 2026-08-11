@@ -4,7 +4,7 @@ const { success } = require('../utils/response');
 const Book = require('../models/Book');
 const ClubMonth = require('../models/ClubMonth');
 const Progress = require('../models/Progress');
-const dailyThoughts = require('../config/daily-thoughts');
+const { thoughtForDate } = require('../config/daily-thoughts');
 
 const router = Router();
 
@@ -111,22 +111,17 @@ router.get('/', optionalAuth, async (req, res, next) => {
       }
     }
 
-    // Мысль дня — фраза Анны с детерминированной ротацией по дню
-    // (config/daily-thoughts). Один и тот же текст у всех участниц в течение
-    // суток, каждый день следующий по списку, по кругу. Границу суток берём по
-    // Москве (+3ч к UTC — аудитория клуба), чтобы мысль менялась в местную
-    // полночь, а не в 3 ночи. Автор по умолчанию — Анна Бусел, книги-источника
-    // нет (bookTitle пустой; клиент тогда не показывает часть «, «книга»»).
-    // Управление из админки появится позже (6.6).
-    // Элемент списка — строка (фраза Анны) или { text, author } (чужая цитата,
-    // например Ницше). Строке подставляем автора «Анна Бусел».
-    const MSK_OFFSET_MS = 3 * 60 * 60 * 1000;
-    const dayIndex = Math.floor((Date.now() + MSK_OFFSET_MS) / 86400000);
-    const thought = dailyThoughts[dayIndex % dailyThoughts.length];
-    const dailyQuote =
-      typeof thought === 'string'
-        ? { text: thought, author: 'Анна Бусел', bookTitle: '' }
-        : { text: thought.text, author: thought.author, bookTitle: '' };
+    // Мысль дня — фраза Анны (или чужая цитата) с детерминированной ротацией
+    // по дню; ЕДИНЫЙ источник с ежедневным пушем (jobs/push-scheduler), поэтому
+    // карточка и пуш показывают одну и ту же мысль. Автор по умолчанию — Анна
+    // Бусел, книги-источника нет (bookTitle пустой — клиент не рисует часть
+    // «, «книга»»). Управление из админки появится позже (6.6).
+    const todayThought = thoughtForDate(Date.now());
+    const dailyQuote = {
+      text: todayThought.text,
+      author: todayThought.author,
+      bookTitle: '',
+    };
 
     return success(res, {
       clubMonth: clubBook

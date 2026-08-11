@@ -1,15 +1,21 @@
 const cron = require('node-cron');
 const logger = require('../config/logger');
 const pushService = require('../services/push.service');
+const { thoughtForDate } = require('../config/daily-thoughts');
 
 /**
  * Планировщик push по расписанию (MASTER 7.9).
  * Вызывается один раз при старте сервера (server.js).
  *
- * Заход 1: напоминание записать цитату (есть настройка reminders).
- * «Мысль дня» и «Q&A сегодня» появятся, когда будет источник контента и
- * соответствующая настройка (доращивание админки, задача 6.6) — сейчас слать
- * их нечем и нечем гейтить, поэтому не планируем.
+ * Задача 1: напоминание записать цитату (настройка reminders).
+ * Задача 2: мысль дня — ежедневно 10:00 (настройка dailyQuote). Текст берём из
+ * общего источника thoughtForDate (config/daily-thoughts), поэтому пуш всегда
+ * совпадает с карточкой «Мысль дня» на главной.
+ * «Q&A сегодня» появится, когда будет расписание Q&A (доращивание админки, 6.6).
+ *
+ * Всё по Москве (Europe/Moscow) — аудитория клуба РФ/РБ. Пуш по локальному
+ * времени пользователя потребовал бы хранить его часовой пояс и слать почасово
+ * с фильтром — отдельная задача, не для MVP.
  *
  * ⚠️ PM2 — строго fork mode, 1 инстанс, иначе cron задвоится.
  */
@@ -36,8 +42,32 @@ const schedulePushJobs = () => {
     { timezone: 'Europe/Moscow' }
   );
 
+  // Мысль дня — ежедневно в 10:00 (MASTER 7.9). Гейт dailyQuote; в ленту не
+  // пишем (broadcast) — как и напоминания, это массовая рассылка, а не история.
+  // Текст — та же мысль, что показывает карточка на главной в этот день.
+  cron.schedule(
+    '0 10 * * *',
+    () => {
+      const { text } = thoughtForDate(Date.now());
+      pushService
+        .broadcast(
+          { audience: 'all' },
+          {
+            title: 'Мысль дня',
+            body: text,
+            data: { type: 'daily_quote' },
+          },
+          'dailyQuote'
+        )
+        .catch((err) => {
+          logger.error('Push daily-quote cron error', { message: err.message });
+        });
+    },
+    { timezone: 'Europe/Moscow' }
+  );
+
   logger.info(
-    'Push cron scheduled (reminders Mon/Wed/Fri/Sun 20:00 Europe/Moscow)'
+    'Push cron scheduled (reminders Mon/Wed/Fri/Sun 20:00; daily quote 10:00; Europe/Moscow)'
   );
 };
 
