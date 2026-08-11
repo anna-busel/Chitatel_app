@@ -4,6 +4,7 @@ const { success } = require('../utils/response');
 const Book = require('../models/Book');
 const ClubMonth = require('../models/ClubMonth');
 const Progress = require('../models/Progress');
+const dailyThoughts = require('../config/daily-thoughts');
 
 const router = Router();
 
@@ -110,11 +111,19 @@ router.get('/', optionalAuth, async (req, res, next) => {
       }
     }
 
-    // Мысль дня (пока статичная — управление из админки появится позже)
+    // Мысль дня — фраза Анны с детерминированной ротацией по дню
+    // (config/daily-thoughts). Один и тот же текст у всех участниц в течение
+    // суток, каждый день следующий по списку, по кругу. Границу суток берём по
+    // Москве (+3ч к UTC — аудитория клуба), чтобы мысль менялась в местную
+    // полночь, а не в 3 ночи. Автор — Анна Бусел, книги-источника нет
+    // (bookTitle пустой; клиент тогда не показывает часть «, «книга»»).
+    // Управление из админки появится позже (6.6).
+    const MSK_OFFSET_MS = 3 * 60 * 60 * 1000;
+    const dayIndex = Math.floor((Date.now() + MSK_OFFSET_MS) / 86400000);
     const dailyQuote = {
-      text: 'Все счастливые семьи похожи друг на друга, каждая несчастливая семья несчастлива по-своему.',
-      author: 'Лев Толстой',
-      bookTitle: 'Анна Каренина',
+      text: dailyThoughts[dayIndex % dailyThoughts.length],
+      author: 'Анна Бусел',
+      bookTitle: '',
     };
 
     return success(res, {

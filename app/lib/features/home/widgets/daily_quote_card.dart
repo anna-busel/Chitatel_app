@@ -53,7 +53,11 @@ class DailyQuoteCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              '— ${quote.author}, «${quote.bookTitle}»',
+              // Мысль дня может быть фразой Анны без книги-источника (bookTitle
+              // пустой) — тогда показываем только автора, без пустых «».
+              quote.bookTitle.isEmpty
+                  ? '— ${quote.author}'
+                  : '— ${quote.author}, «${quote.bookTitle}»',
               style: AppTypography.caption.copyWith(
                 color: AppColors.textTertiary,
               ),
