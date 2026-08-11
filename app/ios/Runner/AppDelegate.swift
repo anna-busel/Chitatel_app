@@ -58,6 +58,27 @@ import UserNotifications
       }
     case "getToken":
       result(pendingToken)
+    case "getNotificationStatus":
+      // Статус разрешения на уведомления — чтобы клиент показывал кнопку
+      // запроса только когда она осмысленна (задача 6.1, умная кнопка).
+      UNUserNotificationCenter.current().getNotificationSettings { settings in
+        let value: String
+        switch settings.authorizationStatus {
+        case .authorized, .ephemeral:
+          value = "authorized"
+        case .provisional:
+          value = "provisional"
+        case .denied:
+          value = "denied"
+        case .notDetermined:
+          value = "notDetermined"
+        @unknown default:
+          value = "notDetermined"
+        }
+        DispatchQueue.main.async {
+          result(value)
+        }
+      }
     default:
       result(FlutterMethodNotImplemented)
     }

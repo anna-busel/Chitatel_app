@@ -34,6 +34,8 @@ const PERSIST_TYPES = new Set([
   'weekly_report',
   'monthly_report',
   'chat_reply',
+  'mention',
+  'qa_answer',
   'new_audio',
   'news',
 ]);

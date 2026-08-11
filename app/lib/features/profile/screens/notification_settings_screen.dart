@@ -8,20 +8,25 @@ import '../../../shared/widgets/error_view.dart';
 import '../providers/profile_provider.dart';
 import '../services/profile_service.dart';
 
+/// Статус разрешения на уведомления (задача 6.1, умная кнопка). autoDispose —
+/// перечитывается при каждом открытии экрана. 'unknown' (канал недоступен / не
+/// iOS) трактуем как «можно показать запрос» — безопасный дефолт.
+final _pushStatusProvider = FutureProvider.autoDispose<String>((ref) async {
+  return ref.read(pushServiceProvider).getPermissionStatus();
+});
+
 /// Настройки уведомлений (экран 4.31, задача 6.2).
 ///
 /// Тумблеры сохраняются на сервере (User.pushSettings). Отправитель push
 /// (push.service) читает эти флаги перед отправкой. «Отчёты» гейтит недельный
 /// и месячный отчёты; «Новости» — анонсы сезона и новинки клуба.
 ///
-/// В футере — действие «Запросить разрешение на этом устройстве» (вызывает
-/// системный запрос APNs). Оно нужно для тех, кто нажал «Не сейчас» на
-/// онбординге (4.8) или вошёл мимо него: пока приложение ни разу не запросило
-/// разрешение, iOS даже не показывает раздел уведомлений приложения в
-/// Настройках, и пуши физически не приходят. Раньше это была заметная карточка
-/// сверху — она висела навязчивым запросом даже когда разрешение уже выдано;
-/// перенесли в скромный футер (статус разрешения без нативного метода не
-/// прочитать, поэтому просто не выпячиваем).
+/// В футере — действие «Запросить разрешение на этом устройстве», показываемое
+/// по статусу разрешения (задача 6.1, умная кнопка): если разрешено — прячем;
+/// отказано — ведём в Настройки iPhone; не спрашивали — показываем запрос.
+/// Нужно для тех, кто нажал «Не сейчас» на онбординге (4.8) или вошёл мимо:
+/// пока приложение ни разу не запросило разрешение, iOS даже не показывает
+/// раздел уведомлений приложения в Настройках, и пуши не приходят.
 class NotificationSettingsScreen extends ConsumerWidget {
   const NotificationSettingsScreen({super.key});
 
@@ -124,6 +129,8 @@ class NotificationSettingsScreen extends ConsumerWidget {
           ),
           data: (profile) => _Body(
             profile: profile,
+            permissionStatus:
+                ref.watch(_pushStatusProvider).asData?.value ?? 'unknown',
             onToggle: (key, value) => _toggle(context, ref, key, value),
             onEnablePush: () => _enablePush(context, ref),
           ),
@@ -147,10 +154,12 @@ class _Setting {
 class _Body extends StatelessWidget {
   const _Body({
     required this.profile,
+    required this.permissionStatus,
     required this.onToggle,
     required this.onEnablePush,
   });
   final UserProfile profile;
+  final String permissionStatus;
   final void Function(String key, bool value) onToggle;
   final VoidCallback onEnablePush;
 
@@ -195,30 +204,48 @@ class _Body extends StatelessWidget {
             ],
           ),
         ),
+        _footer(),
+      ],
+    );
+  }
+
+  /// Футер по статусу разрешения (задача 6.1, умная кнопка):
+  /// - разрешено → ничего (не выпячиваем);
+  /// - отказано → подсказка вести в Настройки iPhone (кнопка-запрос бесполезна,
+  ///   iOS второй раз диалог не покажет);
+  /// - не спрашивали / статус неизвестен → кнопка запроса + подсказка.
+  Widget _footer() {
+    if (permissionStatus == 'authorized' || permissionStatus == 'provisional') {
+      return const SizedBox.shrink();
+    }
+    final denied = permissionStatus == 'denied';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         const SizedBox(height: 20),
-        // Футер: запрос разрешения (для тех, кто нажал «Не сейчас» на онбординге
-        // или вошёл мимо него) + путь в системные настройки. Скромно, внизу —
-        // чтобы не висеть навязчивым запросом сверху, когда всё уже включено.
         Text(
           'Уведомления не приходят?',
           style: AppTypography.captionMedium
               .copyWith(color: AppColors.textSecondary),
         ),
         const SizedBox(height: 4),
-        GestureDetector(
-          onTap: onEnablePush,
-          behavior: HitTestBehavior.opaque,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(
-              'Запросить разрешение на этом устройстве',
-              style: AppTypography.bodyMedium
-                  .copyWith(color: AppColors.terracotta),
+        if (!denied)
+          GestureDetector(
+            onTap: onEnablePush,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                'Запросить разрешение на этом устройстве',
+                style: AppTypography.bodyMedium
+                    .copyWith(color: AppColors.terracotta),
+              ),
             ),
           ),
-        ),
         Text(
-          'Либо включите вручную: Настройки iPhone → Уведомления → ЧИТАТЕЛЬ.',
+          denied
+              ? 'Разрешение выключено. Включите: Настройки iPhone → Уведомления → ЧИТАТЕЛЬ.'
+              : 'Либо включите вручную: Настройки iPhone → Уведомления → ЧИТАТЕЛЬ.',
           style: AppTypography.caption,
         ),
       ],

@@ -39,6 +39,22 @@ class PushService {
     }
   }
 
+  /// Текущий статус разрешения на уведомления (задача 6.1, умная кнопка):
+  /// 'authorized' | 'provisional' | 'denied' | 'notDetermined' | 'unknown'.
+  /// 'unknown' — канал недоступен / не iOS; экран настроек тогда показывает
+  /// запрос как прежде (безопасный дефолт).
+  Future<String> getPermissionStatus() async {
+    try {
+      final status =
+          await _channel.invokeMethod<String>('getNotificationStatus');
+      return status ?? 'unknown';
+    } on PlatformException {
+      return 'unknown';
+    } on MissingPluginException {
+      return 'unknown';
+    }
+  }
+
   /// Тихо переустанавливает токен на бэкенде (вызывается при старте, если юзер
   /// авторизован и разрешение уже выдано ранее).
   Future<void> refreshToken() async {
@@ -99,6 +115,11 @@ class PushService {
         router.go(Routes.monthlyReport);
       case 'news':
         router.go(Routes.notifications);
+      // Задача 6.1: ответы/упоминания в чате и ответ Анны в Q&A ведут в клуб.
+      case 'chat_reply':
+      case 'mention':
+      case 'qa_answer':
+        router.go(Routes.club);
       default:
         router.go(Routes.home);
     }
