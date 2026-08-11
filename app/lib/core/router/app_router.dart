@@ -7,6 +7,9 @@ import '../../shared/widgets/app_bottom_bar.dart';
 import '../../shared/widgets/guest_gate.dart';
 import '../../core/theme/app_colors.dart';
 import '../../features/auth/screens/login_screen.dart';
+import '../../features/onboarding/screens/name_screen.dart';
+import '../../features/onboarding/screens/survey_screen.dart';
+import '../../features/onboarding/screens/onboarding_extra_screen.dart';
 import '../../features/auth/screens/email_login_screen.dart';
 import '../../features/auth/screens/email_register_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
@@ -67,6 +70,24 @@ final routerProvider = Provider<GoRouter>((ref) {
         return Routes.login;
       }
 
+      // Задача 6.3: персонализация не пройдена (флаг ставится при входе по
+      // onboardingCompleted с сервера, снимается после опроса/финиша) — держим
+      // пользователя в цепочке онбординга, чтобы её нельзя было проскочить
+      // холодным рестартом. Гостей не трогаем: флаг ставится только при входе.
+      final onboardingPending = prefs.getBool('onboarding_pending') ?? false;
+      const onboardingRoutes = [
+        Routes.onboardingName,
+        Routes.survey,
+        Routes.onboardingExtra,
+        Routes.aiConsent,
+        Routes.pushConsent,
+      ];
+      if (onboardingPending &&
+          onboardingSeen &&
+          !onboardingRoutes.contains(location)) {
+        return Routes.onboardingName;
+      }
+
       return null;
     },
     routes: [
@@ -86,6 +107,19 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.forgotPassword,
         builder: (context, state) => const ForgotPasswordScreen(),
+      ),
+      // Онбординг после входа (задача 6.3): имя → опрос → страна/город/рассылка.
+      GoRoute(
+        path: Routes.onboardingName,
+        builder: (context, state) => const NameScreen(),
+      ),
+      GoRoute(
+        path: Routes.survey,
+        builder: (context, state) => const SurveyScreen(),
+      ),
+      GoRoute(
+        path: Routes.onboardingExtra,
+        builder: (context, state) => const OnboardingExtraScreen(),
       ),
       // Согласие на ИИ (4.7, задача 5.3) — шаг онбординга после опроса.
       GoRoute(
