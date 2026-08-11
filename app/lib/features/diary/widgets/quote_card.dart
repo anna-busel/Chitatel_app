@@ -9,7 +9,7 @@ import '../models/quote.dart';
 /// Показывает текст, автора/книгу, дату и статус ИИ-разбора:
 ///   ready   → «Анализ от Анны →» (тап открывает экран 4.25)
 ///   pending → «Анализируем…»
-///   failed  → «Анализ временно недоступен»
+///   failed  → «Анализ не удался, повторить» (тап на экран 4.25 с повтором)
 ///   skipped → ничего (ИИ выключен)
 ///
 /// ⚠️ 24.07.2026 — акцент строки разбора переведён с фиолетового
@@ -136,9 +136,22 @@ class _AiStatusRow extends StatelessWidget {
     }
 
     if (quote.isFailed) {
-      return Text(
-        'Анализ временно недоступен',
-        style: AppTypography.caption.copyWith(color: AppColors.textTertiary),
+      // Тап ведёт на экран анализа, где есть кнопка повтора (6.5). Раньше здесь
+      // был мёртвый текст без действия.
+      return GestureDetector(
+        onTap: onTapAnalysis,
+        behavior: HitTestBehavior.opaque,
+        child: Row(
+          children: [
+            const Icon(Icons.refresh, size: 16, color: AppColors.terracotta),
+            const SizedBox(width: 8),
+            Text(
+              'Анализ не удался, повторить',
+              style: AppTypography.bodyMedium
+                  .copyWith(color: AppColors.terracotta),
+            ),
+          ],
+        ),
       );
     }
 

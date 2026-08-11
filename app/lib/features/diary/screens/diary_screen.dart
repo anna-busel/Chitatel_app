@@ -184,9 +184,13 @@ class _DiaryScreenState extends ConsumerState<DiaryScreen> {
                           for (final quote in quotes)
                             QuoteCard(
                               quote: quote,
-                              onTapAnalysis: quote.hasAnalysis
-                                  ? () => context.push(Routes.analysis(quote.id))
-                                  : null,
+                              // Готовый анализ и «не удался» → экран анализа
+                              // (там повтор). Пока считают — тапать нечего.
+                              onTapAnalysis:
+                                  (quote.hasAnalysis || quote.isFailed)
+                                      ? () =>
+                                          context.push(Routes.analysis(quote.id))
+                                      : null,
                               onDelete: () => _confirmDelete(context, ref, quote),
                             ),
                         ],
