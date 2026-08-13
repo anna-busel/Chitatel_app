@@ -23,6 +23,7 @@ const profileRoutes = require('./routes/profile');
 const userRoutes = require('./routes/users');
 const notificationRoutes = require('./routes/notifications');
 const adminPushRoutes = require('./routes/admin-push');
+const adminUsersRoutes = require('./routes/admin-users');
 
 const app = express();
 
@@ -81,6 +82,12 @@ app.use('/api/notifications', notificationRoutes);
 // Ручная отправка push из админки (MASTER 9): POST /api/admin/push/send.
 // Отдельный роут-файл, чтобы не раздувать admin.js; та же защита requireAdmin.
 app.use('/api/admin/push', adminPushRoutes);
+
+// Управление участницами из админки (6.6): поиск, ручная выдача подписки и
+// доступа к разборам/пакетам, роли, бан. Отдельный роут-файл; requireAdmin
+// внутри. adminRoutes (/api/admin) не имеет /users-путей, поэтому запрос
+// доходит сюда.
+app.use('/api/admin/users', adminUsersRoutes);
 
 /* ------------------------------------------------------------------ *
  *              СТАТИКА: АДМИНКА И ЮРИДИЧЕСКИЕ СТРАНИЦЫ               *
