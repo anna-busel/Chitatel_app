@@ -115,6 +115,9 @@
     <div class="tabs">
       <button data-tab="dash" class="on" onclick="tab('dash')">Обзор</button>
       <button data-tab="people" onclick="tab('people')">Люди</button>
+      <button data-tab="catalog" onclick="tab('catalog')">Каталог</button>
+      <button data-tab="club" onclick="tab('club')">Клуб месяца</button>
+      <button data-tab="thoughts" onclick="tab('thoughts')">Мысль дня</button>
       <button data-tab="mod" onclick="tab('mod')">Модерация</button>
       <button data-tab="push" onclick="tab('push')">Рассылка</button>
     </div>
@@ -128,13 +131,38 @@
           <button class="btn ghost sm" onclick="tab('mod')">Разобрать жалобы</button>
           <button class="btn ghost sm" onclick="tab('push')">Отправить новость</button>
         </div>
-        <div class="hint">Разделы «Каталог», «Клуб месяца» и «Мысль дня» появятся следующими — панель наращивается.</div>
       </div>
 
       <div class="page" data-page="people">
         <input id="userSearch" placeholder="Поиск по имени или email…" oninput="debouncedUsers()">
         <div class="banner">Доступ выдаётся тем, кто уже зарегистрировался в приложении. Найдите участницу и откройте карточку.</div>
         <div id="userList"><div class="empty">Загрузка…</div></div>
+      </div>
+
+      <div class="page" data-page="catalog">
+        <div class="btnrow" style="margin-bottom:12px">
+          <button class="btn primary sm" onclick="newBook()">+ Новый разбор</button>
+        </div>
+        <input id="bookSearch" placeholder="Поиск по названию…" oninput="filterBooks()">
+        <div id="bookList"><div class="empty">Загрузка…</div></div>
+      </div>
+
+      <div class="page" data-page="club">
+        <div class="btnrow" style="margin-bottom:12px">
+          <button class="btn primary sm" onclick="newClub()">+ Новый клуб месяца</button>
+        </div>
+        <div class="banner">Один месяц — один разбор. Текущий клуб определяется датами: приложение показывает клуб, у которого сегодня между «Начало» и «Конец».</div>
+        <div id="clubList"><div class="empty">Загрузка…</div></div>
+      </div>
+
+      <div class="page" data-page="thoughts">
+        <div class="lbl">Сегодня показывается</div>
+        <div class="card" id="thoughtToday"><div class="muted">Загрузка…</div></div>
+        <div class="btnrow" style="margin:4px 0 12px">
+          <button class="btn primary sm" onclick="newThought()">+ Добавить фразу</button>
+        </div>
+        <div class="hint">Фразы меняются по кругу, каждый день следующая (по московской полуночи). Отключённые фразы в ротации не участвуют. Изменения применяются сразу — без пересборки приложения и перезапуска сервера.</div>
+        <div id="thoughtList"><div class="empty">Загрузка…</div></div>
       </div>
 
       <div class="page" data-page="mod">
@@ -173,10 +201,14 @@
 var token=null, refreshToken=null, me=null;
 
 async function doFetch(path, opts){
+  // FormData (загрузка файлов) — Content-Type НЕ ставим руками: браузер сам
+  // проставит multipart/form-data с boundary. Для JSON — как раньше.
+  var isForm = (typeof FormData!=='undefined') && (opts.body instanceof FormData);
+  var baseHeaders = isForm ? {} : {'Content-Type':'application/json'};
   var res = await fetch('/api'+path, {
     method: opts.method||'GET',
     headers: Object.assign(
-      {'Content-Type':'application/json'},
+      baseHeaders,
       token ? {'Authorization':'Bearer '+token} : {},
       opts.headers||{}
     ),
@@ -224,9 +256,14 @@ function logout(){ token=refreshToken=me=null; location.reload(); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 function toast(m){ var t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(function(){t.classList.remove('show');},2400); }
 function fmtDate(d){ if(!d) return '—'; var x=new Date(d); if(isNaN(x.getTime())) return '—'; return x.toLocaleDateString('ru-RU',{day:'numeric',month:'short',year:'numeric'}); }
+var _loaded={};
 function tab(name){
   document.querySelectorAll('.tabs button').forEach(function(b){b.classList.toggle('on',b.dataset.tab===name);});
   document.querySelectorAll('.page').forEach(function(p){p.classList.toggle('on',p.dataset.page===name);});
+  // Ленивая загрузка тяжёлых разделов при первом открытии.
+  if(name==='catalog' && !_loaded.catalog){ _loaded.catalog=true; loadCatalog(); }
+  if(name==='club' && !_loaded.club){ _loaded.club=true; loadClubs(); }
+  if(name==='thoughts' && !_loaded.thoughts){ _loaded.thoughts=true; loadThoughts(); }
 }
 function pick(el){ el.parentElement.querySelectorAll('.opt').forEach(function(o){o.classList.remove('on');}); el.classList.add('on'); }
 function segVal(id){ var on=document.querySelector('#'+id+' .opt.on'); return on?on.dataset.v:null; }
@@ -407,6 +444,267 @@ async function sendNews(){
     document.getElementById('newsTitle').value=''; document.getElementById('newsBody').value='';
   }catch(e){ toast(e.message); }
 }
+
+/* ==================================================================
+ *                            КАТАЛОГ
+ * ================================================================== */
+var _books=[], _cats=null, _curBook=null;
+
+function val(id){ var e=document.getElementById(id); return e?(e.value||'').trim():''; }
+function numOrNull(id){ var e=document.getElementById(id); if(!e) return null; var v=(e.value||'').trim(); if(v==='') return null; var n=Number(v); return isNaN(n)?null:n; }
+function normHex(c){ c=(c||'#000000'); if(c.charAt(0)!=='#') c='#'+c; return c; }
+function chip(el){ el.classList.toggle('on'); }
+function chipVals(id){ return Array.prototype.slice.call(document.querySelectorAll('#'+id+' .opt.on')).map(function(o){ return _cats[parseInt(o.dataset.i,10)].value; }); }
+function pickFree(el,isFree){ pick(el); var pf=document.getElementById('priceFields'); if(pf) pf.style.display=isFree?'none':''; }
+function fmtDur(sec){ sec=sec||0; var h=Math.floor(sec/3600), m=Math.round((sec%3600)/60); return h?(h+'ч '+m+'м'):(m+'м'); }
+
+async function loadCats(){ if(_cats) return _cats; try{ var d=await api('/admin/catalog/categories'); _cats=d.categories||[]; }catch(e){ _cats=[]; } return _cats; }
+
+async function loadCatalog(){
+  var el=document.getElementById('bookList');
+  try{ await loadCats(); var d=await api('/admin/catalog'); _books=d.items||[]; renderBookList(); }
+  catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+function filterBooks(){ renderBookList(); }
+function renderBookList(){
+  var q=(document.getElementById('bookSearch').value||'').trim().toLowerCase();
+  var list=_books.filter(function(b){ return !q || (b.title||'').toLowerCase().indexOf(q)>=0 || (b.author||'').toLowerCase().indexOf(q)>=0; });
+  var el=document.getElementById('bookList');
+  if(!list.length){ el.innerHTML='<div class="empty">Разборов нет</div>'; return; }
+  el.innerHTML='<div class="card" style="padding:4px 12px">'+list.map(function(b){
+    var price=b.isFree?'Бесплатный':((b.priceRub!=null?b.priceRub+'₽':'')||(b.priceUsd!=null?'$'+b.priceUsd:'')||'платный');
+    var st=b.isPublished?'<span class="badge b-basic">опубл.</span>':'<span class="badge b-free">черновик</span>';
+    var club=b.isPartOfClub?' <span class="badge b-prem">клуб</span>':'';
+    return '<div class="row" onclick="openBook(\''+b.id+'\')"><div class="meta"><div class="nm">'+esc(b.title)+'</div>'+
+      '<div class="em">'+esc(b.author||'—')+' · '+b.partsCount+' ч. · '+esc(price)+'</div></div>'+st+club+'<span class="chev">›</span></div>';
+  }).join('')+'</div><div class="muted" style="text-align:center;padding:8px">Всего: '+list.length+'</div>';
+}
+
+function blankBook(){ return { id:null,title:'',author:'',description:'',categories:[],tags:[],isFree:false,priceRub:null,priceUsd:null,priceByn:null,coverGradientColors:['#1A0E08','#3A2018'],coverLabel:'',coverImageUrl:'',purchaseUrl:'',isPublished:false,parts:[] }; }
+async function newBook(){ await loadCats(); _curBook=blankBook(); renderBook(); }
+async function openBook(id){ try{ await loadCats(); var d=await api('/admin/catalog/'+id); _curBook=d.book; renderBook(); }catch(e){ toast(e.message); } }
+
+function renderBook(){
+  var b=_curBook;
+  var catChips=(_cats||[]).map(function(c,i){ var on=b.categories.indexOf(c.value)>=0?' on':''; return '<div class="opt'+on+'" data-i="'+i+'" onclick="chip(this)">'+esc(c.label)+'</div>'; }).join('');
+  var priceFields='<div id="priceFields" style="'+(b.isFree?'display:none':'')+'">'+
+    '<div class="fld"><label>Цена ₽ (показывается в приложении)</label><input id="bPriceRub" type="number" min="0" value="'+(b.priceRub!=null?b.priceRub:'')+'"></div>'+
+    '<div class="fld"><label>Цена $ (справочно; Apple берёт цену по appleProductId)</label><input id="bPriceUsd" type="number" min="0" value="'+(b.priceUsd!=null?b.priceUsd:'')+'"></div>'+
+    '<div class="fld"><label>Цена BYN</label><input id="bPriceByn" type="number" min="0" value="'+(b.priceByn!=null?b.priceByn:'')+'"></div>'+
+    '<div class="hint">Для платного разбора нужен продукт <b>book.'+esc(b.bookSlug||'&lt;slug&gt;')+'</b> в App Store Connect (заводится вручную).</div>'+
+    '</div>';
+
+  var partsHtml='';
+  if(b.id){
+    var nextPart=1; (b.parts||[]).forEach(function(p){ if(p.number>=nextPart) nextPart=p.number+1; });
+    var rows=(b.parts||[]).map(function(p){
+      return '<div class="kv"><span class="k">Часть '+p.number+' · '+esc(p.title)+'</span><span class="v">'+fmtDur(p.duration)+
+        ' <button class="btn danger sm" style="margin-left:6px" onclick="delAudio('+p.number+')">×</button></span></div>';
+    }).join('')||'<div class="muted" style="padding:6px 0">Частей пока нет</div>';
+    partsHtml='<div class="divider"></div><div class="lbl" style="margin-top:0">Аудио-части</div>'+rows+
+      '<div class="card" style="margin-top:10px">'+
+        '<div class="fld"><label>Номер части</label><input id="pNum" type="number" min="1" value="'+nextPart+'"></div>'+
+        '<div class="fld"><label>Название (необязательно)</label><input id="pTitle" placeholder="Часть '+nextPart+'"></div>'+
+        '<div class="fld"><label>Аудиофайл (mp3, m4a, aac, wav)</label><input id="pFile" type="file" accept="audio/*"></div>'+
+        '<button class="btn ghost" onclick="uploadAudio()">Загрузить часть</button>'+
+        '<div class="hint">Длительность считается автоматически на сервере (ffprobe). Повторная загрузка с тем же номером заменяет часть.</div>'+
+      '</div>';
+  }
+
+  var coverBlock='<div class="fld"><label>Обложка</label>'+
+    (b.coverImageUrl?'<img src="'+esc(b.coverImageUrl)+'" style="width:96px;height:128px;object-fit:cover;border-radius:10px;display:block;margin-bottom:8px" onerror="this.style.display=\'none\'">':'')+
+    (b.id?'<input id="bCoverFile" type="file" accept="image/*"><button class="btn ghost sm" style="margin-top:6px" onclick="uploadCover()">Загрузить обложку</button>'
+         :'<div class="hint">Сначала сохраните разбор — потом появится загрузка обложки.</div>')+
+    '</div>';
+
+  var pubBtn=b.id?('<button class="btn '+(b.isPublished?'ghost':'primary')+' sm" onclick="togglePublish()">'+(b.isPublished?'Снять с публикации':'Опубликовать')+'</button>'):'';
+  var delBtn=b.id?'<button class="btn danger sm" onclick="delBook()">Удалить разбор</button>':'';
+
+  openModal(
+    '<h2>'+(b.id?'Редактирование разбора':'Новый разбор')+'</h2>'+
+    (b.id?'<div class="msub">slug: '+esc(b.bookSlug)+' · '+(b.isPublished?'опубликован':'черновик')+'</div>':'<div class="msub">Заполните основные поля и сохраните</div>')+
+    '<div class="fld"><label>Название *</label><input id="bTitle" value="'+esc(b.title)+'" maxlength="300"></div>'+
+    '<div class="fld"><label>Автор книги</label><input id="bAuthor" value="'+esc(b.author)+'" maxlength="200"></div>'+
+    '<div class="fld"><label>Описание *</label><textarea id="bDesc" maxlength="5000">'+esc(b.description)+'</textarea></div>'+
+    '<div class="fld"><label>Категории</label><div class="seg" id="bCats">'+catChips+'</div></div>'+
+    '<div class="fld"><label>Тип</label><div class="seg" id="bFree">'+
+      '<div class="opt'+(b.isFree?'':' on')+'" data-v="paid" onclick="pickFree(this,false)">Платный</div>'+
+      '<div class="opt'+(b.isFree?' on':'')+'" data-v="free" onclick="pickFree(this,true)">Бесплатный</div></div></div>'+
+    priceFields+
+    coverBlock+
+    '<div class="fld"><label>Буквы-заглушка (если нет обложки, до 4)</label><input id="bLabel" value="'+esc(b.coverLabel)+'" maxlength="4"></div>'+
+    '<div class="fld"><label>Цвета градиента-заглушки</label>'+
+      '<div class="btnrow"><input id="bGrad1" type="color" value="'+normHex(b.coverGradientColors[0])+'" style="max-width:70px;padding:4px">'+
+      '<input id="bGrad2" type="color" value="'+normHex(b.coverGradientColors[1]||b.coverGradientColors[0])+'" style="max-width:70px;padding:4px"></div></div>'+
+    '<div class="fld"><label>Ссылка на покупку на сайте (необязательно)</label><input id="bPurchase" value="'+esc(b.purchaseUrl)+'" maxlength="500"></div>'+
+    '<div class="btnrow" style="margin-top:6px"><button class="btn primary" onclick="saveBook()">Сохранить</button>'+pubBtn+'</div>'+
+    partsHtml+
+    (delBtn?('<div class="divider"></div>'+delBtn):'')
+  );
+}
+
+function collectBook(){
+  var isFree=segVal('bFree')==='free';
+  var p={ title:val('bTitle'), author:val('bAuthor'), description:val('bDesc'),
+    categories:chipVals('bCats'), tags:[], isFree:isFree,
+    coverLabel:val('bLabel'), coverGradientColors:[document.getElementById('bGrad1').value, document.getElementById('bGrad2').value],
+    purchaseUrl:val('bPurchase'), freeChapterIndex:0 };
+  if(isFree){ p.priceRub=null; p.priceUsd=null; p.priceByn=null; }
+  else { p.priceRub=numOrNull('bPriceRub'); p.priceUsd=numOrNull('bPriceUsd'); p.priceByn=numOrNull('bPriceByn'); }
+  return p;
+}
+async function saveBook(){
+  var p=collectBook();
+  if(!p.title){ toast('Введите название'); return; }
+  if(!p.description){ toast('Введите описание'); return; }
+  try{
+    var d;
+    if(_curBook.id) d=await api('/admin/catalog/'+_curBook.id,{method:'PATCH',body:JSON.stringify(p)});
+    else d=await api('/admin/catalog',{method:'POST',body:JSON.stringify(p)});
+    _curBook=d.book; toast('Сохранено'); renderBook(); loadCatalog();
+  }catch(e){ toast(e.message); }
+}
+async function uploadCover(){
+  var f=document.getElementById('bCoverFile'); if(!f||!f.files.length){ toast('Выберите файл'); return; }
+  var fd=new FormData(); fd.append('cover', f.files[0]);
+  try{ toast('Загрузка…'); var d=await api('/admin/catalog/'+_curBook.id+'/cover',{method:'POST',body:fd}); _curBook=d.book; toast('Обложка загружена'); renderBook(); loadCatalog(); }
+  catch(e){ toast(e.message); }
+}
+async function uploadAudio(){
+  var f=document.getElementById('pFile'); if(!f||!f.files.length){ toast('Выберите аудиофайл'); return; }
+  var fd=new FormData(); fd.append('audio', f.files[0]); fd.append('partNumber', val('pNum')||'1'); var t=val('pTitle'); if(t) fd.append('title', t);
+  try{ toast('Загрузка аудио…'); var d=await api('/admin/catalog/'+_curBook.id+'/audio',{method:'POST',body:fd}); _curBook=d.book; toast('Часть загружена'); renderBook(); loadCatalog(); }
+  catch(e){ toast(e.message); }
+}
+async function delAudio(num){
+  try{ var d=await api('/admin/catalog/'+_curBook.id+'/audio/'+num,{method:'DELETE'}); _curBook=d.book; toast('Часть удалена'); renderBook(); loadCatalog(); }
+  catch(e){ toast(e.message); }
+}
+async function togglePublish(){
+  try{ var d=await api('/admin/catalog/'+_curBook.id+'/publish',{method:'POST',body:JSON.stringify({isPublished:!_curBook.isPublished})}); _curBook=d.book; toast(_curBook.isPublished?'Опубликован':'Снят с публикации'); renderBook(); loadCatalog(); }
+  catch(e){ toast(e.message); }
+}
+async function delBook(){
+  try{ await api('/admin/catalog/'+_curBook.id,{method:'DELETE'}); toast('Разбор удалён'); closeModal(); loadCatalog(); }
+  catch(e){ toast(e.message); }
+}
+
+/* ==================================================================
+ *                          КЛУБ МЕСЯЦА
+ * ================================================================== */
+var _clubs=[], _curClub=null;
+async function ensureBooks(){ if(!_books.length){ try{ var d=await api('/admin/catalog'); _books=d.items||[]; }catch(e){} } return _books; }
+function toDateInput(d){ if(!d) return ''; var x=new Date(d); if(isNaN(x.getTime())) return ''; return x.toISOString().slice(0,10); }
+
+async function loadClubs(){
+  var el=document.getElementById('clubList');
+  try{ var d=await api('/admin/club'); _clubs=d.items||[]; renderClubList(); }
+  catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+function renderClubList(){
+  var el=document.getElementById('clubList');
+  if(!_clubs.length){ el.innerHTML='<div class="empty">Клубов нет</div>'; return; }
+  el.innerHTML='<div class="card" style="padding:4px 12px">'+_clubs.map(function(c){
+    var st=c.isActive?'<span class="badge b-basic">активен</span>':'';
+    return '<div class="row" onclick="openClub(\''+c.id+'\')"><div class="meta"><div class="nm">'+esc(c.title)+'</div>'+
+      '<div class="em">'+fmtDate(c.startsAt)+' — '+fmtDate(c.endsAt)+'</div></div>'+st+'<span class="chev">›</span></div>';
+  }).join('')+'</div>';
+}
+async function newClub(){ await ensureBooks(); _curClub={ id:null, bookId:(_books[0]?_books[0].id:''), startsAt:'', endsAt:'', partSchedule:[] }; renderClub(); }
+async function openClub(id){ await ensureBooks(); try{ var d=await api('/admin/club/'+id); _curClub=d.club; renderClub(); }catch(e){ toast(e.message); } }
+function renderClub(){
+  var c=_curClub;
+  var opts=_books.map(function(b){ return '<option value="'+b.id+'"'+(b.id===c.bookId?' selected':'')+'>'+esc(b.title)+'</option>'; }).join('')||'<option value="">— нет разборов, создайте в Каталоге —</option>';
+  var sched=(c.partSchedule||[]).map(function(s){ return schedRow(s.partNumber, toDateInput(s.opensAt)); }).join('');
+  openModal(
+    '<h2>'+(c.id?'Редактирование клуба':'Новый клуб месяца')+'</h2>'+
+    '<div class="msub">Один месяц — один разбор</div>'+
+    '<div class="fld"><label>Разбор (книга месяца)</label><select id="cBook">'+opts+'</select></div>'+
+    '<div class="fld"><label>Начало</label><input id="cStart" type="date" value="'+toDateInput(c.startsAt)+'"></div>'+
+    '<div class="fld"><label>Конец</label><input id="cEnd" type="date" value="'+toDateInput(c.endsAt)+'"></div>'+
+    '<div class="hint">Архивный доступ для истёкших подписок считается автоматически: месяц клуба + весь следующий месяц.</div>'+
+    '<div class="fld"><label>Расписание открытия частей (необязательно)</label><div id="cSched">'+sched+'</div>'+
+      '<button class="btn ghost sm" style="margin-top:6px" onclick="addSchedRow()">+ Часть по расписанию</button>'+
+      '<div class="hint">Если пусто — все части доступны сразу со старта клуба.</div></div>'+
+    '<div class="btnrow" style="margin-top:6px"><button class="btn primary" onclick="saveClub()">Сохранить</button>'+
+      (c.id?'<button class="btn danger sm" onclick="delClub()">Удалить</button>':'')+'</div>'
+  );
+}
+function schedRow(num,date){
+  return '<div class="btnrow sched-row" style="margin-bottom:6px;align-items:center">'+
+    '<input class="sched-n" type="number" min="1" placeholder="№" style="max-width:70px;margin:0" value="'+(num!=null?num:'')+'">'+
+    '<input class="sched-d" type="date" style="margin:0" value="'+(date||'')+'">'+
+    '<button class="btn danger sm" onclick="this.parentElement.remove()">×</button></div>';
+}
+function addSchedRow(){ document.getElementById('cSched').insertAdjacentHTML('beforeend', schedRow(null,'')); }
+function collectSchedule(){
+  var out=[]; document.querySelectorAll('#cSched .sched-row').forEach(function(r){
+    var n=r.querySelector('.sched-n').value, d=r.querySelector('.sched-d').value;
+    if(n && d) out.push({ partNumber:parseInt(n,10), opensAt:d+'T00:00:00' });
+  });
+  return out;
+}
+async function saveClub(){
+  var bookId=document.getElementById('cBook').value;
+  var startsAt=document.getElementById('cStart').value;
+  var endsAt=document.getElementById('cEnd').value;
+  if(!bookId){ toast('Выберите разбор'); return; }
+  if(!startsAt||!endsAt){ toast('Укажите даты начала и конца'); return; }
+  var sp=startsAt.split('-');
+  var p={ bookId:bookId, startsAt:startsAt+'T00:00:00', endsAt:endsAt+'T23:59:59',
+    year:parseInt(sp[0],10), month:parseInt(sp[1],10), partSchedule:collectSchedule() };
+  try{
+    if(_curClub.id) await api('/admin/club/'+_curClub.id,{method:'PATCH',body:JSON.stringify(p)});
+    else await api('/admin/club',{method:'POST',body:JSON.stringify(p)});
+    toast('Сохранено'); closeModal(); loadClubs(); loadCatalog();
+  }catch(e){ toast(e.message); }
+}
+async function delClub(){
+  try{ await api('/admin/club/'+_curClub.id,{method:'DELETE'}); toast('Клуб удалён'); closeModal(); loadClubs(); loadCatalog(); }
+  catch(e){ toast(e.message); }
+}
+
+/* ==================================================================
+ *                           МЫСЛЬ ДНЯ
+ * ================================================================== */
+var _thoughts=[];
+async function loadThoughts(){
+  try{
+    var d=await api('/admin/thoughts'); _thoughts=d.items||[]; var t=d.today||{};
+    document.getElementById('thoughtToday').innerHTML = t.text ? ('«'+esc(t.text)+'»<div class="muted" style="margin-top:6px">— '+esc(t.author||'')+'</div>') : '<div class="muted">—</div>';
+    renderThoughts();
+  }catch(e){ document.getElementById('thoughtList').innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+function renderThoughts(){
+  var el=document.getElementById('thoughtList');
+  if(!_thoughts.length){ el.innerHTML='<div class="empty">Фраз нет</div>'; return; }
+  el.innerHTML=_thoughts.map(function(t){
+    return '<div class="card"'+(t.isActive?'':' style="opacity:.55"')+'><div style="font-size:14px">«'+esc(t.text)+'»</div>'+
+      '<div class="muted" style="margin:4px 0 8px">— '+esc(t.author)+(t.isActive?'':' · отключена')+'</div>'+
+      '<div class="btnrow"><button class="btn ghost sm" onclick="editThought(\''+t.id+'\')">Изменить</button>'+
+      '<button class="btn ghost sm" onclick="toggleThought(\''+t.id+'\','+(!t.isActive)+')">'+(t.isActive?'Отключить':'Включить')+'</button>'+
+      '<button class="btn danger sm" onclick="delThought(\''+t.id+'\')">Удалить</button></div></div>';
+  }).join('');
+}
+function newThought(){ editThoughtModal({id:null,text:'',author:'Анна Бусел'}); }
+function editThought(id){ var t=_thoughts.filter(function(x){return x.id===id;})[0]; if(t) editThoughtModal(t); }
+function editThoughtModal(t){
+  openModal('<h2>'+(t.id?'Изменить фразу':'Новая фраза')+'</h2>'+
+    '<div class="fld"><label>Текст</label><textarea id="tText" maxlength="1000">'+esc(t.text)+'</textarea></div>'+
+    '<div class="fld"><label>Автор</label><input id="tAuthor" value="'+esc(t.author||'Анна Бусел')+'" maxlength="120"></div>'+
+    '<button class="btn primary" onclick="saveThought(\''+(t.id||'')+'\')">Сохранить</button>');
+}
+async function saveThought(id){
+  var text=val('tText'), author=val('tAuthor')||'Анна Бусел';
+  if(!text){ toast('Введите текст'); return; }
+  try{
+    if(id) await api('/admin/thoughts/'+id,{method:'PATCH',body:JSON.stringify({text:text,author:author})});
+    else await api('/admin/thoughts',{method:'POST',body:JSON.stringify({text:text,author:author})});
+    toast('Сохранено'); closeModal(); loadThoughts();
+  }catch(e){ toast(e.message); }
+}
+async function toggleThought(id,active){ try{ await api('/admin/thoughts/'+id,{method:'PATCH',body:JSON.stringify({isActive:active})}); loadThoughts(); }catch(e){ toast(e.message); } }
+async function delThought(id){ try{ await api('/admin/thoughts/'+id,{method:'DELETE'}); toast('Удалена'); loadThoughts(); }catch(e){ toast(e.message); } }
 
 document.getElementById('pass').addEventListener('keydown',function(e){ if(e.key==='Enter') doLogin(); });
 </script>
