@@ -4,7 +4,7 @@ const { success } = require('../utils/response');
 const Book = require('../models/Book');
 const ClubMonth = require('../models/ClubMonth');
 const Progress = require('../models/Progress');
-const { thoughtForDate } = require('../config/daily-thoughts');
+const { thoughtForDate } = require('../services/thought.service');
 
 const router = Router();
 
@@ -115,8 +115,9 @@ router.get('/', optionalAuth, async (req, res, next) => {
     // по дню; ЕДИНЫЙ источник с ежедневным пушем (jobs/push-scheduler), поэтому
     // карточка и пуш показывают одну и ту же мысль. Автор по умолчанию — Анна
     // Бусел, книги-источника нет (bookTitle пустой — клиент не рисует часть
-    // «, «книга»»). Управление из админки появится позже (6.6).
-    const todayThought = thoughtForDate(Date.now());
+    // «, «книга»»). Управление из админки — раздел «Мысль дня» (6.6): список
+    // фраз в БД (DailyThought), thoughtForDate теперь асинхронна.
+    const todayThought = await thoughtForDate(Date.now());
     const dailyQuote = {
       text: todayThought.text,
       author: todayThought.author,

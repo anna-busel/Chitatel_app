@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const logger = require('../config/logger');
 const pushService = require('../services/push.service');
-const { thoughtForDate } = require('../config/daily-thoughts');
+const { thoughtForDate } = require('../services/thought.service');
 
 /**
  * Планировщик push по расписанию (MASTER 7.9).
@@ -48,16 +48,19 @@ const schedulePushJobs = () => {
   cron.schedule(
     '0 10 * * *',
     () => {
-      const { text } = thoughtForDate(Date.now());
-      pushService
-        .broadcast(
-          { audience: 'all' },
-          {
-            title: 'Мысль дня',
-            body: text,
-            data: { type: 'daily_quote' },
-          },
-          'dailyQuote'
+      // thoughtForDate теперь асинхронна (список в БД, config/daily-thoughts —
+      // фолбэк). Разворачиваем промис и ловим ошибки чтения БД тоже.
+      thoughtForDate(Date.now())
+        .then(({ text }) =>
+          pushService.broadcast(
+            { audience: 'all' },
+            {
+              title: 'Мысль дня',
+              body: text,
+              data: { type: 'daily_quote' },
+            },
+            'dailyQuote'
+          )
         )
         .catch((err) => {
           logger.error('Push daily-quote cron error', { message: err.message });

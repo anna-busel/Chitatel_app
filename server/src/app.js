@@ -24,6 +24,9 @@ const userRoutes = require('./routes/users');
 const notificationRoutes = require('./routes/notifications');
 const adminPushRoutes = require('./routes/admin-push');
 const adminUsersRoutes = require('./routes/admin-users');
+const adminCatalogRoutes = require('./routes/admin-catalog');
+const adminClubRoutes = require('./routes/admin-club');
+const adminThoughtsRoutes = require('./routes/admin-thoughts');
 
 const app = express();
 
@@ -88,6 +91,19 @@ app.use('/api/admin/push', adminPushRoutes);
 // внутри. adminRoutes (/api/admin) не имеет /users-путей, поэтому запрос
 // доходит сюда.
 app.use('/api/admin/users', adminUsersRoutes);
+
+// Каталог разборов из админки (6.6): CRUD книг, загрузка обложки и аудио-
+// частей (ffprobe считает длительность), публикация. Отдельный роут-файл;
+// requireAdmin внутри. Как и /users, не пересекается с путями adminRoutes.
+app.use('/api/admin/catalog', adminCatalogRoutes);
+
+// Клуб месяца из админки (6.6): CRUD клубов, привязка книги, даты, расписание
+// открытия частей. Отдельный роут-файл; requireAdmin внутри.
+app.use('/api/admin/club', adminClubRoutes);
+
+// Мысль дня из админки (6.6): список фраз в БД (DailyThought), CRUD, показ
+// текущей. Ротация та же (thought.service). Отдельный роут-файл; requireAdmin.
+app.use('/api/admin/thoughts', adminThoughtsRoutes);
 
 /* ------------------------------------------------------------------ *
  *              СТАТИКА: АДМИНКА И ЮРИДИЧЕСКИЕ СТРАНИЦЫ               *
