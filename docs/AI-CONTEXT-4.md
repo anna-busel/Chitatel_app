@@ -304,3 +304,100 @@ onboarding_provider,screens/name_screen,survey_screen,onboarding_extra_screen}
 - Интро-слайды 4.1 (3 слайда) не делали — не приоритет, спека Анны начиналась с
   экрана «Имя». При желании добавить перед входом.
 - Синхронизировать MASTER 4.6 с новой спекой опроса, когда владелец разрешит.
+
+---
+
+## 8. Админ-панель 6.6 — доращивание завершено (в `main`, ~13.08.2026)
+
+Единая панель (`server/admin/index.html`, без сборки, vanilla single-file) доращена
+по решению из раздела 3. Вкладки: Обзор, Люди, Каталог, Клуб месяца, Мысль дня,
+Модерация, Рассылка. Всё под токеном админа (role=admin); CSP-послабление для
+инлайна уже было в app.js. Отдельную React/Vite-панель не делаем.
+
+### 8.1 Люди + ручная выдача доступа (`routes/admin-users.js` → `/api/admin/users`)
+
+GET / (поиск q/limit/offset по name/email/marketingEmail), GET /:id (карточка +
+populate purchasedBooks/purchasedPackages), POST /:id/subscription
+(basic|premium|free + план → subscription* + clubMonthsEntitled через
+`clubMonthKeysForPurchase`, best-effort `Purchase.create`), grant/revoke-book и
+grant/revoke-package ($addToSet/$pull по slug), /:id/role (нельзя снять свой
+админ), /:id/ban (нельзя банить админа). Пишет ТЕ ЖЕ денормализованные поля User,
+что реальная покупка → доступ в приложении появляется сразу, без пересборки.
+
+### 8.2 Каталог (`routes/admin-catalog.js` → `/api/admin/catalog`)
+
+CRUD разборов. GET /categories — фикс. 14 категорий (значения КАПСОМ, совпадают с
+`book_categories.dart` для точной фильтрации). POST/PATCH book: авто-slug
+транслитом из title (ИММУТАБЕЛЕН после создания — к нему привязаны имена файлов),
+`appleProductId = book.<slug>` для платных / null для бесплатных. POST /:id/cover —
+обложка в `<AUDIO_BASE_PATH>/book-covers/<slug>/<uuid>.<ext>`, отдаётся signed URL
+(image.service, фикс. exp 2099 → стабильный кэшируемый URL), `Book.coverImageUrl` =
+этот https-URL (приложение уже умеет `Image.network`, см. BookCoverImage). POST
+/:id/audio — аудио-часть в `<slug>/part-<N>.<ext>`, длительность через `ffprobe`
+(есть на VPS, 6.1.1), апсерт части + пересчёт durationTotal; повтор с тем же
+номером заменяет файл. DELETE /:id/audio/:n, DELETE /:id (только если не в клубе).
+POST /:id/publish (нельзя публиковать без аудио-частей).
+
+⚠️ Обложки и аудио пишутся на СЕРВЕР (AUDIO_BASE_PATH), НЕ в гит. Синхронизации с
+GitHub нет и не требуется: гит = только код, контент (БД + файлы) живёт на VPS.
+
+### 8.3 Клуб месяца (`routes/admin-club.js` → `/api/admin/club`)
+
+CRUD ClubMonth: выбор книги из каталога, даты (date-picker), partSchedule
+(необязательно; пусто = все части со старта). archiveUntilDate считается через
+`archiveWindowEnd` (месяц клуба + весь следующий, синхронно с middleware).
+month/year шлём с клиента из даты начала. Активность клуба определяется ДАТАМИ
+(как читает routes/club.js: startsAt ≤ now ≤ endsAt), isActive держим в синхроне.
+Проставляет `Book.isPartOfClub`/`clubMonth` (книга клуба уходит из «популярное/
+бесплатное»); при смене книги снимает флаг со старой, если она больше нигде не
+используется.
+
+### 8.4 Мысль дня — переезд в БД (`models/DailyThought.js`, `services/thought.service.js`, `routes/admin-thoughts.js` → `/api/admin/thoughts`)
+
+Список фраз переехал из статики `config/daily-thoughts.js` в БД (модель
+DailyThought: text, author, order, isActive). CRUD в админке (добавить/править/
+вкл-выкл/удалить) + показ «сегодня показывается». Ротация прежняя (детерминированно
+по дню МСК, по кругу активных фраз, порядок order/_id), теперь читает из БД —
+`thought.service.thoughtForDate` СТАЛА async. `routes/home.js` и
+`jobs/push-scheduler.js` переведены на сервис (await/then). `config/daily-thoughts.js`
+оставлен как СИД+ФОЛБЭК: `ensureSeeded()` (вызывается при первом GET
+/admin/thoughts) переносит 39 фраз в БД; при пустой коллекции сервис отдаёт статику,
+поэтому до первого захода в админку ничего не ломается. Правки применяются в
+реальном времени (карточка на главной + ежедневный пуш 10:00 МСК).
+
+### 8.5 Фронт (`server/admin/index.html`, 48249 байт)
+
++3 вкладки с редакторами-модалками. `doFetch` теперь понимает FormData (загрузка
+обложки/аудио без ручного Content-Type — boundary ставит браузер). Категории —
+мультивыбор чипами. Ленивая загрузка тяжёлых вкладок при первом открытии.
+Диалоги `confirm()` не используются (блокируют расширение) — удаление без
+подтверждения, только админ.
+
+### 8.6 На владельце (не код)
+
+- `git pull` + **`pm2 restart`** — обязателен: добавлены новые роуты и
+  `thoughtForDate` стала async (home.js/push-scheduler.js). Сам контент
+  (разборы/клуб/мысль-дня) дальше меняется в реальном времени, рестарт нужен
+  только под этот деплой кода.
+- Для КАЖДОГО платного разбора завести IAP-продукт `book.<slug>` в App Store
+  Connect (админка продукт не создаёт).
+- Убедиться, что AUDIO_BASE_PATH (`/var/audio/chitatel` по умолчанию) доступен на
+  запись пользователю Node — туда пишутся обложки (book-covers/) и аудио.
+  `ffprobe` в PATH (есть).
+- Сменить пароль админа (`anna123456`).
+
+### 8.7 Коммиты (main)
+
+`9504301` admin-catalog.js; `6a507ee` admin-club.js; `c6b1b62` thoughts
+(DailyThought + thought.service + admin-thoughts) + home.js/push-scheduler.js +
+app.js mount; `60ebfdb` index.html. Все побайтово сверены (blob size == локальный:
+admin-catalog 25786, admin-club 10242, admin-thoughts 4996, DailyThought 2157,
+thought.service 3159, app.js 9614, home.js 6780, push-scheduler 3349,
+index.html 48249).
+
+### 8.8 Не делали (по границам роли)
+
+- Q&A-расписание/«Q&A по пятницам» — отдельная задача, не трогали (в
+  push-scheduler остался комментарий-заглушка).
+- Dynamic Type + полный VoiceOver-проход (6.4) — на устройстве, вне этого чата.
+- Тёмная тема — для публикации не требуется, не делали.
