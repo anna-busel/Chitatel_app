@@ -66,7 +66,9 @@ router.get('/', optionalAuth, async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
     const skip = (page - 1) * limit;
 
-    const filter = { isPublished: true };
+    // isPartOfClub исключаем: разбор клуба месяца эксклюзивен (доступен только
+    // участницам клуба и в архиве), в общем каталоге он не показывается.
+    const filter = { isPublished: true, isPartOfClub: { $ne: true } };
     if (req.query.category) {
       filter.categories = req.query.category;
     }
