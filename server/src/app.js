@@ -27,6 +27,7 @@ const adminUsersRoutes = require('./routes/admin-users');
 const adminCatalogRoutes = require('./routes/admin-catalog');
 const adminClubRoutes = require('./routes/admin-club');
 const adminThoughtsRoutes = require('./routes/admin-thoughts');
+const adminNotificationsRoutes = require('./routes/admin-notifications');
 
 const app = express();
 
@@ -104,6 +105,10 @@ app.use('/api/admin/club', adminClubRoutes);
 // Мысль дня из админки (6.6): список фраз в БД (DailyThought), CRUD, показ
 // текущей. Ротация та же (thought.service). Отдельный роут-файл; requireAdmin.
 app.use('/api/admin/thoughts', adminThoughtsRoutes);
+
+// Уведомления из админки (6.6): настройка напоминания «Запишите цитату»
+// (текст, время, дни, вкл/выкл). Отдельный роут-файл; requireAdmin внутри.
+app.use('/api/admin/notifications', adminNotificationsRoutes);
 
 /* ------------------------------------------------------------------ *
  *              СТАТИКА: АДМИНКА И ЮРИДИЧЕСКИЕ СТРАНИЦЫ               *
