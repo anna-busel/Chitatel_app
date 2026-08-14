@@ -16,6 +16,7 @@ router.use(requireAuth, requireAdmin);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MSK_OFFSET_MS = 3 * 60 * 60 * 1000; // Москва фикс. +3, без перехода на лето
+const ALLOWED_DAYS = [7, 30, 90, 365];
 
 /**
  * Ключ календарного дня по Москве (YYYY-MM-DD). Совпадает с тем, что даёт
@@ -39,75 +40,200 @@ function lastNDayKeys(n) {
 }
 
 /**
- * Превратить [{_id:'YYYY-MM-DD', amount, count}] в ровный ряд по dayKeys.
+ * Массив ключей последних n месяцев (YYYY-MM, по МСК), от старого к новому.
+ * Для длинных диапазонов (год) график по дням нечитаем — бьём по месяцам.
  */
-function fillSeries(dayKeys, rows) {
-  const byDay = new Map(
-    rows.map((r) => [r._id, { amount: r.amount || 0, count: r.count || 0 }])
+function lastNMonthKeys(n) {
+  const keys = [];
+  const nowMsk = new Date(Date.now() + MSK_OFFSET_MS);
+  let y = nowMsk.getUTCFullYear();
+  let m = nowMsk.getUTCMonth(); // 0-11
+  for (let i = 0; i < n; i += 1) {
+    keys.push(`${y}-${String(m + 1).padStart(2, '0')}`);
+    m -= 1;
+    if (m < 0) {
+      m = 11;
+      y -= 1;
+    }
+  }
+  return keys.reverse();
+}
+
+/**
+ * Ровный ряд по bucketKeys с разбивкой Apple / вручную.
+ * rows: [{_id, apple, manual, count}].
+ */
+function fillSplitSeries(bucketKeys, rows) {
+  const byKey = new Map(
+    rows.map((r) => [
+      r._id,
+      {
+        apple: Math.round(r.apple || 0),
+        manual: Math.round(r.manual || 0),
+        count: r.count || 0,
+      },
+    ])
   );
-  return dayKeys.map((day) => {
-    const v = byDay.get(day) || { amount: 0, count: 0 };
-    return { day, amount: Math.round(v.amount || 0), count: v.count || 0 };
+  return bucketKeys.map((key) => {
+    const v = byKey.get(key) || { apple: 0, manual: 0, count: 0 };
+    return { key, apple: v.apple, manual: v.manual, count: v.count };
   });
 }
 
+/**
+ * Ровный ряд по dayKeys (только count) — для сообщений клуба.
+ */
+function fillCountSeries(dayKeys, rows) {
+  const byDay = new Map(rows.map((r) => [r._id, r.count || 0]));
+  return dayKeys.map((day) => ({ day, count: byDay.get(day) || 0 }));
+}
+
+// $cond: Apple-платёж (реальное списание) — platform === 'apple'.
+const IS_APPLE = { $eq: ['$platform', 'apple'] };
+
+// Сумма по условию Apple / не-Apple.
+function condSum(isApple, field) {
+  return {
+    $sum: { $cond: [isApple ? IS_APPLE : { $not: IS_APPLE }, field, 0] },
+  };
+}
+
 /* ------------------------------------------------------------------ *
- *                   GET /api/admin/analytics                        *
+ *                   GET /api/admin/analytics?days=30                 *
  * ------------------------------------------------------------------ *
- * Сводка для дашборда: выручка и покупки за 30 дней (с разбивкой по дням и
- * типам), подписчики, участницы, активность клуба, топ разборов. Все суммы —
- * в USD (Purchase.priceUsd); реальные списания идут через Apple, здесь —
- * агрегат по нашим записям о покупках. */
-router.get('/', async (_req, res, next) => {
+ * Сводка для дашборда. Ключевой принцип: РЕАЛЬНАЯ выручка (списания через
+ * Apple, platform:'apple') и ручные выдачи из админки (platform:'web' —
+ * доступ, выданный без оплаты) считаются и показываются ОТДЕЛЬНО, чтобы
+ * ручные выдачи не раздували выручку. Диапазон выбирается (?days=7|30|90|365);
+ * ряд по дням для коротких диапазонов и по месяцам для года. Дополнительно —
+ * выручка по типам (разборы / пакеты / подписки / архив) и быстрые итоги за
+ * 7/30/90/365 дней и за всё время. Все суммы — USD (Purchase.priceUsd). */
+router.get('/', async (req, res, next) => {
   try {
     const now = Date.now();
-    const since30 = new Date(now - 30 * DAY_MS);
+    const days = ALLOWED_DAYS.includes(Number(req.query.days))
+      ? Number(req.query.days)
+      : 30;
+    const granularity = days >= 365 ? 'month' : 'day';
+    const bucketKeys =
+      granularity === 'month' ? lastNMonthKeys(12) : lastNDayKeys(days);
+    const bucketFormat = granularity === 'month' ? '%Y-%m' : '%Y-%m-%d';
+
+    const sinceRange = new Date(now - days * DAY_MS);
     const since7 = new Date(now - 7 * DAY_MS);
+    const since30 = new Date(now - 30 * DAY_MS);
+    const since90 = new Date(now - 90 * DAY_MS);
+    const since365 = new Date(now - 365 * DAY_MS);
     const nowDate = new Date(now);
 
-    const days30 = lastNDayKeys(30);
     const days7 = lastNDayKeys(7);
 
+    const bucketExpr = {
+      $dateToString: {
+        format: bucketFormat,
+        date: '$purchasedAt',
+        timezone: 'Europe/Moscow',
+      },
+    };
+
     const [
-      purchaseDaily,
-      byType,
-      msgDaily,
+      seriesRaw,
+      rangeTotals,
+      byTypeRaw,
+      windowTotals,
       topBooksRaw,
+      msgDaily,
       totalUsers,
       newUsersWeek,
       activeSubs,
       expiredSubs,
-      newSubsWeek,
+      newSubsAppleWeek,
+      newSubsManualWeek,
       messagesWeek,
       listenerIds,
     ] = await Promise.all([
-      // Покупки по дням (30д): сумма и количество.
+      // Ряд по дням/месяцам за выбранный диапазон (Apple / вручную).
       Purchase.aggregate([
-        { $match: { purchasedAt: { $gte: since30 } } },
+        { $match: { purchasedAt: { $gte: sinceRange } } },
         {
           $group: {
-            _id: {
-              $dateToString: {
-                format: '%Y-%m-%d',
-                date: '$purchasedAt',
-                timezone: 'Europe/Moscow',
-              },
-            },
-            amount: { $sum: '$priceUsd' },
+            _id: bucketExpr,
+            apple: condSum(true, '$priceUsd'),
+            manual: condSum(false, '$priceUsd'),
             count: { $sum: 1 },
           },
         },
       ]),
-      // Выручка/покупки по типам (30д).
+      // Итоги за выбранный диапазон (Apple / вручную).
       Purchase.aggregate([
-        { $match: { purchasedAt: { $gte: since30 } } },
+        { $match: { purchasedAt: { $gte: sinceRange } } },
+        {
+          $group: {
+            _id: null,
+            revApple: condSum(true, '$priceUsd'),
+            revManual: condSum(false, '$priceUsd'),
+            cntApple: condSum(true, 1),
+            cntManual: condSum(false, 1),
+          },
+        },
+      ]),
+      // По типам за выбранный диапазон (Apple / вручную, суммы и количества).
+      Purchase.aggregate([
+        { $match: { purchasedAt: { $gte: sinceRange } } },
         {
           $group: {
             _id: '$itemType',
-            amount: { $sum: '$priceUsd' },
+            revApple: condSum(true, '$priceUsd'),
+            revManual: condSum(false, '$priceUsd'),
+            cntApple: condSum(true, 1),
+            cntManual: condSum(false, 1),
+          },
+        },
+      ]),
+      // Быстрые итоги выручки (только Apple) за 7/30/90/365 дней и за всё время.
+      Purchase.aggregate([
+        { $match: { platform: 'apple' } },
+        {
+          $group: {
+            _id: null,
+            d7: {
+              $sum: {
+                $cond: [{ $gte: ['$purchasedAt', since7] }, '$priceUsd', 0],
+              },
+            },
+            d30: {
+              $sum: {
+                $cond: [{ $gte: ['$purchasedAt', since30] }, '$priceUsd', 0],
+              },
+            },
+            d90: {
+              $sum: {
+                $cond: [{ $gte: ['$purchasedAt', since90] }, '$priceUsd', 0],
+              },
+            },
+            d365: {
+              $sum: {
+                $cond: [{ $gte: ['$purchasedAt', since365] }, '$priceUsd', 0],
+              },
+            },
+            all: { $sum: '$priceUsd' },
+          },
+        },
+      ]),
+      // Топ-5 разборов по числу покупок (всё время, Apple / вручную).
+      Purchase.aggregate([
+        { $match: { itemType: 'book', itemId: { $ne: null } } },
+        {
+          $group: {
+            _id: '$itemId',
+            cntApple: condSum(true, 1),
+            cntManual: condSum(false, 1),
+            revApple: condSum(true, '$priceUsd'),
             count: { $sum: 1 },
           },
         },
+        { $sort: { count: -1 } },
+        { $limit: 5 },
       ]),
       // Сообщения клуба по дням (7д).
       ChatMessage.aggregate([
@@ -124,19 +250,6 @@ router.get('/', async (_req, res, next) => {
             count: { $sum: 1 },
           },
         },
-      ]),
-      // Топ-5 разборов по числу покупок (всё время).
-      Purchase.aggregate([
-        { $match: { itemType: 'book', itemId: { $ne: null } } },
-        {
-          $group: {
-            _id: '$itemId',
-            count: { $sum: 1 },
-            revenue: { $sum: '$priceUsd' },
-          },
-        },
-        { $sort: { count: -1 } },
-        { $limit: 5 },
       ]),
       User.countDocuments({ isDeleted: false }),
       User.countDocuments({ isDeleted: false, createdAt: { $gte: since7 } }),
@@ -157,6 +270,12 @@ router.get('/', async (_req, res, next) => {
       }),
       Purchase.countDocuments({
         itemType: 'subscription',
+        platform: 'apple',
+        purchasedAt: { $gte: since7 },
+      }),
+      Purchase.countDocuments({
+        itemType: 'subscription',
+        platform: { $ne: 'apple' },
         purchasedAt: { $gte: since7 },
       }),
       ChatMessage.countDocuments({
@@ -166,24 +285,49 @@ router.get('/', async (_req, res, next) => {
       Progress.distinct('userId', { lastListenedAt: { $gte: since7 } }),
     ]);
 
-    // Ряды по дням (заполненные нулями).
-    const series30 = fillSeries(days30, purchaseDaily);
-    const revenue30 = series30.reduce((s, d) => s + d.amount, 0);
-    const purchases30 = series30.reduce((s, d) => s + d.count, 0);
-    const messageSeries = fillSeries(days7, msgDaily).map((d) => ({
-      day: d.day,
-      count: d.count,
-    }));
+    // Ряд по дням/месяцам (заполнен нулями).
+    const series = fillSplitSeries(bucketKeys, seriesRaw);
+    const rt = rangeTotals[0] || {};
+    const revenue = {
+      apple: Math.round(rt.revApple || 0),
+      manual: Math.round(rt.revManual || 0),
+    };
+    const purchases = {
+      apple: rt.cntApple || 0,
+      manual: rt.cntManual || 0,
+    };
 
-    // Выручка по типам.
-    const revenueByType = { book: 0, package: 0, subscription: 0, archive: 0 };
-    const countByType = { book: 0, package: 0, subscription: 0, archive: 0 };
-    byType.forEach((t) => {
-      if (t._id && Object.prototype.hasOwnProperty.call(revenueByType, t._id)) {
-        revenueByType[t._id] = Math.round(t.amount || 0);
-        countByType[t._id] = t.count || 0;
+    // По типам.
+    const TYPES = ['book', 'package', 'subscription', 'archive'];
+    const byType = {};
+    TYPES.forEach((t) => {
+      byType[t] = {
+        revApple: 0,
+        revManual: 0,
+        cntApple: 0,
+        cntManual: 0,
+      };
+    });
+    byTypeRaw.forEach((t) => {
+      if (t._id && byType[t._id]) {
+        byType[t._id] = {
+          revApple: Math.round(t.revApple || 0),
+          revManual: Math.round(t.revManual || 0),
+          cntApple: t.cntApple || 0,
+          cntManual: t.cntManual || 0,
+        };
       }
     });
+
+    // Быстрые итоги (Apple).
+    const wt = windowTotals[0] || {};
+    const windows = {
+      d7: Math.round(wt.d7 || 0),
+      d30: Math.round(wt.d30 || 0),
+      d90: Math.round(wt.d90 || 0),
+      d365: Math.round(wt.d365 || 0),
+      all: Math.round(wt.all || 0),
+    };
 
     // Топ разборов: подтягиваем названия по itemId (строка = Book._id).
     const validIds = topBooksRaw
@@ -199,20 +343,26 @@ router.get('/', async (_req, res, next) => {
     const topBooks = topBooksRaw.map((b) => ({
       id: String(b._id),
       title: booksById.get(String(b._id)) || 'Разбор',
-      count: b.count,
-      revenue: Math.round(b.revenue || 0),
+      cntApple: b.cntApple || 0,
+      cntManual: b.cntManual || 0,
+      revApple: Math.round(b.revApple || 0),
     }));
 
+    const messageSeries = fillCountSeries(days7, msgDaily);
+
     return success(res, {
-      revenue30,
-      purchases30,
-      series30, // [{day, amount, count}] за 30 дней
-      revenueByType,
-      countByType,
+      range: days,
+      granularity, // 'day' | 'month'
+      series, // [{key, apple, manual, count}]
+      revenue, // {apple, manual} за диапазон
+      purchases, // {apple, manual} за диапазон
+      byType, // {book|package|subscription|archive: {revApple,revManual,cntApple,cntManual}}
+      windows, // {d7,d30,d90,d365,all} — выручка Apple
       subscribers: {
         active: activeSubs,
         expired: expiredSubs,
-        newWeek: newSubsWeek,
+        newAppleWeek: newSubsAppleWeek,
+        newManualWeek: newSubsManualWeek,
       },
       users: { total: totalUsers, newWeek: newUsersWeek },
       messagesWeek,
