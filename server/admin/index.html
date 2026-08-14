@@ -57,6 +57,16 @@
   .chart{display:flex;align-items:flex-end;gap:2px;height:88px;margin:8px 0 2px;}
   .chart .bar{flex:1;background:var(--wine);border-radius:3px 3px 0 0;min-height:2px;}
   .chart .bar.g{background:var(--green);}
+  .chart .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;border-radius:3px 3px 0 0;overflow:hidden;min-height:2px;}
+  .chart .col .seg-a{background:var(--wine);width:100%;}
+  .chart .col .seg-m{background:#C9A24B;width:100%;}
+  .rng{display:flex;gap:6px;margin:2px 0 4px;}
+  .rng .opt{flex:1;text-align:center;padding:8px 0;border:1px solid var(--line);border-radius:10px;font-size:13px;font-weight:600;background:var(--card);color:var(--muted);cursor:pointer;}
+  .rng .opt.on{background:var(--wine);color:#fff;border-color:var(--wine);}
+  .lgnd{display:flex;gap:14px;font-size:11px;color:var(--muted);margin:2px 0 6px;}
+  .lgnd i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle;}
+  .lgnd i.a{background:var(--wine);} .lgnd i.m{background:#C9A24B;}
+  .trow .tv.sub{font-weight:600;color:var(--muted);font-size:12px;}
   .chlabels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:6px;}
   .trow{display:flex;justify-content:space-between;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14px;gap:10px;}
   .trow:last-child{border-bottom:none;} .trow .tn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -292,41 +302,82 @@ function subBadge(u){
 function kpi(n,t,accent){ return '<div class="kpi'+(accent?' accent':'')+'"><div class="n">'+(n==null?'—':n)+'</div><div class="t">'+t+'</div></div>'; }
 function money(n){ return '$'+(n==null?0:n); }
 function shortDay(k){ if(!k) return ''; var p=String(k).split('-'); return p.length===3?(p[2]+'.'+p[1]):k; }
+var _MONTHS=['','янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+function bucketLabel(k, gran){ if(!k) return ''; var p=String(k).split('-'); if(gran==='month'){ return (_MONTHS[+p[1]]||p[1])+' '+String(p[0]).slice(2); } return p.length===3?(p[2]+'.'+p[1]):k; }
 function barChart(vals, cls){
   var max=Math.max.apply(null, vals.concat([1]));
   return '<div class="chart">'+vals.map(function(v){ var h=Math.max(2, Math.round((v||0)/max*100)); return '<div class="bar'+(cls?' '+cls:'')+'" style="height:'+h+'%" title="'+(v||0)+'"></div>'; }).join('')+'</div>';
 }
+// Столбиковый график с разбивкой Apple (низ, бордо) / вручную (верх, золото).
+function splitChart(series, gran){
+  var totals=series.map(function(d){return (d.apple||0)+(d.manual||0);});
+  var max=Math.max.apply(null, totals.concat([1]));
+  return '<div class="chart">'+series.map(function(d){
+    var t=(d.apple||0)+(d.manual||0);
+    var hTot=Math.max(2, Math.round(t/max*100));
+    var aPart = t>0?Math.round((d.apple||0)/t*100):0;
+    var title=bucketLabel(d.key,gran)+': Apple $'+(d.apple||0)+(d.manual?(' · вручную $'+d.manual):'');
+    return '<div class="col" style="height:'+hTot+'%" title="'+title+'">'+
+      '<div class="seg-m" style="height:'+(100-aPart)+'%"></div>'+
+      '<div class="seg-a" style="height:'+aPart+'%"></div>'+
+    '</div>';
+  }).join('')+'</div>';
+}
+var _dashRange=30;
+function setDashRange(d){ _dashRange=d; loadDash(); }
 async function loadDash(){
   var el=document.getElementById('dashBody');
-  try{ var a=await api('/admin/analytics'); el.innerHTML=renderDash(a); }
+  try{ var a=await api('/admin/analytics?days='+_dashRange); el.innerHTML=renderDash(a); }
   catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
 }
+function rangeSelector(){
+  var opts=[[7,'7 дней'],[30,'30 дней'],[90,'90 дней'],[365,'год']];
+  return '<div class="rng">'+opts.map(function(o){ return '<div class="opt'+(_dashRange===o[0]?' on':'')+'" onclick="setDashRange('+o[0]+')">'+o[1]+'</div>'; }).join('')+'</div>';
+}
+function typeRow(name, d){
+  d=d||{}; var manual=(d.cntManual||0);
+  return '<div class="trow"><span class="tn">'+name+' ('+(d.cntApple||0)+')</span>'+
+    '<span class="tv">'+money(d.revApple)+(manual?' <span class="tv sub">+'+manual+' вручную</span>':'')+'</span></div>';
+}
 function renderDash(a){
-  var s=a.series30||[];
-  var revVals=s.map(function(d){return d.amount;});
+  var gran=a.granularity||'day';
+  var s=a.series||[];
   var msgVals=(a.messageSeries||[]).map(function(d){return d.count;});
-  var firstDay=s.length?s[0].day:'', lastDay=s.length?s[s.length-1].day:'';
-  var rbt=a.revenueByType||{}, cbt=a.countByType||{}, sub=a.subscribers||{}, usr=a.users||{}, top=a.topBooks||[];
-  var html='<div class="kpis">'+
-    kpi(money(a.revenue30),'выручка за 30 дней',true)+
-    kpi(a.purchases30,'покупок за 30 дней')+
+  var firstK=s.length?s[0].key:'', lastK=s.length?s[s.length-1].key:'';
+  var rev=a.revenue||{}, pur=a.purchases||{}, bt=a.byType||{}, w=a.windows||{}, sub=a.subscribers||{}, usr=a.users||{}, top=a.topBooks||[];
+  var rangeLbl=(a.range||30)+(a.range===365?' дней (по месяцам)':' дней');
+  var html=rangeSelector();
+  html+='<div class="kpis">'+
+    kpi(money(rev.apple),'выручка Apple · '+rangeLbl,true)+
+    kpi(pur.apple,'покупок Apple за период')+
     kpi(sub.active,'активных подписок')+
     kpi(usr.total,'участниц всего')+
-    kpi('+'+(usr.newWeek||0),'новых за неделю')+
-    kpi(a.messagesWeek,'сообщений за неделю')+
+    kpi('+'+(usr.newWeek||0),'новых участниц за неделю')+
+    kpi((rev.manual?money(rev.manual)+' · ':'')+(pur.manual||0),'выдано вручную за период')+
     '</div>';
-  html+='<div class="lbl">Выручка по дням (30 дней)</div>'+barChart(revVals)+
-    '<div class="chlabels"><span>'+shortDay(firstDay)+'</span><span>всего '+money(a.revenue30)+'</span><span>'+shortDay(lastDay)+'</span></div>';
-  html+='<div class="lbl">Выручка по типам (30 дней)</div><div class="card">'+
-    '<div class="trow"><span class="tn">Разборы ('+(cbt.book||0)+')</span><span class="tv">'+money(rbt.book)+'</span></div>'+
-    '<div class="trow"><span class="tn">Пакеты ('+(cbt.package||0)+')</span><span class="tv">'+money(rbt.package)+'</span></div>'+
-    '<div class="trow"><span class="tn">Подписки ('+(cbt.subscription||0)+')</span><span class="tv">'+money(rbt.subscription)+'</span></div></div>';
+  html+='<div class="lbl">Реальная выручка (Apple) по срокам</div><div class="card">'+
+    '<div class="trow"><span class="tn">7 дней</span><span class="tv">'+money(w.d7)+'</span></div>'+
+    '<div class="trow"><span class="tn">30 дней</span><span class="tv">'+money(w.d30)+'</span></div>'+
+    '<div class="trow"><span class="tn">90 дней</span><span class="tv">'+money(w.d90)+'</span></div>'+
+    '<div class="trow"><span class="tn">Год</span><span class="tv">'+money(w.d365)+'</span></div>'+
+    '<div class="trow"><span class="tn">За всё время</span><span class="tv">'+money(w.all)+'</span></div></div>';
+  html+='<div class="lbl">Выручка по дням ('+rangeLbl+')</div>'+
+    '<div class="lgnd"><span><i class="a"></i>Apple</span><span><i class="m"></i>выдано вручную</span></div>'+
+    splitChart(s,gran)+
+    '<div class="chlabels"><span>'+bucketLabel(firstK,gran)+'</span><span>Apple '+money(rev.apple)+(rev.manual?' · вручную '+money(rev.manual):'')+'</span><span>'+bucketLabel(lastK,gran)+'</span></div>';
+  html+='<div class="lbl">Выручка по типам ('+rangeLbl+')</div><div class="card">'+
+    typeRow('Разборы', bt.book)+
+    typeRow('Пакеты', bt.package)+
+    typeRow('Подписки', bt.subscription)+
+    typeRow('Архив', bt.archive)+
+    '</div><div class="chlabels"><span>суммы — только реальные списания Apple; «вручную» — доступ, выданный из админки без оплаты</span></div>';
   html+='<div class="lbl">Подписчики</div><div class="card">'+
     '<div class="kv"><span class="k">Активные</span><span class="v">'+(sub.active||0)+'</span></div>'+
     '<div class="kv"><span class="k">Истёкшие</span><span class="v">'+(sub.expired||0)+'</span></div>'+
-    '<div class="kv"><span class="k">Новых подписок за неделю</span><span class="v">'+(sub.newWeek||0)+'</span></div></div>';
-  html+='<div class="lbl">Топ разборов по покупкам</div><div class="card">'+
-    (top.length?top.map(function(b){ return '<div class="trow"><span class="tn">'+esc(b.title)+'</span><span class="tv">'+b.count+' · '+money(b.revenue)+'</span></div>'; }).join(''):'<div class="muted" style="padding:6px 0">Покупок пока нет</div>')+
+    '<div class="kv"><span class="k">Новых подписок за неделю (Apple)</span><span class="v">'+(sub.newAppleWeek||0)+'</span></div>'+
+    '<div class="kv"><span class="k">Выдано вручную за неделю</span><span class="v">'+(sub.newManualWeek||0)+'</span></div></div>';
+  html+='<div class="lbl">Топ разборов по покупкам (всё время)</div><div class="card">'+
+    (top.length?top.map(function(b){ var man=(b.cntManual||0); return '<div class="trow"><span class="tn">'+esc(b.title)+'</span><span class="tv">'+(b.cntApple||0)+' · '+money(b.revApple)+(man?' <span class="tv sub">+'+man+' вручную</span>':'')+'</span></div>'; }).join(''):'<div class="muted" style="padding:6px 0">Покупок пока нет</div>')+
     '</div>';
   html+='<div class="lbl">Активность клуба (7 дней)</div>'+barChart(msgVals,'g')+
     '<div class="chlabels"><span>сообщений: '+(a.messagesWeek||0)+'</span><span>слушали разборы: '+(a.activeListenersWeek||0)+'</span></div>';
@@ -647,50 +698,38 @@ function renderClubList(){
       '<div class="em">'+fmtDate(c.startsAt)+' — '+fmtDate(c.endsAt)+'</div></div>'+st+'<span class="chev">›</span></div>';
   }).join('')+'</div>';
 }
-async function newClub(){ await ensureBooks(); _curClub={ id:null, bookId:(_books[0]?_books[0].id:''), startsAt:'', endsAt:'', partSchedule:[] }; renderClub(); }
+async function newClub(){ await ensureBooks(); _curClub={ id:null, bookId:(_books[0]?_books[0].id:''), startsAt:'', endsAt:'' }; renderClub(); }
 async function openClub(id){ await ensureBooks(); try{ var d=await api('/admin/club/'+id); _curClub=d.club; renderClub(); }catch(e){ toast(e.message); } }
 function renderClub(){
   var c=_curClub;
-  var opts=_books.map(function(b){ return '<option value="'+b.id+'"'+(b.id===c.bookId?' selected':'')+'>'+esc(b.title)+'</option>'; }).join('')||'<option value="">— нет разборов, создайте в Каталоге —</option>';
-  var sched=(c.partSchedule||[]).map(function(s){ return schedRow(s.partNumber, toDateInput(s.opensAt)); }).join('');
+  var opts=_books.map(function(b){ return '<option value="'+b.id+'"'+(b.id===c.bookId?' selected':'')+'>'+esc(b.title)+(b.isPartOfClub?' · клуб':'')+'</option>'; }).join('')||'<option value="">— разборов нет —</option>';
   openModal(
     '<h2>'+(c.id?'Редактирование клуба':'Новый клуб месяца')+'</h2>'+
-    '<div class="msub">Один месяц — один разбор</div>'+
-    '<div class="fld"><label>Разбор (книга месяца)</label><select id="cBook" onchange="updateClubPreview()">'+opts+'</select>'+
-      '<div id="clubBookPreview">'+clubBookPreviewHtml(c.bookId)+'</div></div>'+
+    '<div class="msub">Один месяц — один эксклюзивный разбор</div>'+
+    '<div class="fld"><label>Эксклюзивный разбор клуба</label><select id="cBook" onchange="updateClubPreview()">'+opts+'</select>'+
+      '<div id="clubBookPreview">'+clubBookPreviewHtml(c.bookId)+'</div>'+
+      '<button class="btn ghost sm" style="margin-top:8px" onclick="newClubBook()">＋ Создать новый разбор для клуба</button>'+
+      '<div class="hint">Этот разбор доступен только участницам клуба и в архиве — в общем каталоге он не показывается. Обложка, аудио и описание задаются внутри самого разбора (кнопка «Редактировать разбор»).</div></div>'+
     '<div class="fld"><label>Начало</label><input id="cStart" type="date" value="'+toDateInput(c.startsAt)+'"></div>'+
     '<div class="fld"><label>Конец</label><input id="cEnd" type="date" value="'+toDateInput(c.endsAt)+'"></div>'+
     '<div class="hint">Архивный доступ для истёкших подписок считается автоматически: месяц клуба + весь следующий месяц.</div>'+
-    '<div class="fld"><label>Расписание открытия частей (необязательно)</label><div id="cSched">'+sched+'</div>'+
-      '<button class="btn ghost sm" style="margin-top:6px" onclick="addSchedRow()">+ Часть по расписанию</button>'+
-      '<div class="hint">Если пусто — все части доступны сразу со старта клуба.</div></div>'+
     '<div class="btnrow" style="margin-top:6px"><button class="btn primary" onclick="saveClub()">Сохранить</button>'+
       (c.id?'<button class="btn danger sm" onclick="delClub()">Удалить</button>':'')+'</div>'
   );
 }
-function schedRow(num,date){
-  return '<div class="btnrow sched-row" style="margin-bottom:6px;align-items:center">'+
-    '<input class="sched-n" type="number" min="1" placeholder="№" style="max-width:70px;margin:0" value="'+(num!=null?num:'')+'">'+
-    '<input class="sched-d" type="date" style="margin:0" value="'+(date||'')+'">'+
-    '<button class="btn danger sm" onclick="this.parentElement.remove()">×</button></div>';
-}
-function addSchedRow(){ document.getElementById('cSched').insertAdjacentHTML('beforeend', schedRow(null,'')); }
-function collectSchedule(){
-  var out=[]; document.querySelectorAll('#cSched .sched-row').forEach(function(r){
-    var n=r.querySelector('.sched-n').value, d=r.querySelector('.sched-d').value;
-    if(n && d) out.push({ partNumber:parseInt(n,10), opensAt:d+'T00:00:00' });
-  });
-  return out;
-}
+// Создать разбор для клуба: закрываем окно клуба и открываем редактор разбора
+// (там явная загрузка обложки, аудио и описание). После публикации разбора
+// админ возвращается в «Клуб месяца» и выбирает его в списке.
+function newClubBook(){ closeModal(); toast('Заполните разбор, загрузите обложку и аудио, опубликуйте — затем вернитесь в «Клуб месяца» и выберите его'); newBook(); }
 async function saveClub(){
   var bookId=document.getElementById('cBook').value;
   var startsAt=document.getElementById('cStart').value;
   var endsAt=document.getElementById('cEnd').value;
-  if(!bookId){ toast('Выберите разбор'); return; }
+  if(!bookId){ toast('Выберите или создайте разбор клуба'); return; }
   if(!startsAt||!endsAt){ toast('Укажите даты начала и конца'); return; }
   var sp=startsAt.split('-');
   var p={ bookId:bookId, startsAt:startsAt+'T00:00:00', endsAt:endsAt+'T23:59:59',
-    year:parseInt(sp[0],10), month:parseInt(sp[1],10), partSchedule:collectSchedule() };
+    year:parseInt(sp[0],10), month:parseInt(sp[1],10) };
   try{
     if(_curClub.id) await api('/admin/club/'+_curClub.id,{method:'PATCH',body:JSON.stringify(p)});
     else await api('/admin/club',{method:'POST',body:JSON.stringify(p)});
@@ -745,15 +784,18 @@ async function toggleThought(id,active){ try{ await api('/admin/thoughts/'+id,{m
 async function delThought(id){ try{ await api('/admin/thoughts/'+id,{method:'DELETE'}); toast('Удалена'); loadThoughts(); }catch(e){ toast(e.message); } }
 
 // Превью выбранного разбора в редакторе клуба — обложка + число частей +
-// кнопка «Открыть разбор» (контент клуба живёт в самом разборе, в Каталоге).
+// кнопка «Редактировать разбор» — обложка, аудио и описание живут в самом разборе.
 function clubBookPreviewHtml(bookId){
   var b=_books.filter(function(x){return x.id===bookId;})[0];
-  if(!b) return '';
-  var img=b.coverImageUrl?'<img src="'+esc(b.coverImageUrl)+'" style="width:56px;height:76px;object-fit:cover;border-radius:8px;flex:none" onerror="this.style.display=\'none\'">':'';
+  if(!b) return '<div class="hint" style="margin-top:8px">Разбор не выбран — создайте новый кнопкой ниже.</div>';
+  var img=b.coverImageUrl?'<img src="'+esc(b.coverImageUrl)+'" style="width:56px;height:76px;object-fit:cover;border-radius:8px;flex:none" onerror="this.style.display=\'none\'">':'<div style="width:56px;height:76px;border-radius:8px;background:var(--line);flex:none"></div>';
+  var parts=(b.partsCount||0);
+  var audioWarn=parts?'':' <span class="badge b-exp">нет аудио</span>';
   return '<div class="card" style="display:flex;gap:12px;align-items:center;margin:8px 0 0">'+img+
-    '<div style="flex:1;min-width:0"><div style="font-weight:650">'+esc(b.title)+'</div>'+
-    '<div class="muted">'+(b.partsCount||0)+' ч. · '+fmtDur(b.durationTotal)+'</div></div>'+
-    '<button class="btn ghost sm" onclick="openBook(\''+b.id+'\')">Открыть разбор</button></div>';
+    '<div style="flex:1;min-width:0"><div style="font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(b.title||'Без названия')+'</div>'+
+    (b.author?'<div class="muted">'+esc(b.author)+'</div>':'')+
+    '<div class="muted">'+parts+' ч. · '+fmtDur(b.durationTotal)+audioWarn+'</div></div></div>'+
+    '<button class="btn ghost sm" style="margin-top:6px" onclick="openBook(\''+b.id+'\')">Редактировать разбор (обложка · аудио · описание)</button>';
 }
 function updateClubPreview(){
   var el=document.getElementById('clubBookPreview'); if(!el) return;
