@@ -31,7 +31,34 @@ function computeIsActive(startsAt, endsAt) {
   return startsAt.getTime() <= now && now <= endsAt.getTime();
 }
 
+// Клуб занимает ПОЛНЫЙ календарный месяц (один месяц — один разбор). Нормализуем
+// даты к границам месяца по (year, month), какие бы конкретные дни ни ввели в
+// админке. Это убирает пересечение на стыке месяцев (когда «Конец» одного и
+// «Начало» другого стоят на одну дату) и делает архивное окно верным: месяц
+// клуба + следующий месяц. UTC — детерминированно (VPS в UTC) и согласуется с
+// выводом month/year из startsAt ниже. day 0 следующего месяца = последний день
+// текущего.
+function monthBounds(year, month) {
+  return {
+    startsAt: new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0)),
+    endsAt: new Date(Date.UTC(year, month, 0, 23, 59, 59, 999)),
+  };
+}
+
 function serializeClub(club, book) {
+  // isActive считаем ВЖИВУЮ по датам (та же логика, что в приложении и в
+  // проверке доступа: startsAt <= now <= endsAt). Хранимое club.isActive
+  // устаревает — клуб, который закончился, продолжал бы показываться
+  // «активным». Здесь же отдаём актуальное состояние.
+  const now = Date.now();
+  const startMs = new Date(club.startsAt).getTime();
+  const endMs = new Date(club.endsAt).getTime();
+  const archiveMs = club.archiveUntilDate
+    ? new Date(club.archiveUntilDate).getTime()
+    : endMs;
+  const isActive = startMs <= now && now <= endMs;
+  // В архивном окне: клуб уже закончился, но ещё доступен истёкшим подпискам.
+  const isArchive = now > endMs && now <= archiveMs;
   return {
     id: String(club._id),
     month: club.month,
@@ -44,7 +71,8 @@ function serializeClub(club, book) {
     startsAt: club.startsAt,
     endsAt: club.endsAt,
     archiveUntilDate: club.archiveUntilDate,
-    isActive: club.isActive,
+    isActive,
+    isArchive,
     participantCount: club.participantCount,
     messageCount: club.messageCount,
     partSchedule: (club.partSchedule || []).map((p) => ({
@@ -170,17 +198,20 @@ router.post('/', validate(clubSchema), async (req, res, next) => {
       );
     }
 
+    // Нормализуем к полному календарному месяцу (см. monthBounds).
+    const { startsAt, endsAt } = monthBounds(year, month);
+
     const club = await ClubMonth.create({
       month,
       year,
       bookId: book._id,
       title: book.title,
       author: book.author,
-      startsAt: data.startsAt,
-      endsAt: data.endsAt,
-      archiveUntilDate: archiveWindowEnd(data.endsAt),
+      startsAt,
+      endsAt,
+      archiveUntilDate: archiveWindowEnd(endsAt),
       partSchedule: data.partSchedule,
-      isActive: computeIsActive(data.startsAt, data.endsAt),
+      isActive: computeIsActive(startsAt, endsAt),
       participantCount: 0,
       messageCount: 0,
     });
@@ -239,16 +270,19 @@ router.patch('/:id', validate(clubSchema), async (req, res, next) => {
 
     const prevBookId = String(club.bookId);
 
+    // Нормализуем к полному календарному месяцу (см. monthBounds).
+    const { startsAt, endsAt } = monthBounds(year, month);
+
     club.month = month;
     club.year = year;
     club.bookId = book._id;
     club.title = book.title;
     club.author = book.author;
-    club.startsAt = data.startsAt;
-    club.endsAt = data.endsAt;
-    club.archiveUntilDate = archiveWindowEnd(data.endsAt);
+    club.startsAt = startsAt;
+    club.endsAt = endsAt;
+    club.archiveUntilDate = archiveWindowEnd(endsAt);
     club.partSchedule = data.partSchedule;
-    club.isActive = computeIsActive(data.startsAt, data.endsAt);
+    club.isActive = computeIsActive(startsAt, endsAt);
     await club.save();
 
     // Если книгу клуба сменили — снять флаг со старой (если она больше нигде

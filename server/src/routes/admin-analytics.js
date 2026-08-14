@@ -220,19 +220,20 @@ router.get('/', async (req, res, next) => {
           },
         },
       ]),
-      // Топ-5 разборов по числу покупок (всё время, Apple / вручную).
+      // Топ-5 разборов по РЕАЛЬНЫМ продажам (только Apple). Ручные выдачи из
+      // админки — это не покупки, поэтому в топ не попадают. Группируем по
+      // itemId: это bookSlug (см. purchase.service и grant-book), одинаковый
+      // для всех покупок одного разбора, — поэтому дублей одной книги не будет.
       Purchase.aggregate([
-        { $match: { itemType: 'book', itemId: { $ne: null } } },
+        { $match: { itemType: 'book', platform: 'apple', itemId: { $ne: null } } },
         {
           $group: {
             _id: '$itemId',
-            cntApple: condSum(true, 1),
-            cntManual: condSum(false, 1),
-            revApple: condSum(true, '$priceUsd'),
-            count: { $sum: 1 },
+            cntApple: { $sum: 1 },
+            revApple: { $sum: '$priceUsd' },
           },
         },
-        { $sort: { count: -1 } },
+        { $sort: { cntApple: -1 } },
         { $limit: 5 },
       ]),
       // Сообщения клуба по дням (7д).
@@ -329,22 +330,23 @@ router.get('/', async (req, res, next) => {
       all: Math.round(wt.all || 0),
     };
 
-    // Топ разборов: подтягиваем названия по itemId (строка = Book._id).
-    const validIds = topBooksRaw
-      .map((b) => b._id)
-      .filter((id) => id && mongoose.Types.ObjectId.isValid(id));
-    const booksById = new Map();
-    if (validIds.length) {
-      const found = await Book.find({ _id: { $in: validIds } })
-        .select('title')
+    // Топ разборов: itemId — это bookSlug (см. purchase.service и grant-book),
+    // поэтому названия тянем ПО slug, а не по _id (это была причина, почему в
+    // топе показывалось «Разбор» и появлялись дубли). Не нашли книгу — покажем
+    // сам slug.
+    const topSlugs = topBooksRaw.map((b) => b._id).filter(Boolean);
+    const titleBySlug = new Map();
+    if (topSlugs.length) {
+      const found = await Book.find({ bookSlug: { $in: topSlugs } })
+        .select('title bookSlug')
         .lean();
-      found.forEach((b) => booksById.set(String(b._id), b.title));
+      found.forEach((b) => titleBySlug.set(b.bookSlug, b.title));
     }
     const topBooks = topBooksRaw.map((b) => ({
       id: String(b._id),
-      title: booksById.get(String(b._id)) || 'Разбор',
+      title: titleBySlug.get(b._id) || b._id,
       cntApple: b.cntApple || 0,
-      cntManual: b.cntManual || 0,
+      cntManual: 0,
       revApple: Math.round(b.revApple || 0),
     }));
 
