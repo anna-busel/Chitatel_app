@@ -56,7 +56,8 @@ const start = async () => {
     scheduleMonthlyReports();
 
     // Cron push-уведомлений (задача 6.1). Тот же принцип: 1 инстанс.
-    schedulePushJobs();
+    // Асинхронна: напоминание собирается из настройки в БД (ReminderSetting).
+    await schedulePushJobs();
 
     server.listen(config.port, () => {
       logger.info(`Server running on port ${config.port} [${config.nodeEnv}]`);
