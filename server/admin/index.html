@@ -578,7 +578,7 @@ function renderBookList(){
   }).join('')+'</div><div class="muted" style="text-align:center;padding:8px">Всего: '+list.length+'</div>';
 }
 
-function blankBook(){ return { id:null,title:'',author:'',description:'',categories:[],tags:[],isFree:false,priceRub:null,priceUsd:null,priceByn:null,coverGradientColors:['#1A0E08','#3A2018'],coverLabel:'',coverImageUrl:'',purchaseUrl:'',isPublished:false,parts:[] }; }
+function blankBook(){ return { id:null,title:'',author:'',description:'',categories:[],tags:[],isFree:false,priceRub:null,priceUsd:null,priceByn:null,coverGradientColors:['#1A0E08','#3A2018'],coverLabel:'',coverImageUrl:'',purchaseUrl:'',isPublished:false,isClubExclusive:false,parts:[] }; }
 async function newBook(){ await loadCats(); _curBook=blankBook(); renderBook(); }
 async function openBook(id){ try{ await loadCats(); var d=await api('/admin/catalog/'+id); _curBook=d.book; renderBook(); }catch(e){ toast(e.message); } }
 
@@ -619,6 +619,7 @@ function renderBook(){
   openModal(
     '<h2>'+(b.id?'Редактирование разбора':'Новый разбор')+'</h2>'+
     (b.id?'<div class="msub">slug: '+esc(b.bookSlug)+' · '+(b.isPublished?'опубликован':'черновик')+'</div>':'<div class="msub">Заполните основные поля и сохраните</div>')+
+    ((b.isClubExclusive||b.isPartOfClub)?'<div class="banner">Клубный разбор — в общем каталоге не показывается, доступен только участницам клуба и в архиве. Не забудьте создать клуб месяца с этим разбором.</div>':'')+
     '<div class="fld"><label>Название *</label><input id="bTitle" value="'+esc(b.title)+'" maxlength="300"></div>'+
     '<div class="fld"><label>Автор книги</label><input id="bAuthor" value="'+esc(b.author)+'" maxlength="200"></div>'+
     '<div class="fld"><label>Описание *</label><textarea id="bDesc" maxlength="5000">'+esc(b.description)+'</textarea></div>'+
@@ -639,6 +640,9 @@ function collectBook(){
   var p={ title:val('bTitle'), author:val('bAuthor'), description:val('bDesc'),
     categories:chipVals('bCats'), tags:[], isFree:isFree, freeChapterIndex:0 };
   p.priceUsd = isFree ? null : numOrNull('bPriceUsd');
+  // Клубный разбор помечаем только ПРИ СОЗДАНИИ — сервер сразу ставит
+  // isPartOfClub, и разбор не попадает в каталог (см. admin-catalog POST).
+  if(!_curBook.id && _curBook.isClubExclusive) p.isClubExclusive=true;
   return p;
 }
 async function saveBook(){
@@ -720,7 +724,7 @@ function renderClub(){
 // Создать разбор для клуба: закрываем окно клуба и открываем редактор разбора
 // (там явная загрузка обложки, аудио и описание). После публикации разбора
 // админ возвращается в «Клуб месяца» и выбирает его в списке.
-function newClubBook(){ closeModal(); toast('Заполните разбор, загрузите обложку и аудио, опубликуйте — затем вернитесь в «Клуб месяца» и выберите его'); newBook(); }
+async function newClubBook(){ closeModal(); await loadCats(); _curBook=blankBook(); _curBook.isClubExclusive=true; renderBook(); toast('Заполните разбор, загрузите обложку и аудио — он сразу помечен клубным и в каталог не попадёт'); }
 async function saveClub(){
   var bookId=document.getElementById('cBook').value;
   var startsAt=document.getElementById('cStart').value;
@@ -784,7 +788,7 @@ async function toggleThought(id,active){ try{ await api('/admin/thoughts/'+id,{m
 async function delThought(id){ try{ await api('/admin/thoughts/'+id,{method:'DELETE'}); toast('Удалена'); loadThoughts(); }catch(e){ toast(e.message); } }
 
 // Превью выбранного разбора в редакторе клуба — обложка + число частей +
-// кнопка «Редактировать разбор» — обложка, аудио и описание живут в самом разборе.
+// кнопка «Открыть разбор» (контент клуба живёт в самом разборе, в Каталоге).
 function clubBookPreviewHtml(bookId){
   var b=_books.filter(function(x){return x.id===bookId;})[0];
   if(!b) return '<div class="hint" style="margin-top:8px">Разбор не выбран — создайте новый кнопкой ниже.</div>';
