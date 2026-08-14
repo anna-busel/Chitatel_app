@@ -119,7 +119,7 @@
       <button data-tab="club" onclick="tab('club')">Клуб месяца</button>
       <button data-tab="thoughts" onclick="tab('thoughts')">Мысль дня</button>
       <button data-tab="mod" onclick="tab('mod')">Модерация</button>
-      <button data-tab="push" onclick="tab('push')">Рассылка</button>
+      <button data-tab="push" onclick="tab('push')">Уведомления</button>
     </div>
     <div class="content">
 
@@ -173,6 +173,8 @@
       </div>
 
       <div class="page" data-page="push">
+        <div class="lbl">Напоминание «Запишите цитату»</div>
+        <div id="reminderBox" class="card"><div class="muted">Загрузка…</div></div>
         <div class="lbl">Новость / анонс</div>
         <div class="card">
           <div class="fld"><label>Кому</label>
@@ -264,6 +266,7 @@ function tab(name){
   if(name==='catalog' && !_loaded.catalog){ _loaded.catalog=true; loadCatalog(); }
   if(name==='club' && !_loaded.club){ _loaded.club=true; loadClubs(); }
   if(name==='thoughts' && !_loaded.thoughts){ _loaded.thoughts=true; loadThoughts(); }
+  if(name==='push' && !_loaded.push){ _loaded.push=true; loadReminder(); }
 }
 function pick(el){ el.parentElement.querySelectorAll('.opt').forEach(function(o){o.classList.remove('on');}); el.classList.add('on'); }
 function segVal(id){ var on=document.querySelector('#'+id+' .opt.on'); return on?on.dataset.v:null; }
@@ -308,9 +311,13 @@ async function loadUsers(){
   }catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
 }
 
-var _curUser=null;
+var _curUser=null, _accessBooks=[], _accessPkgs=[];
+async function loadAccessLists(){
+  try{ if(!_accessBooks.length){ var d=await api('/admin/catalog'); _accessBooks=d.items||[]; } }catch(e){}
+  try{ if(!_accessPkgs.length){ var p=await api('/admin/catalog/packages'); _accessPkgs=p.items||[]; } }catch(e){}
+}
 async function openUser(id){
-  try{ var d = await api('/admin/users/'+id); _curUser = d.user; renderUser(); }
+  try{ await loadAccessLists(); var d = await api('/admin/users/'+id); _curUser = d.user; renderUser(); }
   catch(e){ toast(e.message); }
 }
 function renderUser(){
@@ -327,8 +334,8 @@ function renderUser(){
     '<div class="kv"><span class="k">Пакеты</span><span class="v">'+packs+'</span></div>'+
     '<div class="kv"><span class="k">Клубные месяцы</span><span class="v">'+((u.clubMonthsEntitled||[]).join(', ')||'—')+'</span></div>'+
     '<div class="divider"></div>'+
-    '<div class="lbl" style="margin-top:0">Выдать доступ</div>'+
-    '<div class="fld"><label>Подписка</label><div class="seg" id="grStatus">'+
+    '<div class="lbl" style="margin-top:0">Подписка на клуб</div>'+
+    '<div class="fld"><div class="seg" id="grStatus">'+
       '<div class="opt on" data-v="basic" onclick="pick(this)">Базовая</div>'+
       '<div class="opt" data-v="premium" onclick="pick(this)">Премиум</div></div>'+
       '<div class="seg" id="grPlan">'+
@@ -336,12 +343,14 @@ function renderUser(){
       '<div class="opt" data-v="season" onclick="pick(this)">Сезон (3)</div>'+
       '<div class="opt" data-v="semiannual" onclick="pick(this)">6 мес</div>'+
       '<div class="opt" data-v="annual" onclick="pick(this)">Год</div></div>'+
-      '<button class="btn primary" onclick="grantSub()">Выдать подписку</button></div>'+
-    '<div class="fld" style="margin-top:14px"><label>Доступ к разбору (slug)</label>'+
-      '<input id="grBook" placeholder="напр. toshnota">'+
+      '<button class="btn primary" onclick="grantSub()">Выдать подписку</button>'+
+      '<div class="hint">Подписка = доступ к клубу месяца. Разовые разборы и пакеты — ниже.</div></div>'+
+    '<div class="lbl">Разовый доступ</div>'+
+    '<div class="fld"><label>Разбор</label>'+
+      '<select id="grBook">'+_accessBooks.map(function(b){return '<option value="'+esc(b.bookSlug)+'">'+esc(b.title)+'</option>';}).join('')+'</select>'+
       '<button class="btn ghost" style="margin-top:6px" onclick="grantBook()">Открыть разбор</button></div>'+
-    '<div class="fld" style="margin-top:10px"><label>Доступ к пакету (slug)</label>'+
-      '<input id="grPkg" placeholder="напр. paket_goals_ach">'+
+    '<div class="fld" style="margin-top:10px"><label>Пакет</label>'+
+      '<select id="grPkg">'+_accessPkgs.map(function(p){return '<option value="'+esc(p.packageSlug)+'">'+esc(p.title)+'</option>';}).join('')+'</select>'+
       '<button class="btn ghost" style="margin-top:6px" onclick="grantPkg()">Открыть пакет</button></div>'+
     '<div class="divider"></div>'+
     '<div class="btnrow">'+
@@ -472,7 +481,7 @@ function renderBookList(){
   var el=document.getElementById('bookList');
   if(!list.length){ el.innerHTML='<div class="empty">Разборов нет</div>'; return; }
   el.innerHTML='<div class="card" style="padding:4px 12px">'+list.map(function(b){
-    var price=b.isFree?'Бесплатный':((b.priceRub!=null?b.priceRub+'₽':'')||(b.priceUsd!=null?'$'+b.priceUsd:'')||'платный');
+    var price=b.isFree?'Бесплатный':(b.priceUsd!=null?'$'+b.priceUsd:'платный');
     var st=b.isPublished?'<span class="badge b-basic">опубл.</span>':'<span class="badge b-free">черновик</span>';
     var club=b.isPartOfClub?' <span class="badge b-prem">клуб</span>':'';
     return '<div class="row" onclick="openBook(\''+b.id+'\')"><div class="meta"><div class="nm">'+esc(b.title)+'</div>'+
@@ -488,10 +497,8 @@ function renderBook(){
   var b=_curBook;
   var catChips=(_cats||[]).map(function(c,i){ var on=b.categories.indexOf(c.value)>=0?' on':''; return '<div class="opt'+on+'" data-i="'+i+'" onclick="chip(this)">'+esc(c.label)+'</div>'; }).join('');
   var priceFields='<div id="priceFields" style="'+(b.isFree?'display:none':'')+'">'+
-    '<div class="fld"><label>Цена ₽ (показывается в приложении)</label><input id="bPriceRub" type="number" min="0" value="'+(b.priceRub!=null?b.priceRub:'')+'"></div>'+
-    '<div class="fld"><label>Цена $ (справочно; Apple берёт цену по appleProductId)</label><input id="bPriceUsd" type="number" min="0" value="'+(b.priceUsd!=null?b.priceUsd:'')+'"></div>'+
-    '<div class="fld"><label>Цена BYN</label><input id="bPriceByn" type="number" min="0" value="'+(b.priceByn!=null?b.priceByn:'')+'"></div>'+
-    '<div class="hint">Для платного разбора нужен продукт <b>book.'+esc(b.bookSlug||'&lt;slug&gt;')+'</b> в App Store Connect (заводится вручную).</div>'+
+    '<div class="fld"><label>Цена, $ (ориентир на карточке)</label><input id="bPriceUsd" type="number" min="0" step="0.01" value="'+(b.priceUsd!=null?b.priceUsd:'')+'"></div>'+
+    '<div class="hint">Реальную сумму списывает Apple по тарифу продукта <b>book.'+esc(b.bookSlug||'&lt;slug&gt;')+'</b> (задаётся в App Store Connect). Здесь — только ориентир, что показать на кнопке «Купить» до открытия окна оплаты.</div>'+
     '</div>';
 
   var partsHtml='';
@@ -532,11 +539,6 @@ function renderBook(){
       '<div class="opt'+(b.isFree?' on':'')+'" data-v="free" onclick="pickFree(this,true)">Бесплатный</div></div></div>'+
     priceFields+
     coverBlock+
-    '<div class="fld"><label>Буквы-заглушка (если нет обложки, до 4)</label><input id="bLabel" value="'+esc(b.coverLabel)+'" maxlength="4"></div>'+
-    '<div class="fld"><label>Цвета градиента-заглушки</label>'+
-      '<div class="btnrow"><input id="bGrad1" type="color" value="'+normHex(b.coverGradientColors[0])+'" style="max-width:70px;padding:4px">'+
-      '<input id="bGrad2" type="color" value="'+normHex(b.coverGradientColors[1]||b.coverGradientColors[0])+'" style="max-width:70px;padding:4px"></div></div>'+
-    '<div class="fld"><label>Ссылка на покупку на сайте (необязательно)</label><input id="bPurchase" value="'+esc(b.purchaseUrl)+'" maxlength="500"></div>'+
     '<div class="btnrow" style="margin-top:6px"><button class="btn primary" onclick="saveBook()">Сохранить</button>'+pubBtn+'</div>'+
     partsHtml+
     (delBtn?('<div class="divider"></div>'+delBtn):'')
@@ -546,11 +548,8 @@ function renderBook(){
 function collectBook(){
   var isFree=segVal('bFree')==='free';
   var p={ title:val('bTitle'), author:val('bAuthor'), description:val('bDesc'),
-    categories:chipVals('bCats'), tags:[], isFree:isFree,
-    coverLabel:val('bLabel'), coverGradientColors:[document.getElementById('bGrad1').value, document.getElementById('bGrad2').value],
-    purchaseUrl:val('bPurchase'), freeChapterIndex:0 };
-  if(isFree){ p.priceRub=null; p.priceUsd=null; p.priceByn=null; }
-  else { p.priceRub=numOrNull('bPriceRub'); p.priceUsd=numOrNull('bPriceUsd'); p.priceByn=numOrNull('bPriceByn'); }
+    categories:chipVals('bCats'), tags:[], isFree:isFree, freeChapterIndex:0 };
+  p.priceUsd = isFree ? null : numOrNull('bPriceUsd');
   return p;
 }
 async function saveBook(){
@@ -619,7 +618,8 @@ function renderClub(){
   openModal(
     '<h2>'+(c.id?'Редактирование клуба':'Новый клуб месяца')+'</h2>'+
     '<div class="msub">Один месяц — один разбор</div>'+
-    '<div class="fld"><label>Разбор (книга месяца)</label><select id="cBook">'+opts+'</select></div>'+
+    '<div class="fld"><label>Разбор (книга месяца)</label><select id="cBook" onchange="updateClubPreview()">'+opts+'</select>'+
+      '<div id="clubBookPreview">'+clubBookPreviewHtml(c.bookId)+'</div></div>'+
     '<div class="fld"><label>Начало</label><input id="cStart" type="date" value="'+toDateInput(c.startsAt)+'"></div>'+
     '<div class="fld"><label>Конец</label><input id="cEnd" type="date" value="'+toDateInput(c.endsAt)+'"></div>'+
     '<div class="hint">Архивный доступ для истёкших подписок считается автоматически: месяц клуба + весь следующий месяц.</div>'+
@@ -705,6 +705,61 @@ async function saveThought(id){
 }
 async function toggleThought(id,active){ try{ await api('/admin/thoughts/'+id,{method:'PATCH',body:JSON.stringify({isActive:active})}); loadThoughts(); }catch(e){ toast(e.message); } }
 async function delThought(id){ try{ await api('/admin/thoughts/'+id,{method:'DELETE'}); toast('Удалена'); loadThoughts(); }catch(e){ toast(e.message); } }
+
+// Превью выбранного разбора в редакторе клуба — обложка + число частей +
+// кнопка «Открыть разбор» (контент клуба живёт в самом разборе, в Каталоге).
+function clubBookPreviewHtml(bookId){
+  var b=_books.filter(function(x){return x.id===bookId;})[0];
+  if(!b) return '';
+  var img=b.coverImageUrl?'<img src="'+esc(b.coverImageUrl)+'" style="width:56px;height:76px;object-fit:cover;border-radius:8px;flex:none" onerror="this.style.display=\'none\'">':'';
+  return '<div class="card" style="display:flex;gap:12px;align-items:center;margin:8px 0 0">'+img+
+    '<div style="flex:1;min-width:0"><div style="font-weight:650">'+esc(b.title)+'</div>'+
+    '<div class="muted">'+(b.partsCount||0)+' ч. · '+fmtDur(b.durationTotal)+'</div></div>'+
+    '<button class="btn ghost sm" onclick="openBook(\''+b.id+'\')">Открыть разбор</button></div>';
+}
+function updateClubPreview(){
+  var el=document.getElementById('clubBookPreview'); if(!el) return;
+  el.innerHTML=clubBookPreviewHtml(document.getElementById('cBook').value);
+}
+
+/* ==================================================================
+ *                    УВЕДОМЛЕНИЯ: НАПОМИНАНИЕ
+ * ================================================================== */
+var _remDays=[{v:1,l:'Пн'},{v:2,l:'Вт'},{v:3,l:'Ср'},{v:4,l:'Чт'},{v:5,l:'Пт'},{v:6,l:'Сб'},{v:0,l:'Вс'}];
+function loadReminder(){
+  var el=document.getElementById('reminderBox');
+  api('/admin/notifications/reminder').then(function(d){ renderReminder(d.reminder||{}); })
+    .catch(function(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; });
+}
+function renderReminder(r){
+  var days=r.weekdays||[];
+  var chips=_remDays.map(function(d){ var on=days.indexOf(d.v)>=0?' on':''; return '<div class="opt'+on+'" data-v="'+d.v+'" onclick="chip(this)">'+d.l+'</div>'; }).join('');
+  var hh=(r.hour!=null?r.hour:20), mm=(r.minute!=null?r.minute:0);
+  document.getElementById('reminderBox').innerHTML=
+    '<div class="fld"><label>Статус</label><div class="seg" id="remEnabled">'+
+      '<div class="opt'+(r.enabled?' on':'')+'" data-v="on" onclick="pick(this)">Включено</div>'+
+      '<div class="opt'+(r.enabled?'':' on')+'" data-v="off" onclick="pick(this)">Выключено</div></div></div>'+
+    '<div class="fld"><label>Текст пуша</label><textarea id="remBody" maxlength="300">'+esc(r.body||'')+'</textarea></div>'+
+    '<div class="fld"><label>Время (МСК)</label>'+
+      '<div class="btnrow" style="align-items:center"><input id="remHour" type="number" min="0" max="23" value="'+hh+'" style="max-width:80px;margin:0"> : '+
+      '<input id="remMin" type="number" min="0" max="59" value="'+mm+'" style="max-width:80px;margin:0"></div></div>'+
+    '<div class="fld"><label>Дни недели</label><div class="seg" id="remDays">'+chips+'</div></div>'+
+    '<button class="btn primary" onclick="saveReminder()">Сохранить напоминание</button>'+
+    '<div class="hint">Применяется сразу — перезапуск сервера не нужен. Время по Москве.</div>';
+}
+function saveReminder(){
+  var enabled=segVal('remEnabled')==='on';
+  var body=val('remBody');
+  var hour=parseInt(document.getElementById('remHour').value,10);
+  var minute=parseInt(document.getElementById('remMin').value,10);
+  var days=Array.prototype.slice.call(document.querySelectorAll('#remDays .opt.on')).map(function(o){return parseInt(o.dataset.v,10);});
+  if(!body){ toast('Введите текст'); return; }
+  if(!days.length){ toast('Выберите хотя бы один день'); return; }
+  if(isNaN(hour)||isNaN(minute)){ toast('Укажите время'); return; }
+  api('/admin/notifications/reminder',{method:'PUT',body:JSON.stringify({body:body,hour:hour,minute:minute,weekdays:days,enabled:enabled})})
+    .then(function(){ toast('Напоминание сохранено'); })
+    .catch(function(e){ toast(e.message); });
+}
 
 document.getElementById('pass').addEventListener('keydown',function(e){ if(e.key==='Enter') doLogin(); });
 </script>
