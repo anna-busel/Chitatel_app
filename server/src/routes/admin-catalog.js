@@ -315,6 +315,12 @@ const upsertSchema = z.object({
   coverLabel: z.string().trim().max(4).default(''),
   purchaseUrl: z.string().trim().max(500).default(''),
   freeChapterIndex: z.number().int().min(0).default(0),
+  // Клубный разбор: помечается ПРИ СОЗДАНИИ (кнопка «Создать разбор для клуба»).
+  // Ставит isPartOfClub сразу, чтобы разбор НЕ попадал в общий каталог с самого
+  // начала — независимо от того, опубликован он и привязан ли уже к клубу.
+  // Учитывается только в POST (создание). В PATCH игнорируется: связь с клубом
+  // после создания ведёт логика клуба (markBookInClub/unmarkBookIfUnused).
+  isClubExclusive: z.boolean().default(false),
 });
 
 // POST /api/admin/catalog — создать разбор (без файлов; обложку и аудио
@@ -340,6 +346,10 @@ router.post('/', validate(upsertSchema), async (req, res, next) => {
       freeChapterIndex: data.freeChapterIndex,
       bookSlug,
       isPublished: false,
+      // Клубный разбор скрыт из каталога сразу (см. upsertSchema.isClubExclusive
+      // и фильтр в books.js: isPartOfClub:{$ne:true}). При создании клуба
+      // markBookInClub оставит флаг true и проставит clubMonth.
+      isPartOfClub: data.isClubExclusive === true,
     });
     applyAppleProductId(book);
     await book.save();
