@@ -15,6 +15,7 @@ const { AppError } = require('../middleware/error');
 const imageService = require('../services/image.service');
 const Book = require('../models/Book');
 const ClubMonth = require('../models/ClubMonth');
+const Package = require('../models/Package');
 
 const router = Router();
 
@@ -211,6 +212,26 @@ function applyAppleProductId(book) {
 // GET /api/admin/catalog/categories — фиксированный список для выпадашки.
 router.get('/categories', (_req, res) => {
   return success(res, { categories: CATEGORIES });
+});
+
+// GET /api/admin/catalog/packages — список пакетов (для выдачи доступа в
+// разделе «Люди»): выбор из списка по названию вместо ввода slug руками.
+router.get('/packages', async (_req, res, next) => {
+  try {
+    const pkgs = await Package.find()
+      .sort({ createdAt: -1 })
+      .select('title packageSlug isPublished')
+      .lean();
+    const items = pkgs.map((p) => ({
+      id: String(p._id),
+      title: p.title,
+      packageSlug: p.packageSlug,
+      isPublished: p.isPublished,
+    }));
+    return success(res, { items, total: items.length });
+  } catch (err) {
+    return next(err);
+  }
 });
 
 /* ================================================================== *
