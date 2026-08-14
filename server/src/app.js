@@ -121,6 +121,13 @@ const staticPageCsp = helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'"],
+      // helmet по умолчанию ставит script-src-attr 'none' — это ОТДЕЛЬНАЯ от
+      // scriptSrc директива, которая блокирует именно инлайновые обработчики
+      // событий (onclick="..."). Вся админка и legal-страницы построены на
+      // onclick, поэтому без этого послабления кнопки молча не срабатывают
+      // (в консоли: «Executing inline event handler violates ... script-src-attr
+      // 'none'»). Разрешаем инлайн-обработчики только на этих статических путях.
+      scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       connectSrc: ["'self'"],
       imgSrc: ["'self'", 'data:'],
