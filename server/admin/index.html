@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>ЧИТАТЕЛЬ · Админка</title>
 <style>
   :root{
@@ -12,7 +12,7 @@
     --dangerbg:#F6E7E7; --gold:#B8862F;
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
+  html,body{margin:0;padding:0;overflow-x:hidden;}
   body{background:#DED8CC;color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     display:flex;justify-content:center;min-height:100vh;font-size:15px;}
@@ -24,7 +24,7 @@
   #login h1{font-size:26px;letter-spacing:3px;text-align:center;margin:0 0 6px;}
   #login p{text-align:center;color:var(--sub);margin:0 0 22px;font-size:14px;}
   input,textarea,select{width:100%;border:1px solid var(--line);border-radius:11px;
-    padding:12px 14px;font-size:15px;background:var(--card);color:var(--ink);font-family:inherit;margin-bottom:10px;}
+    padding:12px 14px;font-size:16px;background:var(--card);color:var(--ink);font-family:inherit;margin-bottom:10px;}
   textarea{min-height:80px;resize:vertical;}
   .btn{display:block;width:100%;text-align:center;padding:13px;border-radius:12px;border:none;
     font-size:15px;font-weight:700;cursor:pointer;}
@@ -39,11 +39,11 @@
   .top h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.5px;}
   .top .sp{flex:1;} .top .who{font-size:12px;color:var(--sub);}
   .top a.logout{font-size:12px;color:var(--wine);cursor:pointer;font-weight:600;}
-  .tabs{display:flex;overflow-x:auto;background:var(--cream);border-bottom:1px solid var(--line);
+  .tabs{display:flex;flex-wrap:wrap;background:var(--cream);border-bottom:1px solid var(--line);
     position:sticky;top:45px;z-index:9;}
-  .tabs button{flex:none;background:none;border:none;padding:11px 15px;font-size:14px;font-weight:600;
+  .tabs button{flex:1 0 auto;background:none;border:none;padding:10px 10px;font-size:13.5px;font-weight:600;
     color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
-  .tabs button.on{color:var(--wine);border-bottom-color:var(--wine);}
+  .tabs button.on{color:var(--wine);border-bottom-color:var(--wine);background:#EFE8DB;}
   .content{flex:1;overflow-y:auto;padding:16px;}
   .page{display:none;} .page.on{display:block;}
   .lbl{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:16px 2px 8px;}
@@ -54,6 +54,13 @@
   .kpi.accent{background:var(--wine);border-color:var(--wine);color:#fff;}
   .kpi .n{font-size:24px;font-weight:800;} .kpi .t{font-size:12px;color:var(--sub);margin-top:2px;}
   .kpi.accent .t{color:#E9C9CB;}
+  .chart{display:flex;align-items:flex-end;gap:2px;height:88px;margin:8px 0 2px;}
+  .chart .bar{flex:1;background:var(--wine);border-radius:3px 3px 0 0;min-height:2px;}
+  .chart .bar.g{background:var(--green);}
+  .chlabels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:6px;}
+  .trow{display:flex;justify-content:space-between;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14px;gap:10px;}
+  .trow:last-child{border-bottom:none;} .trow .tn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .trow .tv{font-weight:700;color:var(--wine);flex:none;}
   .row{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--line);cursor:pointer;}
   .row:last-child{border-bottom:none;} .row:hover{background:#FCFAF6;}
   .av{width:40px;height:40px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
@@ -124,7 +131,7 @@
     <div class="content">
 
       <div class="page on" data-page="dash">
-        <div class="kpis" id="kpis"></div>
+        <div id="dashBody"><div class="empty">Загрузка…</div></div>
         <div class="lbl">Быстрые действия</div>
         <div class="btnrow">
           <button class="btn ghost sm" onclick="tab('people')">Найти участницу / выдать доступ</button>
@@ -282,18 +289,49 @@ function subBadge(u){
   return '<span class="badge b-free">без подписки</span>';
 }
 
-async function loadDash(){
-  try{
-    var s = await api('/admin/stats');
-    document.getElementById('kpis').innerHTML =
-      kpi(s.totalUsers,'участниц всего',true)+
-      kpi(s.activeSubscribers,'активная подписка')+
-      kpi(s.totalMessages,'сообщений в клубе')+
-      kpi(s.pendingReports,'жалоб на модерации')+
-      kpi(s.unansweredQuestions,'вопросов без ответа');
-  }catch(e){ document.getElementById('kpis').innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
-}
 function kpi(n,t,accent){ return '<div class="kpi'+(accent?' accent':'')+'"><div class="n">'+(n==null?'—':n)+'</div><div class="t">'+t+'</div></div>'; }
+function money(n){ return '$'+(n==null?0:n); }
+function shortDay(k){ if(!k) return ''; var p=String(k).split('-'); return p.length===3?(p[2]+'.'+p[1]):k; }
+function barChart(vals, cls){
+  var max=Math.max.apply(null, vals.concat([1]));
+  return '<div class="chart">'+vals.map(function(v){ var h=Math.max(2, Math.round((v||0)/max*100)); return '<div class="bar'+(cls?' '+cls:'')+'" style="height:'+h+'%" title="'+(v||0)+'"></div>'; }).join('')+'</div>';
+}
+async function loadDash(){
+  var el=document.getElementById('dashBody');
+  try{ var a=await api('/admin/analytics'); el.innerHTML=renderDash(a); }
+  catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+function renderDash(a){
+  var s=a.series30||[];
+  var revVals=s.map(function(d){return d.amount;});
+  var msgVals=(a.messageSeries||[]).map(function(d){return d.count;});
+  var firstDay=s.length?s[0].day:'', lastDay=s.length?s[s.length-1].day:'';
+  var rbt=a.revenueByType||{}, cbt=a.countByType||{}, sub=a.subscribers||{}, usr=a.users||{}, top=a.topBooks||[];
+  var html='<div class="kpis">'+
+    kpi(money(a.revenue30),'выручка за 30 дней',true)+
+    kpi(a.purchases30,'покупок за 30 дней')+
+    kpi(sub.active,'активных подписок')+
+    kpi(usr.total,'участниц всего')+
+    kpi('+'+(usr.newWeek||0),'новых за неделю')+
+    kpi(a.messagesWeek,'сообщений за неделю')+
+    '</div>';
+  html+='<div class="lbl">Выручка по дням (30 дней)</div>'+barChart(revVals)+
+    '<div class="chlabels"><span>'+shortDay(firstDay)+'</span><span>всего '+money(a.revenue30)+'</span><span>'+shortDay(lastDay)+'</span></div>';
+  html+='<div class="lbl">Выручка по типам (30 дней)</div><div class="card">'+
+    '<div class="trow"><span class="tn">Разборы ('+(cbt.book||0)+')</span><span class="tv">'+money(rbt.book)+'</span></div>'+
+    '<div class="trow"><span class="tn">Пакеты ('+(cbt.package||0)+')</span><span class="tv">'+money(rbt.package)+'</span></div>'+
+    '<div class="trow"><span class="tn">Подписки ('+(cbt.subscription||0)+')</span><span class="tv">'+money(rbt.subscription)+'</span></div></div>';
+  html+='<div class="lbl">Подписчики</div><div class="card">'+
+    '<div class="kv"><span class="k">Активные</span><span class="v">'+(sub.active||0)+'</span></div>'+
+    '<div class="kv"><span class="k">Истёкшие</span><span class="v">'+(sub.expired||0)+'</span></div>'+
+    '<div class="kv"><span class="k">Новых подписок за неделю</span><span class="v">'+(sub.newWeek||0)+'</span></div></div>';
+  html+='<div class="lbl">Топ разборов по покупкам</div><div class="card">'+
+    (top.length?top.map(function(b){ return '<div class="trow"><span class="tn">'+esc(b.title)+'</span><span class="tv">'+b.count+' · '+money(b.revenue)+'</span></div>'; }).join(''):'<div class="muted" style="padding:6px 0">Покупок пока нет</div>')+
+    '</div>';
+  html+='<div class="lbl">Активность клуба (7 дней)</div>'+barChart(msgVals,'g')+
+    '<div class="chlabels"><span>сообщений: '+(a.messagesWeek||0)+'</span><span>слушали разборы: '+(a.activeListenersWeek||0)+'</span></div>';
+  return html;
+}
 
 var _uTimer=null;
 function debouncedUsers(){ clearTimeout(_uTimer); _uTimer=setTimeout(loadUsers,300); }
