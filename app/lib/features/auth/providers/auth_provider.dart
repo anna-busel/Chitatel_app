@@ -8,6 +8,8 @@ import '../../club/providers/club_provider.dart';
 import '../../club/services/block_service.dart';
 import '../../diary/providers/ai_consent_provider.dart';
 import '../../diary/providers/diary_provider.dart';
+import '../../catalog/providers/catalog_provider.dart';
+import '../../catalog/providers/packages_provider.dart';
 import '../../home/providers/home_provider.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../services/auth_service.dart';
@@ -133,6 +135,30 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } else {
       state = state.copyWith(status: AuthStatus.guest);
     }
+  }
+
+  /// Обновление данных при возвращении приложения на передний план (resume).
+  ///
+  /// Подписка и доступ к разборам кэшируются провайдерами и грузятся при
+  /// входе/старте — из-за этого выданная (например, вручную из админки)
+  /// подписка или разбор появлялись только после ПОЛНОГО перезапуска
+  /// приложения. Здесь при каждом resume инвалидируем пользовательские данные,
+  /// чтобы они перечитались с сервера: профиль (подписка), главная,
+  /// каталог/пакеты (бейджи «Куплено»), история покупок и клуб
+  /// (currentClubProvider тянет доступ заново).
+  ///
+  /// НЕ трогаем selectedClubIdProvider (выбранный месяц — UI-выбор юзера),
+  /// токены и локальные флаги: это не смена аккаунта, а лишь обновление данных.
+  /// Только для авторизованных — гостю обновлять нечего.
+  void refreshOnResume() {
+    if (state.status != AuthStatus.authenticated) return;
+    _ref.invalidate(profileProvider);
+    _ref.invalidate(purchaseHistoryProvider);
+    _ref.invalidate(homeProvider);
+    _ref.invalidate(catalogProvider);
+    _ref.invalidate(packagesProvider);
+    _ref.invalidate(clubListProvider);
+    _ref.invalidate(currentClubProvider);
   }
 
   /// Email регистрация

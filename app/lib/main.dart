@@ -48,11 +48,40 @@ void main() async {
   ));
 }
 
-class ChitatelApp extends ConsumerWidget {
+class ChitatelApp extends ConsumerStatefulWidget {
   const ChitatelApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ChitatelApp> createState() => _ChitatelAppState();
+}
+
+class _ChitatelAppState extends ConsumerState<ChitatelApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    // При возвращении приложения на передний план перечитываем
+    // пользовательские данные (подписка / доступ к разборам / клуб), чтобы
+    // изменения (в т.ч. выданные вручную из админки) применялись без полного
+    // перезапуска приложения. См. AuthNotifier.refreshOnResume.
+    if (lifecycleState == AppLifecycleState.resumed) {
+      ref.read(authProvider.notifier).refreshOnResume();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
