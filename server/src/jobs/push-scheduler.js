@@ -3,6 +3,7 @@ const logger = require('../config/logger');
 const pushService = require('../services/push.service');
 const { thoughtForDate } = require('../services/thought.service');
 const { getReminderSetting, reminderCron } = require('../services/reminder.service');
+const { getNotif } = require('../services/notification-setting.service');
 
 /**
  * Планировщик push по расписанию (MASTER 7.9).
@@ -22,9 +23,10 @@ const { getReminderSetting, reminderCron } = require('../services/reminder.servi
  * ⚠️ PM2 — строго fork mode, 1 инстанс, иначе cron задвоится.
  */
 
-// Ссылка на текущую cron-задачу напоминания — чтобы можно было остановить её
-// и пересоздать при смене расписания из админки (одна на процесс).
+// Ссылки на текущие cron-задачи — чтобы останавливать и пересоздавать при
+// смене расписания из админки (по одной на процесс).
 let reminderTask = null;
+let dailyQuoteTask = null;
 
 /**
  * (Пере)создать cron напоминания из текущей настройки БД. Текст и флаг enabled
@@ -76,33 +78,38 @@ async function reloadReminder() {
   await scheduleReminder();
 }
 
-const schedulePushJobs = async () => {
-  // Напоминание записать цитату — из настройки БД (редактируется в админке).
-  try {
-    await scheduleReminder();
-  } catch (err) {
-    logger.error('Reminder initial schedule error', { message: err.message });
+/**
+ * (Пере)создать cron мысли дня из редактируемой настройки (notification-setting:
+ * daily_quote — время, заголовок, вкл/выкл). Тело — сама мысль дня из общего
+ * источника thoughtForDate, поэтому пуш совпадает с карточкой на главной.
+ * Заголовок и enabled перечитываются в момент срабатывания — мгновенная правка.
+ */
+async function scheduleDailyQuote() {
+  const n = await getNotif('daily_quote');
+
+  if (dailyQuoteTask) {
+    dailyQuoteTask.stop();
+    dailyQuoteTask = null;
   }
 
-  // Мысль дня — ежедневно в 10:00 (MASTER 7.9). Гейт dailyQuote; в ленту не
-  // пишем (broadcast) — как и напоминания, это массовая рассылка, а не история.
-  // Текст — та же мысль, что показывает карточка на главной в этот день.
-  cron.schedule(
-    '0 10 * * *',
+  const expr = `${n.minute} ${n.hour} * * *`;
+  dailyQuoteTask = cron.schedule(
+    expr,
     () => {
       // thoughtForDate асинхронна (список в БД, config/daily-thoughts — фолбэк).
-      thoughtForDate(Date.now())
-        .then(({ text }) =>
-          pushService.broadcast(
+      Promise.all([thoughtForDate(Date.now()), getNotif('daily_quote')])
+        .then(([{ text }, cur]) => {
+          if (!cur.enabled) return null;
+          return pushService.broadcast(
             { audience: 'all' },
             {
-              title: 'Мысль дня',
+              title: cur.title || 'Мысль дня',
               body: text,
               data: { type: 'daily_quote' },
             },
             'dailyQuote'
-          )
-        )
+          );
+        })
         .catch((err) => {
           logger.error('Push daily-quote cron error', { message: err.message });
         });
@@ -111,8 +118,37 @@ const schedulePushJobs = async () => {
   );
 
   logger.info(
-    'Push cron scheduled (reminder configurable; daily quote 10:00; Europe/Moscow)'
+    `Daily-quote cron scheduled: \"${expr}\" (enabled=${n.enabled}) Europe/Moscow`
+  );
+}
+
+/**
+ * Пересоздать мысль дня после правки настройки в админке (вызывается из
+ * routes/admin-notifications.js). Тот же процесс — прямой вызов.
+ */
+async function reloadDailyQuote() {
+  await scheduleDailyQuote();
+}
+
+const schedulePushJobs = async () => {
+  // Напоминание записать цитату — из настройки БД (редактируется в админке).
+  try {
+    await scheduleReminder();
+  } catch (err) {
+    logger.error('Reminder initial schedule error', { message: err.message });
+  }
+
+  // Мысль дня — расписание из настройки БД (редактируется в админке). Гейт
+  // dailyQuote; в ленту не пишем (broadcast) — массовая рассылка, не история.
+  try {
+    await scheduleDailyQuote();
+  } catch (err) {
+    logger.error('Daily-quote initial schedule error', { message: err.message });
+  }
+
+  logger.info(
+    'Push cron scheduled (reminder + daily quote configurable; Europe/Moscow)'
   );
 };
 
-module.exports = { schedulePushJobs, reloadReminder };
+module.exports = { schedulePushJobs, reloadReminder, reloadDailyQuote };

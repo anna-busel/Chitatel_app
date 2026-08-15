@@ -9,6 +9,7 @@ const {
   resolveRecommendations,
 } = require('../services/ai.service');
 const pushService = require('../services/push.service');
+const { getNotif } = require('../services/notification-setting.service');
 
 /**
  * Ежемесячный ИИ-отчёт (промпты Анны, экран 4.26).
@@ -218,22 +219,26 @@ const runMonthlyReports = async ({ force = false, userId = null } = {}) => {
 
       created += 1;
 
-      // Push «месячный отчёт готов». Гейтится настройкой reports (Отчёты).
-      pushService
-        .sendToUser(
-          user._id,
-          {
-            title: 'Ваш отчёт за месяц готов',
-            body: 'Глубокий разбор месяца от Анны — почитайте',
-            data: {
-              type: 'monthly_report',
-              year: String(year),
-              month: String(month),
+      // Push «месячный отчёт готов». Текст/вкл — из редактируемой настройки
+      // (notification-setting), гейтится ещё и личной настройкой reports.
+      const mTpl = await getNotif('monthly_report');
+      if (mTpl.enabled) {
+        pushService
+          .sendToUser(
+            user._id,
+            {
+              title: mTpl.title,
+              body: mTpl.body,
+              data: {
+                type: 'monthly_report',
+                year: String(year),
+                month: String(month),
+              },
             },
-          },
-          'reports'
-        )
-        .catch(() => {});
+            'reports'
+          )
+          .catch(() => {});
+      }
     } catch (err) {
       logger.error('Monthly report failed for user', {
         userId: String(user._id),

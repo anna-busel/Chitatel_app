@@ -8,6 +8,7 @@ const {
   resolveRecommendations,
 } = require('../services/ai.service');
 const pushService = require('../services/push.service');
+const { getNotif } = require('../services/notification-setting.service');
 
 /**
  * Еженедельный ИИ-отчёт (промпт Анны, экран 4.26).
@@ -187,22 +188,26 @@ const runWeeklyReports = async ({ force = false, userId = null } = {}) => {
 
       created += 1;
 
-      // Push «отчёт готов». Гейтится настройкой reports (Отчёты).
-      pushService
-        .sendToUser(
-          user._id,
-          {
-            title: 'Ваш отчёт за неделю готов',
-            body: 'Анна разобрала ваши цитаты — почитайте',
-            data: {
-              type: 'weekly_report',
-              year: String(year),
-              week: String(weekNumber),
+      // Push «отчёт готов». Текст/вкл — из редактируемой настройки
+      // (notification-setting), гейтится ещё и личной настройкой reports.
+      const wTpl = await getNotif('weekly_report');
+      if (wTpl.enabled) {
+        pushService
+          .sendToUser(
+            user._id,
+            {
+              title: wTpl.title,
+              body: wTpl.body,
+              data: {
+                type: 'weekly_report',
+                year: String(year),
+                week: String(weekNumber),
+              },
             },
-          },
-          'reports'
-        )
-        .catch(() => {});
+            'reports'
+          )
+          .catch(() => {});
+      }
     } catch (err) {
       // Один упавший юзер не должен ронять весь прогон.
       logger.error('Weekly report failed for user', {
