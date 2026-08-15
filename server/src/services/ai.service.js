@@ -5,6 +5,7 @@ const { AppError } = require('../middleware/error');
 const Quote = require('../models/Quote');
 const Book = require('../models/Book');
 const pushService = require('./push.service');
+const { getNotif } = require('./notification-setting.service');
 const {
   AI_MODEL,
   AI_TEMPERATURE,
@@ -266,18 +267,22 @@ const analyzeQuote = async (quote, user) => {
 
     logger.info('AI quote analysis ready', { quoteId: String(quote._id) });
 
-    // Push «Анализ готов» (задача 6.1). Fire-and-forget, гейтится настройкой aiReady.
-    pushService
-      .sendToUser(
-        quote.userId,
-        {
-          title: 'Анализ цитаты готов',
-          body: 'ИИ разобрал вашу цитату — загляните в дневник',
-          data: { type: 'ai_ready', quoteId: String(quote._id) },
-        },
-        'aiReady'
-      )
-      .catch(() => {});
+    // Push «Анализ готов» (задача 6.1). Текст/вкл берём из редактируемой
+    // настройки (notification-setting), гейтится ещё и личной настройкой aiReady.
+    const aiTpl = await getNotif('ai_ready');
+    if (aiTpl.enabled) {
+      pushService
+        .sendToUser(
+          quote.userId,
+          {
+            title: aiTpl.title,
+            body: aiTpl.body,
+            data: { type: 'ai_ready', quoteId: String(quote._id) },
+          },
+          'aiReady'
+        )
+        .catch(() => {});
+    }
 
     return updated;
   } catch (err) {
