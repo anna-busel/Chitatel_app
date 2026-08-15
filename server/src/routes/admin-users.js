@@ -120,12 +120,37 @@ router.get('/:id', async (req, res, next) => {
  *                     ВЫДАЧА / СНЯТИЕ ПОДПИСКИ                       *
  * ------------------------------------------------------------------ */
 
+/**
+ * Ключи клубных месяцев 'YYYY-MM' от from до to включительно (UTC). Нужны при
+ * выдаче подписки с ПРОИЗВОЛЬНОЙ датой окончания (перенос уже оплаченных
+ * абонементов): по этим месяцам открывается книга клуба.
+ */
+function clubMonthKeysBetween(from, to) {
+  const keys = [];
+  let y = from.getUTCFullYear();
+  let m = from.getUTCMonth();
+  const ey = to.getUTCFullYear();
+  const em = to.getUTCMonth();
+  while (y < ey || (y === ey && m <= em)) {
+    keys.push(`${y}-${String(m + 1).padStart(2, '0')}`);
+    m += 1;
+    if (m > 11) {
+      m = 0;
+      y += 1;
+    }
+  }
+  return keys;
+}
+
 const subSchema = z.object({
   status: z.enum(['basic', 'premium', 'free']),
   plan: z
     .enum(['monthly', 'season', 'semiannual', 'annual'])
     .optional()
     .default('monthly'),
+  // Произвольная дата окончания (перенос уже оплаченных абонементов). Если
+  // задана — срок и клубные месяцы считаются по ней, а не по длительности плана.
+  expiresAt: z.coerce.date().optional(),
 });
 
 /**
@@ -149,7 +174,8 @@ router.post(
         throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
       }
 
-      const { status, plan } = req.body;
+      const data = req.body;
+      const { status, plan } = data;
 
       if (status === 'free') {
         user.subscriptionStatus = 'free';
@@ -160,16 +186,34 @@ router.post(
       }
 
       const now = new Date();
-      const months = planDurationMonths(plan);
-      const expiresAt = new Date(now);
-      expiresAt.setMonth(expiresAt.getMonth() + months);
+
+      // Срок: либо ПРОИЗВОЛЬНАЯ дата (перенос уже оплаченных абонементов),
+      // либо длительность плана от текущего момента.
+      let expiresAt;
+      if (data.expiresAt) {
+        expiresAt = data.expiresAt;
+        if (expiresAt.getTime() <= now.getTime()) {
+          throw new AppError(
+            'VALIDATION_ERROR',
+            'Дата окончания должна быть в будущем',
+            400
+          );
+        }
+      } else {
+        const months = planDurationMonths(plan);
+        expiresAt = new Date(now);
+        expiresAt.setMonth(expiresAt.getMonth() + months);
+      }
 
       user.subscriptionStatus = status;
       user.subscriptionPlan = plan;
       user.subscriptionExpiresAt = expiresAt;
 
-      // Клубные месяцы периода — по ним открывается книга клуба.
-      const keys = clubMonthKeysForPurchase(now, plan);
+      // Клубные месяцы, по которым открывается книга клуба. Для произвольной
+      // даты — все месяцы от сейчас до даты включительно; иначе — по плану.
+      const keys = data.expiresAt
+        ? clubMonthKeysBetween(now, expiresAt)
+        : clubMonthKeysForPurchase(now, plan);
       const set = new Set([...(user.clubMonthsEntitled || []), ...keys]);
       user.clubMonthsEntitled = [...set];
 

@@ -29,6 +29,7 @@ const adminClubRoutes = require('./routes/admin-club');
 const adminThoughtsRoutes = require('./routes/admin-thoughts');
 const adminNotificationsRoutes = require('./routes/admin-notifications');
 const adminAnalyticsRoutes = require('./routes/admin-analytics');
+const adminPaymentsRoutes = require('./routes/admin-payments');
 
 const app = express();
 
@@ -114,6 +115,11 @@ app.use('/api/admin/notifications', adminNotificationsRoutes);
 // Аналитика для дашборда (6.6): выручка, покупки по дням, подписчики, топ
 // разборов, активность. Отдельный роут-файл; requireAdmin внутри.
 app.use('/api/admin/analytics', adminAnalyticsRoutes);
+
+// Список оплат (6.6): построчно все платежи — Apple + выданные вручную,
+// кто/что/сколько/когда, с фильтром по платформе. Отдельный роут-файл;
+// requireAdmin внутри.
+app.use('/api/admin/payments', adminPaymentsRoutes);
 
 /* ------------------------------------------------------------------ *
  *              СТАТИКА: АДМИНКА И ЮРИДИЧЕСКИЕ СТРАНИЦЫ               *
