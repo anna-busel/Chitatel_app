@@ -137,6 +137,7 @@
       <button data-tab="thoughts" onclick="tab('thoughts')">Мысль дня</button>
       <button data-tab="mod" onclick="tab('mod')">Модерация</button>
       <button data-tab="push" onclick="tab('push')">Уведомления</button>
+      <button data-tab="payments" onclick="tab('payments')">Оплаты</button>
     </div>
     <div class="content">
 
@@ -205,6 +206,16 @@
           <button class="btn primary" onclick="sendNews()">Отправить новость</button>
           <div class="hint">Пишется в ленту уведомлений (колокольчик) всем адресатам + push тем, у кого включён тип «Новости». «Всем» — включая без подписки; «Подписчикам» — только с активной.</div>
         </div>
+      </div>
+
+      <div class="page" data-page="payments">
+        <div class="seg" id="payFilter">
+          <div class="opt on" data-v="all" onclick="pickPay(this)">Все</div>
+          <div class="opt" data-v="apple" onclick="pickPay(this)">Apple</div>
+          <div class="opt" data-v="manual" onclick="pickPay(this)">Вручную</div>
+        </div>
+        <div class="hint">Все платежи: реальные списания Apple и доступ, выданный вручную из админки. Суммы Apple — реальная выручка; «вручную» — без суммы (доступ выдан без оплаты).</div>
+        <div id="payList"><div class="empty">Загрузка…</div></div>
       </div>
 
     </div>
@@ -284,6 +295,7 @@ function tab(name){
   if(name==='club' && !_loaded.club){ _loaded.club=true; loadClubs(); }
   if(name==='thoughts' && !_loaded.thoughts){ _loaded.thoughts=true; loadThoughts(); }
   if(name==='push' && !_loaded.push){ _loaded.push=true; loadReminder(); }
+  if(name==='payments' && !_loaded.payments){ _loaded.payments=true; loadPayments(); }
 }
 function pick(el){ el.parentElement.querySelectorAll('.opt').forEach(function(o){o.classList.remove('on');}); el.classList.add('on'); }
 function segVal(id){ var on=document.querySelector('#'+id+' .opt.on'); return on?on.dataset.v:null; }
@@ -432,8 +444,9 @@ function renderUser(){
       '<div class="opt" data-v="season" onclick="pick(this)">Сезон (3)</div>'+
       '<div class="opt" data-v="semiannual" onclick="pick(this)">6 мес</div>'+
       '<div class="opt" data-v="annual" onclick="pick(this)">Год</div></div>'+
+      '<div class="fld" style="margin-top:8px"><label>Или срок вручную — до даты (перенос абонемента)</label><input id="grUntil" type="date"></div>'+
       '<button class="btn primary" onclick="grantSub()">Выдать подписку</button>'+
-      '<div class="hint">Подписка = доступ к клубу месяца. Разовые разборы и пакеты — ниже.</div></div>'+
+      '<div class="hint">Подписка = доступ к клубу месяца. Если указать дату — срок и клубные месяцы считаются по ней (для переноса уже оплаченных абонементов), план игнорируется. Разовые разборы и пакеты — ниже.</div></div>'+
     '<div class="lbl">Разовый доступ</div>'+
     '<div class="fld"><label>Разбор</label>'+
       '<select id="grBook">'+_accessBooks.map(function(b){return '<option value="'+esc(b.bookSlug)+'">'+esc(b.title)+'</option>';}).join('')+'</select>'+
@@ -451,7 +464,10 @@ function renderUser(){
 }
 async function grantSub(){
   var status=segVal('grStatus'), plan=segVal('grPlan');
-  try{ await api('/admin/users/'+_curUser._id+'/subscription',{method:'POST',body:JSON.stringify({status:status,plan:plan})});
+  var until=(document.getElementById('grUntil')&&document.getElementById('grUntil').value)||'';
+  var body={status:status,plan:plan};
+  if(until) body.expiresAt=until+'T23:59:59';
+  try{ await api('/admin/users/'+_curUser._id+'/subscription',{method:'POST',body:JSON.stringify(body)});
     toast('Подписка выдана'); await openUser(_curUser._id); loadUsers(); loadDash();
   }catch(e){ toast(e.message); }
 }
@@ -843,6 +859,29 @@ function saveReminder(){
   api('/admin/notifications/reminder',{method:'PUT',body:JSON.stringify({body:body,hour:hour,minute:minute,weekdays:days,enabled:enabled})})
     .then(function(){ toast('Напоминание сохранено'); })
     .catch(function(e){ toast(e.message); });
+}
+
+/* ==================================================================
+ *                            ОПЛАТЫ
+ * ================================================================== */
+var _payPlatform='all';
+function pickPay(el){ pick(el); _payPlatform=el.dataset.v; loadPayments(); }
+async function loadPayments(){
+  var el=document.getElementById('payList');
+  try{
+    var d=await api('/admin/payments?limit=100&platform='+_payPlatform);
+    var head='<div class="card"><div class="kv"><span class="k">Выручка Apple (по фильтру)</span><span class="v">'+money(d.revenueApple)+'</span></div>'+
+      '<div class="kv"><span class="k">Всего записей</span><span class="v">'+(d.total||0)+'</span></div></div>';
+    if(!d.items.length){ el.innerHTML=head+'<div class="empty">Оплат нет</div>'; return; }
+    el.innerHTML=head+'<div class="card" style="padding:4px 12px">'+d.items.map(function(p){
+      var who=esc(p.userName||p.userEmail||'—');
+      var badge=p.isApple?'<span class="badge b-basic">Apple</span>':'<span class="badge b-exp">вручную</span>';
+      var sum=p.isApple?money(p.priceUsd):'—';
+      var item=esc(p.itemLabel)+(p.itemId?(' · '+esc(p.itemId)):'');
+      return '<div class="trow"><span class="tn">'+who+' · '+item+'</span>'+
+        '<span class="tv">'+badge+' '+sum+'<span class="muted" style="font-weight:400;margin-left:6px">'+fmtDate(p.purchasedAt)+'</span></span></div>';
+    }).join('')+'</div>';
+  }catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
 }
 
 document.getElementById('pass').addEventListener('keydown',function(e){ if(e.key==='Enter') doLogin(); });
