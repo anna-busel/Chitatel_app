@@ -220,13 +220,17 @@ router.get('/packages', async (_req, res, next) => {
   try {
     const pkgs = await Package.find()
       .sort({ createdAt: -1 })
-      .select('title packageSlug isPublished')
+      .select('title packageSlug isPublished priceUsd coverImageUrl books')
       .lean();
     const items = pkgs.map((p) => ({
       id: String(p._id),
       title: p.title,
       packageSlug: p.packageSlug,
       isPublished: p.isPublished,
+      isFacultativ: (p.packageSlug || '').startsWith('facultativ'),
+      priceUsd: p.priceUsd != null ? p.priceUsd : null,
+      booksCount: (p.books || []).length,
+      coverImageUrl: p.coverImageUrl || '',
     }));
     return success(res, { items, total: items.length });
   } catch (err) {
@@ -705,5 +709,259 @@ router.delete('/:id', async (req, res, next) => {
     return next(err);
   }
 });
+
+/* ================================================================== *
+ *                          ПАКЕТЫ (CRUD)                            *
+ * ================================================================== *
+ * Пакет = набор разборов из каталога, продаётся как отдельный Non-Consumable
+ * IAP (package.<slug>, продукт заводится в App Store Connect вручную — как у
+ * платных разборов). Тип (пакет/факультатив) определяется префиксом slug
+ * 'facultativ-' — так же его читает клиент (package_model.isFacultativ).
+ * Обложка — как у разборов, отдельным запросом после создания. */
+
+function serializePackage(p) {
+  return {
+    id: String(p._id),
+    title: p.title,
+    description: p.description || '',
+    priceUsd: p.priceUsd != null ? p.priceUsd : null,
+    isPublished: p.isPublished,
+    packageSlug: p.packageSlug,
+    isFacultativ: (p.packageSlug || '').startsWith('facultativ'),
+    coverImageUrl: p.coverImageUrl || '',
+    coverGradientColors: p.coverGradientColors || ['#1A0E08', '#3A2018'],
+    coverLabel: p.coverLabel || '',
+    bookIds: (p.books || []).map((b) => String(b)),
+    booksCount: (p.books || []).length,
+  };
+}
+
+// Уникальный slug пакета. Факультатив — с префиксом 'facultativ-' (по нему
+// клиент отличает тип). Занятость проверяем по Package.
+async function uniquePackageSlug(base, facultativ) {
+  const clean = (facultativ ? 'facultativ-' : '') + slugify(base);
+  let candidate = clean || (facultativ ? 'facultativ' : 'package');
+  let n = 2;
+  // eslint-disable-next-line no-await-in-loop
+  while (await Package.exists({ packageSlug: candidate })) {
+    candidate = `${clean}-${n}`;
+    n += 1;
+  }
+  return candidate;
+}
+
+// Разрешить выбранные id разборов в валидные ObjectId + их slug'и (для
+// денормализованного books[] и bookSlugs[] в Package).
+async function resolvePackageBooks(bookIds) {
+  const validIds = (bookIds || []).filter((id) =>
+    mongoose.Types.ObjectId.isValid(id)
+  );
+  if (validIds.length === 0) return { ids: [], slugs: [] };
+  const books = await Book.find({ _id: { $in: validIds } })
+    .select('_id bookSlug')
+    .lean();
+  return {
+    ids: books.map((b) => b._id),
+    slugs: books.map((b) => b.bookSlug).filter(Boolean),
+  };
+}
+
+const packageUpsertSchema = z.object({
+  title: z.string().trim().min(1, 'Название обязательно').max(300),
+  description: z.string().trim().max(5000).default(''),
+  priceUsd: z.number().nonnegative().nullable().default(null),
+  isFacultativ: z.boolean().default(false),
+  bookIds: z.array(z.string()).max(100).default([]),
+  coverGradientColors: z
+    .array(z.string().regex(/^#?[0-9a-fA-F]{6}$/))
+    .length(2)
+    .optional(),
+  coverLabel: z.string().trim().max(4).default(''),
+});
+
+// GET /api/admin/catalog/packages/:id — один пакет (для редактора).
+router.get('/packages/:id', async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
+    }
+    const pkg = await Package.findById(req.params.id).lean();
+    if (!pkg) {
+      throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
+    }
+    return success(res, { package: serializePackage(pkg) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// POST /api/admin/catalog/packages — создать пакет.
+router.post(
+  '/packages',
+  validate(packageUpsertSchema),
+  async (req, res, next) => {
+    try {
+      const data = req.body;
+      const packageSlug = await uniquePackageSlug(data.title, data.isFacultativ);
+      const { ids, slugs } = await resolvePackageBooks(data.bookIds);
+
+      const pkg = new Package({
+        title: data.title,
+        description: data.description,
+        priceUsd: data.priceUsd,
+        coverGradientColors: data.coverGradientColors || ['#1A0E08', '#3A2018'],
+        coverLabel: data.coverLabel,
+        packageSlug,
+        books: ids,
+        bookSlugs: slugs,
+        appleProductId: `package.${packageSlug}`,
+        isPublished: false,
+      });
+      await pkg.save();
+
+      return success(res, { package: serializePackage(pkg) }, 201);
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+// PATCH /api/admin/catalog/packages/:id — метаданные + состав. Slug и тип
+// (пакет/факультатив) НЕ меняем — к slug привязаны appleProductId и обложка.
+router.patch(
+  '/packages/:id',
+  validate(packageUpsertSchema),
+  async (req, res, next) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
+      }
+      const pkg = await Package.findById(req.params.id);
+      if (!pkg) {
+        throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
+      }
+
+      const data = req.body;
+      const { ids, slugs } = await resolvePackageBooks(data.bookIds);
+
+      pkg.title = data.title;
+      pkg.description = data.description;
+      pkg.priceUsd = data.priceUsd;
+      if (data.coverGradientColors) {
+        pkg.coverGradientColors = data.coverGradientColors;
+      }
+      pkg.coverLabel = data.coverLabel;
+      pkg.books = ids;
+      pkg.bookSlugs = slugs;
+      if (!pkg.appleProductId && pkg.packageSlug) {
+        pkg.appleProductId = `package.${pkg.packageSlug}`;
+      }
+      await pkg.save();
+
+      return success(res, { package: serializePackage(pkg) });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+// POST /api/admin/catalog/packages/:id/publish — опубликовать/снять.
+router.post(
+  '/packages/:id/publish',
+  validate(publishSchema),
+  async (req, res, next) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
+      }
+      const pkg = await Package.findById(req.params.id);
+      if (!pkg) {
+        throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
+      }
+      if (req.body.isPublished && (pkg.books || []).length === 0) {
+        throw new AppError(
+          'VALIDATION_ERROR',
+          'Нельзя опубликовать пустой пакет — добавьте разборы',
+          400
+        );
+      }
+      pkg.isPublished = req.body.isPublished;
+      await pkg.save();
+      return success(res, { package: serializePackage(pkg) });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+// POST /api/admin/catalog/packages/:id/cover — обложка (как у разборов):
+// <AUDIO_BASE_PATH>/package-covers/<slug>/<uuid>.<ext>, отдаётся по signed URL.
+router.post(
+  '/packages/:id/cover',
+  uploadCover.single('cover'),
+  async (req, res, next) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
+      }
+      const pkg = await Package.findById(req.params.id);
+      if (!pkg) {
+        throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
+      }
+      if (!req.file) {
+        throw new AppError('VALIDATION_ERROR', 'Файл обложки не получен', 400);
+      }
+      const ext = imageService.ALLOWED_MIME.get(req.file.mimetype);
+      if (!ext) {
+        throw new AppError(
+          'VALIDATION_ERROR',
+          'Недопустимый формат картинки (jpg, png, webp, heic)',
+          400
+        );
+      }
+      const dir = path.join(
+        config.audio.basePath,
+        'package-covers',
+        pkg.packageSlug
+      );
+      await fs.promises.mkdir(dir, { recursive: true });
+      const fileName = imageService.generateImageFileName(ext);
+      const fullPath = path.join(dir, fileName);
+      await fs.promises.writeFile(fullPath, req.file.buffer);
+      const relPath = path.posix.join(
+        'package-covers',
+        pkg.packageSlug,
+        fileName
+      );
+      pkg.coverImageUrl = imageService.generateImageSignedUrl(relPath);
+      await pkg.save();
+      return success(res, { package: serializePackage(pkg) });
+    } catch (err) {
+      if (err instanceof multer.MulterError) {
+        return next(
+          new AppError('VALIDATION_ERROR', 'Файл обложки слишком большой', 400)
+        );
+      }
+      return next(err);
+    }
+  }
+);
+
+// DELETE /api/admin/catalog/packages/:id — удалить пакет.
+router.delete('/packages/:id', async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
+    }
+    const pkg = await Package.findByIdAndDelete(req.params.id);
+    if (!pkg) {
+      throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
+    }
+    return success(res, { ok: true });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 
 module.exports = router;
