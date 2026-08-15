@@ -37,11 +37,6 @@ class NotificationSettingsScreen extends ConsumerWidget {
       subtitle: 'Короткая цитата с идеей на день',
     ),
     _Setting(
-      key: 'newAudio',
-      title: 'Новый аудиоразбор',
-      subtitle: 'Когда выходит новая часть разбора',
-    ),
-    _Setting(
       key: 'aiReady',
       title: 'Разбор цитаты готов',
       subtitle: 'Когда ИИ закончил анализ вашей цитаты',
