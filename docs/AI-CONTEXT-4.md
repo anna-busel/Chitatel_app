@@ -401,3 +401,67 @@ index.html 48249).
   push-scheduler остался комментарий-заглушка).
 - Dynamic Type + полный VoiceOver-проход (6.4) — на устройстве, вне этого чата.
 - Тёмная тема — для публикации не требуется, не делали.
+
+---
+
+## 9. Оплаты + кастомный срок подписки + клуб под ревью + тексты уведомлений + пакеты в админке (в `main`, ~15.08.2026)
+
+Чат-продолжение (Гио). Всё ниже — в `main`, сверено побайтово через blob-SHA.
+
+### 9.1 Вкладка «Оплаты» + перенос абонементов датой
+
+`routes/admin-payments.js` → `GET /api/admin/payments` (фильтр platform=all|apple|manual, limit): список всех платежей (реальные списания Apple + доступ, выданный вручную из админки) + суммарная выручка Apple по фильтру. Вкладка «Оплаты» в `index.html`: сегмент-фильтр, KPI-шапка, строки «кто · что · Apple/вручную · сумма · дата».
+
+Перенос уже оплаченных абонементов: в карточке юзера («Люди») добавлено поле **«срок вручную — до даты»** (`grUntil`). Если дата задана — `POST /:id/subscription` считает срок и клубные месяцы ПО НЕЙ (для миграции абонентов), план игнорируется. `admin-users.js` расширен: `expiresAt` → `subscriptionExpiresAt` + `clubMonthsEntitled` по фактическому окну.
+
+### 9.2 Клуб под ревью — строка «по понедельникам» (НЕ locked-parts)
+
+Решение (Анна): клуб для ревью нужен с содержимым. Работает через существующую подписку (fixed IAP-продукты, отдельный per-item IAP не нужен). Аудио выходит по понедельникам; показываем только реально загруженные части + одну строчку-подсказку, БЕЗ декоративного списка «замочков с датами».
+
+`club_about_tab.dart`: под кнопкой «Слушать разбор», если `DateTime.now().isBefore(club.endsAt)` — строка `Icons.event_repeat` + «Новые разборы выходят по понедельникам». `partSchedule` (в ClubMonth/admin-club) остаётся ДОРМАНТНЫМ — нигде не энфорсится, декоративное «Расписание открытия частей» рисуется только если поле непустое.
+
+Архив в коде уже есть и работает как полноценный клуб прошлого месяца (чат + доступные аудио) — `resolveClubAccess` kind='archive' до конца следующего календарного месяца.
+
+### 9.3 Редактируемые тексты системных уведомлений
+
+Анне не нравился текст «ИИ разобрал вашу цитату» — сделали все системные типы редактируемыми (заголовок/текст/время/вкл-выкл) в админке, вкладка «Уведомления».
+
+`models/NotificationSetting.js` (NEW): {type unique, title, body, enabled, hour, minute}. `services/notification-setting.service.js` (NEW): DEFAULTS для `daily_quote` (scheduled, тело не редактируется), `ai_ready`/`weekly_report`/`monthly_report` (тело редактируется); getNotif/listNotifs/updateNotif. `routes/admin-notifications.js`: GET /templates, PUT /templates/:type (для daily_quote зовёт reloadDailyQuote). `jobs/push-scheduler.js`: `scheduleDailyQuote()` читает время/заголовок/вкл из настройки, `reloadDailyQuote()` экспортирован. Места отправки (`ai.service.js`, `weekly-report.js`, `monthly-report.js`) читают шаблон: `const tpl = await getNotif(type); if(tpl.enabled) sendToUser({title:tpl.title, body:tpl.body...})`.
+
+Мёртвый тумблер «новый аудиоразбор» убран из `notification_settings_screen.dart` (клиент) — авто-пуша на загрузку разбора нет; «вышел разбор» публикуется вручную через «Новость». pushSettings у юзера: dailyQuote, aiReady, chatMessages, reports, news, reminders.
+
+### 9.4 Управление пакетами в админке (Каталог → Пакеты)
+
+Был пробел: в админ-каталоге пакеты были только read-only (`GET /packages` для выдачи доступа). Добавлен полный CRUD.
+
+`admin-catalog.js`: расширен `GET /packages` (isFacultativ/priceUsd/booksCount/coverImageUrl); блок CRUD — `serializePackage`, `uniquePackageSlug(base, facultativ)` (факультатив = префикс `facultativ-` в slug, по нему клиент отличает тип), `resolvePackageBooks` (id → books[]+bookSlugs[]), `packageUpsertSchema`; роуты `GET/POST/PATCH /packages[/:id]`, `POST /packages/:id/publish` (нельзя публиковать пустой), `POST /packages/:id/cover` (`package-covers/<slug>/`), `DELETE /packages/:id`. `appleProductId = package.<slug>`. Slug и тип после создания НЕ меняются (к slug привязаны IAP и обложка).
+
+`index.html`: вкладка «Каталог» получила сегмент **Разборы / Пакеты** (`pickCatKind`). Пакеты: список + редактор (название, тип пакет/факультатив [на создании], описание, цена-ориентир, мультивыбор разборов из `_books`, обложка после сохранения, публикация/удаление). Пакет собирается из разборов каталога.
+
+Клиент менять не нужно — `package_model.dart` уже умеет пакеты (`isFacultativ = packageSlug.startsWith('facultativ')`, typeLabel ПАКЕТ/ФАКУЛЬТАТИВ).
+
+### 9.5 Коммиты (main), все побайтово сверены
+
+`6d19911c` admin-catalog.js (`09e2371e`, 38804 б); `84e9fdf` index.html (`f9fb9328`, 74206 б). Ранее в этой сессии: admin-payments/admin-users/app.js (оплаты); club_about_tab.dart (`fb3d1f46`); notification_settings_screen.dart (`5f0a6ff3`); NotificationSetting.js (`a725c24c`), notification-setting.service.js (`bd6b017f`), push-scheduler.js (`0c753415`), admin-notifications.js (`b65fe43a`), ai.service.js (`4bb90755`), weekly-report.js (`ef0d2f5f`), monthly-report.js (`587c7caa`).
+
+### 9.6 Деплой (на владельце)
+
+`git pull` + **`pm2 restart`** (новые роуты + модель + scheduler). Контент дальше — в реальном времени. Пересборка приложения нужна только под клиентские правки (строка «по понедельникам», убранный тумблер) — они подтянутся новой сборкой.
+
+---
+
+## 10. Статус Фазы 6 и что осталось до подачи (зафиксировано 15.08.2026)
+
+**Код Фазы 6 закрыт.** 6.1–6.6 сделаны и в `main`:
+- 6.1 Push — код готов, ждёт APNS `.p8` в `.env` (задача владельца, не код).
+- 6.3 Онбординг — готов (см. раздел 7), интро-слайды 4.1 опциональны.
+- 6.4 Accessibility / 6.5 Error-states — код готов; остаточная проверка Dynamic Type + VoiceOver делается на устройстве (6.7).
+- 6.6 Админка — закрыта полностью, включая управление пакетами (раздел 9.4).
+
+**6.7 и 6.8 — ручные, выполняются в момент подачи, кодом не закрываются:**
+- 6.7 «Как проверить» = прогон на устройстве (TestFlight): все экраны против прототипа; Dynamic Type на максимум (обрезка текста); VoiceOver (озвучка кнопок/иконок); оффлайн; Sandbox-покупка; фоновое аудио.
+- 6.8 Демо-аккаунт = БЕЗ скрипта. Зарегистрировать тестового юзера в приложении → в админке («Люди») выдать ему премиум → логин/пароль вписать в App Store Connect → App Review Information → Demo Account (Sign-in required = Yes).
+
+**Порядок до публикации:** code freeze (наступил) → аудит fable по замороженному коду → фиксы → TestFlight (Фазы 5+6 вместе) + прогон 6.7 → перед подачей: APNS .p8, `APPLE_ENVIRONMENT=production`, скрыть кнопку Google, сменить пароль админа (`anna123456`), `support@`-почта, Node ≥20, IAP-метаданные Ready to Submit, Privacy labels, демо-аккаунт → подача.
+
+**Аудит** делать СЕЙЧАС (до сборки TestFlight), чтобы не пересобирать после правок. Обновить `docs/AUDIT-2026-07.md` по результатам.
