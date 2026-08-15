@@ -104,6 +104,33 @@ class ClubAboutTab extends StatelessWidget {
               onPressed: () => context.push(Routes.book(bookId)),
             ),
 
+            // — Ритм выхода частей —
+            // Спокойная строка о том, что клуб пополняется каждую неделю. Без
+            // конкретных дат: части появляются по факту загрузки, а не по
+            // расписанию. Показываем только для действующего клуба — в архиве
+            // месяц уже завершён, и «выходят по понедельникам» там неуместно.
+            if (DateTime.now().isBefore(club.endsAt)) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.event_repeat,
+                    size: 15,
+                    color: AppColors.textTertiary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Новые разборы выходят по понедельникам',
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
             // — Описание книги —
             if (description.isNotEmpty) ...[
               const SizedBox(height: 28),
