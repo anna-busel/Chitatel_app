@@ -595,6 +595,29 @@ router.post(
       // Держим части упорядоченными по номеру.
       book.parts.sort((a, b) => a.number - b.number);
       recomputeDuration(book);
+
+      // 5-минутное превью для ПЛАТНОГО каталожного разбора — режем из 1-й части
+      // (как scripts/import-audio.js: ffmpeg -t 300). Клубные (isPartOfClub) и
+      // бесплатные — БЕЗ превью: в клубе бесплатного не показываем, а бесплатные
+      // разборы и так открыты целиком. Ошибка ffmpeg не валит загрузку части —
+      // превью пересоздастся при повторной загрузке 1-й части.
+      if (partNumber === 1 && !book.isFree && !book.isPartOfClub) {
+        const previewSeconds = Math.min(300, duration || 300);
+        const previewPath = path.join(dir, 'preview.mp3');
+        const codecArgs =
+          ext === 'mp3' ? ['-c', 'copy'] : ['-c:a', 'libmp3lame', '-b:a', '128k'];
+        try {
+          await execFileAsync('ffmpeg', [
+            '-y', '-i', fullPath, '-t', String(previewSeconds),
+            ...codecArgs, previewPath,
+          ]);
+          book.previewAudioFilename = path.posix.join(book.bookSlug, 'preview.mp3');
+          book.previewDuration = previewSeconds;
+        } catch (_e) {
+          // превью не нарезалось (нет кодека/битый файл) — не критично
+        }
+      }
+
       await book.save();
 
       return success(res, { book: serializeBook(book) });
@@ -631,6 +654,14 @@ router.delete('/:id/audio/:partNumber', async (req, res, next) => {
     if (part.audioFilename) {
       const full = path.join(config.audio.basePath, part.audioFilename);
       fs.promises.unlink(full).catch(() => {});
+    }
+
+    // Удалили 1-ю часть — превью (нарезка из неё) больше не актуально: чистим.
+    if (partNumber === 1 && book.previewAudioFilename) {
+      const pf = path.join(config.audio.basePath, book.previewAudioFilename);
+      fs.promises.unlink(pf).catch(() => {});
+      book.previewAudioFilename = null;
+      book.previewDuration = 0;
     }
 
     book.parts = book.parts.filter((p) => p.number !== partNumber);
