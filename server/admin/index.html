@@ -206,6 +206,8 @@
           <button class="btn primary" onclick="sendNews()">Отправить новость</button>
           <div class="hint">Пишется в ленту уведомлений (колокольчик) всем адресатам + push тем, у кого включён тип «Новости». «Всем» — включая без подписки; «Подписчикам» — только с активной.</div>
         </div>
+        <div class="lbl">Тексты системных уведомлений</div>
+        <div id="notifTpls"><div class="empty">Загрузка…</div></div>
       </div>
 
       <div class="page" data-page="payments">
@@ -294,7 +296,7 @@ function tab(name){
   if(name==='catalog' && !_loaded.catalog){ _loaded.catalog=true; loadCatalog(); }
   if(name==='club' && !_loaded.club){ _loaded.club=true; loadClubs(); }
   if(name==='thoughts' && !_loaded.thoughts){ _loaded.thoughts=true; loadThoughts(); }
-  if(name==='push' && !_loaded.push){ _loaded.push=true; loadReminder(); }
+  if(name==='push' && !_loaded.push){ _loaded.push=true; loadReminder(); loadNotifTpls(); }
   if(name==='payments' && !_loaded.payments){ _loaded.payments=true; loadPayments(); }
 }
 function pick(el){ el.parentElement.querySelectorAll('.opt').forEach(function(o){o.classList.remove('on');}); el.classList.add('on'); }
@@ -882,6 +884,41 @@ async function loadPayments(){
         '<span class="tv">'+badge+' '+sum+'<span class="muted" style="font-weight:400;margin-left:6px">'+fmtDate(p.purchasedAt)+'</span></span></div>';
     }).join('')+'</div>';
   }catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+
+/* ==================================================================
+ *                   ТЕКСТЫ СИСТЕМНЫХ УВЕДОМЛЕНИЙ
+ * ================================================================== */
+async function loadNotifTpls(){
+  var el=document.getElementById('notifTpls');
+  try{
+    var d=await api('/admin/notifications/templates');
+    if(!d.items || !d.items.length){ el.innerHTML='<div class="empty">Нет типов</div>'; return; }
+    el.innerHTML=d.items.map(notifCard).join('');
+  }catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+function notifCard(t){
+  var id='nt_'+t.type;
+  var timeRow = t.scheduled ? ('<div class="fld"><label>Время (МСК)</label><div class="btnrow" style="align-items:center"><input id="'+id+'_h" type="number" min="0" max="23" value="'+(t.hour==null?10:t.hour)+'" style="max-width:80px;margin:0"> : <input id="'+id+'_m" type="number" min="0" max="59" value="'+(t.minute==null?0:t.minute)+'" style="max-width:80px;margin:0"></div></div>') : '';
+  var bodyRow = t.bodyEditable ? ('<div class="fld"><label>Текст</label><textarea id="'+id+'_b" maxlength="300">'+esc(t.body)+'</textarea></div>') : '';
+  return '<div class="card">'+
+    '<div style="font-weight:650;margin-bottom:2px">'+esc(t.label)+'</div>'+
+    '<div class="hint">'+esc(t.note)+'</div>'+
+    '<div class="fld"><label>Заголовок</label><input id="'+id+'_t" maxlength="120" value="'+esc(t.title)+'"></div>'+
+    bodyRow+timeRow+
+    '<div class="fld"><label>Статус</label><div class="seg" id="'+id+'_en">'+
+      '<div class="opt'+(t.enabled?' on':'')+'" data-v="on" onclick="pick(this)">Вкл</div>'+
+      '<div class="opt'+(t.enabled?'':' on')+'" data-v="off" onclick="pick(this)">Выкл</div></div></div>'+
+    '<button class="btn primary sm" onclick="saveNotifTpl(\''+t.type+'\','+(t.scheduled?'true':'false')+','+(t.bodyEditable?'true':'false')+')">Сохранить</button>'+
+  '</div>';
+}
+async function saveNotifTpl(type, scheduled, bodyEditable){
+  var id='nt_'+type;
+  var body={ title:(document.getElementById(id+'_t').value||'').trim(), enabled: segVal(id+'_en')==='on' };
+  if(bodyEditable){ body.body=(document.getElementById(id+'_b').value||'').trim(); }
+  if(scheduled){ body.hour=parseInt(document.getElementById(id+'_h').value,10); body.minute=parseInt(document.getElementById(id+'_m').value,10); }
+  try{ await api('/admin/notifications/templates/'+type,{method:'PUT',body:JSON.stringify(body)}); toast('Сохранено'); }
+  catch(e){ toast(e.message); }
 }
 
 document.getElementById('pass').addEventListener('keydown',function(e){ if(e.key==='Enter') doLogin(); });
