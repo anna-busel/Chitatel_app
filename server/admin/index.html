@@ -158,11 +158,23 @@
       </div>
 
       <div class="page" data-page="catalog">
-        <div class="btnrow" style="margin-bottom:12px">
-          <button class="btn primary sm" onclick="newBook()">+ Новый разбор</button>
+        <div class="seg" id="catKind">
+          <div class="opt on" data-v="books" onclick="pickCatKind(this)">Разборы</div>
+          <div class="opt" data-v="packages" onclick="pickCatKind(this)">Пакеты</div>
         </div>
-        <input id="bookSearch" placeholder="Поиск по названию…" oninput="filterBooks()">
-        <div id="bookList"><div class="empty">Загрузка…</div></div>
+        <div id="catBooks">
+          <div class="btnrow" style="margin-bottom:12px">
+            <button class="btn primary sm" onclick="newBook()">+ Новый разбор</button>
+          </div>
+          <input id="bookSearch" placeholder="Поиск по названию…" oninput="filterBooks()">
+          <div id="bookList"><div class="empty">Загрузка…</div></div>
+        </div>
+        <div id="catPackages" style="display:none">
+          <div class="btnrow" style="margin-bottom:12px">
+            <button class="btn primary sm" onclick="newPackage()">+ Новый пакет</button>
+          </div>
+          <div id="packageList"><div class="empty">Загрузка…</div></div>
+        </div>
       </div>
 
       <div class="page" data-page="club">
@@ -920,6 +932,99 @@ async function saveNotifTpl(type, scheduled, bodyEditable){
   try{ await api('/admin/notifications/templates/'+type,{method:'PUT',body:JSON.stringify(body)}); toast('Сохранено'); }
   catch(e){ toast(e.message); }
 }
+
+/* ==================================================================
+ *                            ПАКЕТЫ
+ * ================================================================== */
+var _packages=[], _packagesLoaded=false, _curPackage=null;
+function pickCatKind(el){
+  pick(el);
+  var k=el.dataset.v;
+  document.getElementById('catBooks').style.display = k==='books'?'':'none';
+  document.getElementById('catPackages').style.display = k==='packages'?'':'none';
+  if(k==='packages' && !_packagesLoaded){ _packagesLoaded=true; loadPackages(); }
+}
+async function loadPackages(){
+  var el=document.getElementById('packageList');
+  try{ var d=await api('/admin/catalog/packages'); _packages=d.items||[]; renderPackageList(); }
+  catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+function renderPackageList(){
+  var el=document.getElementById('packageList');
+  if(!_packages.length){ el.innerHTML='<div class="empty">Пакетов нет</div>'; return; }
+  el.innerHTML='<div class="card" style="padding:4px 12px">'+_packages.map(function(p){
+    var st=p.isPublished?'<span class="badge b-basic">опубл.</span>':'<span class="badge b-free">черновик</span>';
+    var type='<span class="badge b-prem">'+(p.isFacultativ?'факультатив':'пакет')+'</span>';
+    var price=p.priceUsd!=null?('$'+p.priceUsd):'—';
+    return '<div class="row" onclick="openPackage(\''+p.id+'\')"><div class="meta"><div class="nm">'+esc(p.title)+'</div>'+
+      '<div class="em">'+(p.booksCount||0)+' разб. · '+price+'</div></div>'+st+' '+type+'<span class="chev">›</span></div>';
+  }).join('')+'</div>';
+}
+async function newPackage(){ await ensureBooks(); _curPackage={ id:null, title:'', description:'', priceUsd:null, isFacultativ:false, isPublished:false, bookIds:[], coverImageUrl:'', packageSlug:'' }; renderPackage(); }
+async function openPackage(id){ await ensureBooks(); try{ var d=await api('/admin/catalog/packages/'+id); _curPackage=d.package; renderPackage(); }catch(e){ toast(e.message); } }
+function renderPackage(){
+  var p=_curPackage;
+  var typeRow = p.id
+    ? '<div class="kv"><span class="k">Тип</span><span class="v">'+(p.isFacultativ?'Факультатив':'Пакет')+'</span></div>'
+    : '<div class="fld"><label>Тип</label><div class="seg" id="pkgType">'+
+        '<div class="opt on" data-v="package" onclick="pick(this)">Пакет</div>'+
+        '<div class="opt" data-v="facultativ" onclick="pick(this)">Факультатив</div></div></div>';
+  var booksBox='<div class="fld"><label>Разборы в пакете</label>'+
+    '<div id="pkgBooks" style="max-height:240px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:6px">'+
+    _books.map(function(b){ var on=(p.bookIds||[]).indexOf(b.id)>=0; return '<div class="opt'+(on?' on':'')+'" data-id="'+b.id+'" onclick="chip(this)" style="display:block;margin:3px 0">'+esc(b.title)+'</div>'; }).join('')+
+    '</div></div>';
+  var coverBlock='<div class="fld"><label>Обложка</label>'+
+    (p.coverImageUrl?'<img src="'+esc(p.coverImageUrl)+'" style="width:96px;height:128px;object-fit:cover;border-radius:10px;display:block;margin-bottom:8px" onerror="this.style.display=\'none\'">':'')+
+    (p.id?'<input id="pkgCoverFile" type="file" accept="image/*"><button class="btn ghost sm" style="margin-top:6px" onclick="uploadPackageCover()">Загрузить обложку</button>'
+         :'<div class="hint">Сначала сохраните пакет — потом появится загрузка обложки.</div>')+
+    '</div>';
+  var pubBtn=p.id?('<button class="btn '+(p.isPublished?'ghost':'primary')+' sm" onclick="togglePackagePublish()">'+(p.isPublished?'Снять с публикации':'Опубликовать')+'</button>'):'';
+  var delBtn=p.id?'<button class="btn danger sm" onclick="delPackage()">Удалить пакет</button>':'';
+  openModal(
+    '<h2>'+(p.id?'Редактирование пакета':'Новый пакет')+'</h2>'+
+    (p.id?'<div class="msub">slug: '+esc(p.packageSlug)+' · '+(p.isPublished?'опубликован':'черновик')+'</div>':'<div class="msub">Соберите пакет из разборов каталога</div>')+
+    '<div class="fld"><label>Название *</label><input id="pkgTitle" value="'+esc(p.title)+'" maxlength="300"></div>'+
+    typeRow+
+    '<div class="fld"><label>Описание</label><textarea id="pkgDesc" maxlength="5000">'+esc(p.description)+'</textarea></div>'+
+    '<div class="fld"><label>Цена, $ (ориентир на карточке)</label><input id="pkgPrice" type="number" min="0" step="0.01" value="'+(p.priceUsd!=null?p.priceUsd:'')+'"></div>'+
+    '<div class="hint">Реальную сумму списывает Apple по тарифу продукта <b>package.'+esc(p.packageSlug||'&lt;slug&gt;')+'</b> (задаётся в App Store Connect). Здесь — только ориентир на карточке.</div>'+
+    booksBox+
+    coverBlock+
+    '<div class="btnrow" style="margin-top:6px"><button class="btn primary" onclick="savePackage()">Сохранить</button>'+pubBtn+'</div>'+
+    (delBtn?('<div class="divider"></div>'+delBtn):'')
+  );
+}
+function collectPackage(){
+  var ids=Array.prototype.slice.call(document.querySelectorAll('#pkgBooks .opt.on')).map(function(o){return o.dataset.id;});
+  var p={ title:val('pkgTitle'), description:val('pkgDesc'), priceUsd:numOrNull('pkgPrice'), bookIds:ids };
+  if(!_curPackage.id){ p.isFacultativ = segVal('pkgType')==='facultativ'; }
+  return p;
+}
+async function savePackage(){
+  var p=collectPackage();
+  if(!p.title){ toast('Введите название'); return; }
+  try{
+    var d;
+    if(_curPackage.id) d=await api('/admin/catalog/packages/'+_curPackage.id,{method:'PATCH',body:JSON.stringify(p)});
+    else d=await api('/admin/catalog/packages',{method:'POST',body:JSON.stringify(p)});
+    _curPackage=d.package; toast('Сохранено'); renderPackage(); loadPackages();
+  }catch(e){ toast(e.message); }
+}
+async function uploadPackageCover(){
+  var f=document.getElementById('pkgCoverFile'); if(!f||!f.files.length){ toast('Выберите файл'); return; }
+  var fd=new FormData(); fd.append('cover', f.files[0]);
+  try{ toast('Загрузка…'); var d=await api('/admin/catalog/packages/'+_curPackage.id+'/cover',{method:'POST',body:fd}); _curPackage=d.package; toast('Обложка загружена'); renderPackage(); loadPackages(); }
+  catch(e){ toast(e.message); }
+}
+async function togglePackagePublish(){
+  try{ var d=await api('/admin/catalog/packages/'+_curPackage.id+'/publish',{method:'POST',body:JSON.stringify({isPublished:!_curPackage.isPublished})}); _curPackage=d.package; toast(_curPackage.isPublished?'Опубликован':'Снят с публикации'); renderPackage(); loadPackages(); }
+  catch(e){ toast(e.message); }
+}
+async function delPackage(){
+  try{ await api('/admin/catalog/packages/'+_curPackage.id,{method:'DELETE'}); toast('Пакет удалён'); closeModal(); loadPackages(); }
+  catch(e){ toast(e.message); }
+}
+
 
 document.getElementById('pass').addEventListener('keydown',function(e){ if(e.key==='Enter') doLogin(); });
 </script>
