@@ -128,10 +128,6 @@ class _BookContent extends StatelessWidget {
                     onPartTap: (part) => _onPartTap(context, part),
                   ),
                 ],
-                const SizedBox(height: 28),
-                _ReviewsPlaceholder(),
-                const SizedBox(height: 16),
-                if (!book.isFree && !book.hasAccess) _ReportLink(),
                 const SizedBox(height: 40),
               ],
             ),
@@ -578,7 +574,7 @@ class _PaidActions extends StatelessWidget {
 
 // — 4.14 есть полный доступ (куплена ИЛИ открыта подпиской на клуб) —
 // Бейдж «КУПЛЕНО» убран (08.07.2026): клиент не различает покупку и подписку
-// (сервер отдаёт единый hasAccess), бейдж врал бы подписчику. Подпись «У вас
+// (сервер отдаёт единый hasAccess), бейджврал бы подписчику. Подпись «У вас
 // есть полный доступ» тоже убрана (02.08.2026) — кнопка «Слушать» самодостаточна.
 
 class _PurchasedActions extends StatelessWidget {
@@ -864,53 +860,6 @@ class _DescriptionBlock extends StatelessWidget {
     return Text(
       description,
       style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
-    );
-  }
-}
-
-// ───────────────────────── REVIEWS (post-MVP placeholder) ─────────────────────────
-
-class _ReviewsPlaceholder extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    // Отзывы — post-MVP по STEP-BY-STEP. Здесь только заголовок и подпись.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Отзывы', style: AppTypography.sectionHeader),
-        const SizedBox(height: 8),
-        Text(
-          'Отзывы появятся позже',
-          style: AppTypography.caption,
-        ),
-      ],
-    );
-  }
-}
-
-// ───────────────────────── REPORT LINK (footer) ─────────────────────────
-
-class _ReportLink extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: TextButton.icon(
-        onPressed: () {
-          // Экран жалоб — задача 4.5 (Фаза 4). Пока заглушка.
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Жалобы появятся в задаче 4.5'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        },
-        icon: const Icon(Icons.flag_outlined, size: 16),
-        label: const Text('Пожаловаться на контент'),
-        style: TextButton.styleFrom(
-          foregroundColor: AppColors.textTertiary,
-          textStyle: AppTypography.caption,
-        ),
-      ),
     );
   }
 }
