@@ -1,11 +1,23 @@
 const path = require('path');
 const fs = require('fs');
+const { pipeline } = require('stream');
 const { Router } = require('express');
 const config = require('../config');
+const logger = require('../config/logger');
 const { verifySignedUrl } = require('../services/audio.service');
 const { AppError } = require('../middleware/error');
 
 const router = Router();
+
+// Отдача файла через stream.pipeline — при обрыве соединения клиентом
+// read stream закрывается (иначе течёт файловый дескриптор).
+function sendStream(stream, res) {
+  pipeline(stream, res, (err) => {
+    if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+      logger.warn('images stream error', { error: err.message });
+    }
+  });
+}
 
 // Расширение → Content-Type для отдачи.
 const EXT_CONTENT_TYPE = {
@@ -93,7 +105,7 @@ router.get(/^\/(.+)$/, async (req, res, next) => {
       // не перезапрашивает картинку — показывает мгновенно из кэша.
       'Cache-Control': 'public, max-age=31536000, immutable',
     });
-    return fs.createReadStream(fullPath).pipe(res);
+    return sendStream(fs.createReadStream(fullPath), res);
   } catch (err) {
     return next(err);
   }
