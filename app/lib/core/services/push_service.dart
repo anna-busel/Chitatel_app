@@ -106,15 +106,23 @@ class PushService {
 
   void _handleTap(Map<String, dynamic> data) {
     final router = _ref.read(routerProvider);
+    // Открываем целевой экран поверх главной: сначала go(home) — чтобы в стеке
+    // была база с таб-баром, затем push(target) — чтобы работал «Назад»
+    // (иначе экран открывается одиночной страницей без выхода, Guideline 4.0).
+    void openOverHome(String target) {
+      router.go(Routes.home);
+      router.push(target);
+    }
+
     switch (data['type']) {
       case 'ai_ready':
-        router.go(Routes.diary);
+        openOverHome(Routes.diary);
       case 'weekly_report':
-        router.go(Routes.weeklyReport);
+        openOverHome(Routes.weeklyReport);
       case 'monthly_report':
-        router.go(Routes.monthlyReport);
+        openOverHome(Routes.monthlyReport);
       case 'news':
-        router.go(Routes.notifications);
+        openOverHome(Routes.notifications);
       // Задача 6.1: ответы/упоминания в чате и ответ Анны в Q&A ведут в клуб.
       case 'chat_reply':
       case 'mention':

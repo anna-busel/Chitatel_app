@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../diary/widgets/quote_sheet.dart';
 import '../services/home_service.dart';
 
@@ -10,12 +14,12 @@ import '../services/home_service.dart';
 /// Кнопка «В дневник» (задача 5.3) открывает шторку «Новая цитата» (4.17)
 /// с предзаполненными текстом, автором и книгой — их можно отредактировать
 /// перед сохранением.
-class DailyQuoteCard extends StatelessWidget {
+class DailyQuoteCard extends ConsumerWidget {
   const DailyQuoteCard({super.key, required this.quote});
   final DailyQuote quote;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenPadding),
       child: Container(
@@ -64,12 +68,19 @@ class DailyQuoteCard extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             _ToDiaryButton(
-              onTap: () => showQuoteSheet(
-                context,
-                text: quote.text,
-                author: quote.author,
-                bookTitle: quote.bookTitle,
-              ),
+              onTap: () {
+                // M11: гость — дневника нет, ведём на вход.
+                if (ref.read(authProvider).status != AuthStatus.authenticated) {
+                  context.push(Routes.login);
+                  return;
+                }
+                showQuoteSheet(
+                  context,
+                  text: quote.text,
+                  author: quote.author,
+                  bookTitle: quote.bookTitle,
+                );
+              },
             ),
           ],
         ),

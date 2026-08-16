@@ -108,21 +108,9 @@ class _EmailLoginScreenState extends ConsumerState<EmailLoginScreen> {
                       isLoading: isLoading,
                     ),
                     const SizedBox(height: 12),
-                    Center(
-                      child: GestureDetector(
-                        onTap: () => context.push(Routes.forgotPassword),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Text(
-                            'Забыли пароль?',
-                            style: AppTypography.caption.copyWith(
-                              color: AppColors.terracotta,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
+                    // P2: ссылка «Забыли пароль?» временно скрыта — серверного
+                    // endpoint сброса пароля нет. Экран forgot_password и
+                    // Routes.forgotPassword оставлены; вернуть после реализации.
                     Center(
                       child: GestureDetector(
                         onTap: () => context.push(Routes.register),
