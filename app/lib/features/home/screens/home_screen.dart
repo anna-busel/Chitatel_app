@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/network/network_error.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/no_connection.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../diary/widgets/quote_sheet.dart';
 import '../../payments/screens/paywall_screen.dart';
 import '../../payments/season_window.dart';
@@ -38,8 +41,8 @@ import '../widgets/popular_books_section.dart';
 /// живую часть/позицию, если играет эта книга. Главной ничего слушать не надо.
 ///
 /// ⚠️ 12.07.2026 (Фаза 6): баннер «Пригласите подругу» УБРАН — реферальной
-/// механики нет ни на сервере, ни в профиле, а баннер обещал «месяц клуба в
-/// подарок» и вёл на пустой экран.
+/// механики нет ни на сервере, ни в профиле, а баннер обещал «месяц клуба
+/// в подарок» и вёл на пустой экран.
 ///
 /// Полоска сезона (11.07.2026): статичная, под карточкой клуба, только в фазы
 /// анонса и окна покупки. Тексты — season_window.dart. Тап → paywall.
@@ -133,7 +136,14 @@ class HomeScreen extends ConsumerWidget {
             Positioned(
               right: 20,
               bottom: 20,
-              child: _QuoteFab(onTap: () => showQuoteSheet(context)),
+              child: _QuoteFab(onTap: () {
+                // M11: гость — дневника нет, ведём на вход.
+                if (ref.read(authProvider).status != AuthStatus.authenticated) {
+                  context.push(Routes.login);
+                  return;
+                }
+                showQuoteSheet(context);
+              }),
             ),
         ],
       ),
