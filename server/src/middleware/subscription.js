@@ -218,6 +218,109 @@ const requireAdmin = async (req, _res, next) => {
 };
 
 /**
+ * ЯДРО проверки доступа к клубу — чистая функция без req/res (аудит P11).
+ * Используется и HTTP middleware resolveClubAccess, и socket/index.js
+ * (checkClubAccess), чтобы у сокета была РОВНО та же логика, что у HTTP
+ * (раньше сокет пускал любого подписчика/архивника в любой клуб).
+ *
+ * user — lean User с полями subscriptionStatus, subscriptionPlan,
+ *   subscriptionExpiresAt, gracePeriodExpiresAt, clubMonthsEntitled, role,
+ *   mutedUntil. Бан (isBanned) здесь НЕ проверяется — это делает вызывающий.
+ * club — lean ClubMonth (month, year, startsAt, endsAt).
+ * now — Date (по умолчанию текущее время).
+ *
+ * Возвращает объект clubAccess ({ kind: 'admin'|'active'|'future'|'archive',
+ * canPost, tier, plan, isMuted, mutedUntil }) или null, если доступа нет.
+ * Правила — см. комментарий к resolveClubAccess ниже.
+ */
+function computeClubAccess(user, club, now = new Date()) {
+  const isMuted = user.mutedUntil && user.mutedUntil > now;
+
+  // Админ — полный доступ к любому клубу (текущий/архив/будущий/старый).
+  if (user.role === 'admin') {
+    return { kind: 'admin', canPost: true, isMuted: false };
+  }
+
+  const isInGrace =
+    user.gracePeriodExpiresAt && user.gracePeriodExpiresAt > now;
+  const hasActiveSub =
+    (user.subscriptionStatus === 'basic' ||
+      user.subscriptionStatus === 'premium') &&
+    (user.subscriptionExpiresAt > now || isInGrace);
+
+  const plan = user.subscriptionPlan || null;
+
+  // Оплаченный набор клубных месяцев — ХРАНИМЫЙ (пополняется в
+  // purchase.service при каждой транзакции подписки).
+  const coveredKeys = new Set(user.clubMonthsEntitled || []);
+  const isPaidClub = coveredKeys.has(clubMonthKey(club));
+
+  // Классифицируем запрошенный клуб по времени (КАЛЕНДАРНО).
+  const isCurrent = club.startsAt <= now && club.endsAt >= now;
+  const isFuture = club.startsAt > now;
+  // Архивное окно = до конца СЛЕДУЮЩЕГО календарного месяца после endsAt.
+  const archiveEnd = archiveWindowEnd(club.endsAt);
+  const isInArchiveWindow = club.endsAt < now && now <= archiveEnd;
+  // isTooOld: club.endsAt < now && now > archiveEnd — старше архивного окна.
+
+  // — Текущий клуб — доступ только если он в оплаченном наборе —
+  if (isCurrent) {
+    if (hasActiveSub && isPaidClub) {
+      return {
+        kind: 'active',
+        tier: user.subscriptionStatus,
+        plan,
+        canPost: !isMuted,
+        isMuted,
+        mutedUntil: isMuted ? user.mutedUntil : null,
+      };
+    }
+    // Нет подписки/не оплачен этот клуб → paywall.
+    return null;
+  }
+
+  // — Будущий клуб (анонс) — только если оплачен вперёд (сезон), read-only —
+  if (isFuture) {
+    if (hasActiveSub && isPaidClub) {
+      return {
+        kind: 'future',
+        tier: user.subscriptionStatus,
+        plan,
+        canPost: false,
+        isMuted: false,
+      };
+    }
+    return null;
+  }
+
+  // — Архивный клуб в календарном окне (следующий месяц) — МОЖНО ПИСАТЬ —
+  // Дообсудить прошлый клуб весь следующий месяц (требование Анны 08.07).
+  // Доступ любому, кто когда-либо был подписчиком (он этот клуб оплачивал).
+  // Free, кто никогда не платил, — не пускаем.
+  if (isInArchiveWindow) {
+    const everSubscribed =
+      hasActiveSub ||
+      user.subscriptionStatus === 'expired' ||
+      user.subscriptionStatus === 'basic' ||
+      user.subscriptionStatus === 'premium';
+
+    if (everSubscribed) {
+      return {
+        kind: 'archive',
+        tier: user.subscriptionStatus,
+        plan,
+        canPost: !isMuted,
+        isMuted,
+        mutedUntil: isMuted ? user.mutedUntil : null,
+      };
+    }
+  }
+
+  // — Старый клуб (вне архивного окна) или free без подписки → нет доступа —
+  return null;
+}
+
+/**
  * Middleware определения уровня доступа к КОНКРЕТНОМУ клубу.
  *
  * МОДЕЛЬ ДОСТУПА (пересмотрена 30.07.2026 — ХРАНИМЫЙ ОПЛАЧЕННЫЙ НАБОР):
@@ -311,110 +414,15 @@ const resolveClubAccess = async (req, _res, next) => {
       );
     }
 
-    const now = new Date();
-    const isMuted = user.mutedUntil && user.mutedUntil > now;
-
-    // Админ — полный доступ к любому клубу (текущий/архив/будущий/старый).
-    if (user.role === 'admin') {
+    // Ядро проверки вынесено в computeClubAccess (общее с socket, аудит P11).
+    const access = computeClubAccess(user, club, new Date());
+    if (access) {
       req.club = club;
-      req.clubAccess = { kind: 'admin', canPost: true, isMuted: false };
+      req.clubAccess = access;
       return next();
     }
 
-    const isInGrace =
-      user.gracePeriodExpiresAt && user.gracePeriodExpiresAt > now;
-    const hasActiveSub =
-      (user.subscriptionStatus === 'basic' ||
-        user.subscriptionStatus === 'premium') &&
-      (user.subscriptionExpiresAt > now || isInGrace);
-
-    const plan = user.subscriptionPlan || null;
-
-    // Оплаченный набор клубных месяцев — ХРАНИМЫЙ (пополняется в
-    // purchase.service при каждой транзакции подписки).
-    const coveredKeys = new Set(user.clubMonthsEntitled || []);
-    const isPaidClub = coveredKeys.has(clubMonthKey(club));
-
-    // Классифицируем запрошенный клуб по времени (КАЛЕНДАРНО).
-    const isCurrent = club.startsAt <= now && club.endsAt >= now;
-    const isFuture = club.startsAt > now;
-    // Архивное окно = до конца СЛЕДУЮЩЕГО календарного месяца после endsAt.
-    const archiveEnd = archiveWindowEnd(club.endsAt);
-    const isInArchiveWindow = club.endsAt < now && now <= archiveEnd;
-    // isTooOld: club.endsAt < now && now > archiveEnd — старше архивного окна.
-
-    // — Текущий клуб — доступ только если он в оплаченном наборе —
-    if (isCurrent) {
-      if (hasActiveSub && isPaidClub) {
-        req.club = club;
-        req.clubAccess = {
-          kind: 'active',
-          tier: user.subscriptionStatus,
-          plan,
-          canPost: !isMuted,
-          isMuted,
-          mutedUntil: isMuted ? user.mutedUntil : null,
-        };
-        return next();
-      }
-      // Нет подписки/не оплачен этот клуб → paywall.
-      return next(
-        new AppError(
-          'SUBSCRIPTION_REQUIRED',
-          'Для доступа к клубу нужна подписка',
-          403
-        )
-      );
-    }
-
-    // — Будущий клуб (анонс) — только если оплачен вперёд (сезон), read-only —
-    if (isFuture) {
-      if (hasActiveSub && isPaidClub) {
-        req.club = club;
-        req.clubAccess = {
-          kind: 'future',
-          tier: user.subscriptionStatus,
-          plan,
-          canPost: false,
-          isMuted: false,
-        };
-        return next();
-      }
-      return next(
-        new AppError(
-          'SUBSCRIPTION_REQUIRED',
-          'Для доступа к клубу нужна подписка',
-          403
-        )
-      );
-    }
-
-    // — Архивный клуб в календарном окне (следующий месяц) — МОЖНО ПИСАТЬ —
-    // Дообсудить прошлый клуб весь следующий месяц (требование Анны 08.07).
-    // Доступ любому, кто когда-либо был подписчиком (он этот клуб оплачивал).
-    // Free, кто никогда не платил, — не пускаем.
-    if (isInArchiveWindow) {
-      const everSubscribed =
-        hasActiveSub ||
-        user.subscriptionStatus === 'expired' ||
-        user.subscriptionStatus === 'basic' ||
-        user.subscriptionStatus === 'premium';
-
-      if (everSubscribed) {
-        req.club = club;
-        req.clubAccess = {
-          kind: 'archive',
-          tier: user.subscriptionStatus,
-          plan,
-          canPost: !isMuted,
-          isMuted,
-          mutedUntil: isMuted ? user.mutedUntil : null,
-        };
-        return next();
-      }
-    }
-
-    // — Старый клуб (вне архивного окна) или free без подписки → нет доступа —
+    // Нет подписки / не оплачен этот клуб / старый клуб → paywall.
     return next(
       new AppError(
         'SUBSCRIPTION_REQUIRED',
@@ -431,6 +439,7 @@ module.exports = {
   requireSubscription,
   requireAdmin,
   resolveClubAccess,
+  computeClubAccess,
   archiveWindowEnd,
   planDurationMonths,
   clubMonthKeysForPurchase,
