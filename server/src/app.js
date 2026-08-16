@@ -3,7 +3,13 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const { errorHandler } = require('./middleware/error');
-const { authLimiter } = require('./middleware/rate-limit');
+const {
+  authLimiter,
+  refreshLimiter,
+  apiLimiter,
+  uploadLimiter,
+  reportLimiter,
+} = require('./middleware/rate-limit');
 const { success } = require('./utils/response');
 const authRoutes = require('./routes/auth');
 const bookRoutes = require('./routes/books');
@@ -62,15 +68,36 @@ app.get('/api/health', (_req, res) => {
   return success(res, { status: 'ok' });
 });
 
+// Webhooks Apple — монтируем ДО общего apiLimiter, чтобы их не резать.
+app.use('/api/webhooks', webhookRoutes);
+
+// Общий лимит ~300/мин/IP на весь /api (webhooks выше + skip внутри).
+app.use('/api', apiLimiter);
+
+// Строгие лимиты (S3/M14). Вешаем ДО app.use('/api/auth', ...) и остальных
+// роутов: express-rate-limit при непревышении зовёт next() и запрос идёт дальше.
+// Auth: 10/мин только на вход/регистрацию (MASTER 12.2), refresh — 60/мин.
+app.post('/api/auth/login', authLimiter);
+app.post('/api/auth/register', authLimiter);
+app.post('/api/auth/apple', authLimiter);
+app.post('/api/auth/google', authLimiter);
+app.post('/api/auth/refresh', refreshLimiter);
+// Загрузки: картинка/голосовое в чат клуба, аватар — 20/мин.
+app.post('/api/club/:clubMonthId/chat/image', uploadLimiter);
+app.post('/api/club/:clubMonthId/chat/voice', uploadLimiter);
+app.post('/api/profile/avatar', uploadLimiter);
+// Жалобы: на сообщение чата и на пользователя — 10/мин.
+app.post('/api/club/chat/:messageId/report', reportLimiter);
+app.post('/api/users/:id/report', reportLimiter);
+
 // API Routes
-app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/books', bookRoutes);
 app.use('/api/packages', packageRoutes);
 app.use('/api/home', homeRoutes);
 app.use('/api/progress', progressRoutes);
 app.use('/api/club', clubRoutes);
 app.use('/api/purchases', purchaseRoutes);
-app.use('/api/webhooks', webhookRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Дневник (Фаза 5): цитаты, еженедельные ИИ-отчёты, согласие на ИИ.

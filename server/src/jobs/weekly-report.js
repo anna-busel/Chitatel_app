@@ -76,7 +76,25 @@ const uniq = (arr) => [...new Set(arr)];
  * @param {string|null} options.userId - только один юзер (админ-триггер)
  * @returns {Promise<number>} сколько отчётов создано/обновлено
  */
+// Флаг «прогон уже идёт»: cron и админ-триггер/catch-up не должны
+// запускать генерацию параллельно (двойные вызовы OpenAI).
+let running = false;
+const REPORT_CONCURRENCY = 3;
+
 const runWeeklyReports = async ({ force = false, userId = null } = {}) => {
+  if (running) {
+    logger.warn('Weekly report job уже выполняется — пропуск запуска');
+    return 0;
+  }
+  running = true;
+  try {
+    return await runWeeklyReportsInner({ force, userId });
+  } finally {
+    running = false;
+  }
+};
+
+const runWeeklyReportsInner = async ({ force = false, userId = null } = {}) => {
   const { startUtc, endUtc, weekNumber, year } = getPreviousIsoWeekRange();
 
   const userFilter = { aiConsent: true, isDeleted: { $ne: true } };
@@ -95,11 +113,12 @@ const runWeeklyReports = async ({ force = false, userId = null } = {}) => {
 
   let created = 0;
 
-  for (const user of users) {
+  // Обработка одного юзера. Возвращает true, если отчёт создан/обновлён.
+  const processUser = async (user) => {
     try {
       // Гейт регистрации: отчёт только тем, кто был в приложении всю неделю.
       if (!force && user.createdAt && new Date(user.createdAt) >= startUtc) {
-        continue;
+        return false;
       }
 
       // Идемпотентность: уже есть отчёт за эту неделю — пропускаем.
@@ -111,7 +130,7 @@ const runWeeklyReports = async ({ force = false, userId = null } = {}) => {
         })
           .select('_id')
           .lean();
-        if (existing) continue;
+        if (existing) return false;
       }
 
       const quotes = await Quote.find({
@@ -123,9 +142,9 @@ const runWeeklyReports = async ({ force = false, userId = null } = {}) => {
 
       // Порог; при force разрешаем от 1 цитаты (для теста), но не по нулю.
       if (force) {
-        if (quotes.length === 0) continue;
+        if (quotes.length === 0) return false;
       } else if (quotes.length < MIN_QUOTES_FOR_REPORT) {
-        continue;
+        return false;
       }
 
       // Текст прошлого отчёта — для абзаца «динамика по сравнению с прошлой неделей».
@@ -186,7 +205,7 @@ const runWeeklyReports = async ({ force = false, userId = null } = {}) => {
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
 
-      created += 1;
+      // отчёт создан — учитывается вызывающим циклом
 
       // Push «отчёт готов». Текст/вкл — из редактируемой настройки
       // (notification-setting), гейтится ещё и личной настройкой reports.
@@ -208,13 +227,24 @@ const runWeeklyReports = async ({ force = false, userId = null } = {}) => {
           )
           .catch(() => {});
       }
+      return true;
     } catch (err) {
       // Один упавший юзер не должен ронять весь прогон.
       logger.error('Weekly report failed for user', {
         userId: String(user._id),
         message: err.message,
       });
+      return false;
     }
+  };
+
+  // Параллелизм ограничен REPORT_CONCURRENCY (батчи по 3): не долбим
+  // OpenAI и БД сотнями одновременных запросов.
+  for (let i = 0; i < users.length; i += REPORT_CONCURRENCY) {
+    const batch = users.slice(i, i + REPORT_CONCURRENCY);
+    // eslint-disable-next-line no-await-in-loop
+    const results = await Promise.all(batch.map(processUser));
+    created += results.filter(Boolean).length;
   }
 
   logger.info('Weekly report job finished', { reports: created });
