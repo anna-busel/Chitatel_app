@@ -122,23 +122,92 @@ function loadRootCerts() {
 }
 
 // --- SignedDataVerifier (кэш) ---
-let cachedVerifier = null;
-function getVerifier() {
-  if (cachedVerifier) return cachedVerifier;
+// P1 (аудит 08.2026): ДВА верификатора — PRODUCTION и SANDBOX. Apple Review
+// тестирует покупки в sandbox даже на production-билде (чеки подписаны
+// sandbox-окружением), а у нас environment один по config → status 5
+// (INVALID_ENVIRONMENT) и ревью падает. Поэтому сначала пробуем окружение из
+// config, при status === 5 — повторяем другим (см. verifySignedData).
+const cachedVerifiers = {}; // { production?: SignedDataVerifier, sandbox?: SignedDataVerifier }
+function getVerifierFor(envName) {
+  if (cachedVerifiers[envName]) return cachedVerifiers[envName];
   const { SignedDataVerifier, Environment } = getAppleLib();
-  const env =
-    config.apple.environment === 'production'
-      ? Environment.PRODUCTION
-      : Environment.SANDBOX;
+  const env = envName === 'production' ? Environment.PRODUCTION : Environment.SANDBOX;
   const certs = loadRootCerts();
-  cachedVerifier = new SignedDataVerifier(
+  cachedVerifiers[envName] = new SignedDataVerifier(
     certs,
     true, // enableOnlineChecks — проверка отзыва/срока сертификата
     env,
     config.apple.bundleId,
     config.apple.appAppleId || undefined
   );
-  return cachedVerifier;
+  return cachedVerifiers[envName];
+}
+
+function primaryEnvName() {
+  return config.apple.environment === 'production' ? 'production' : 'sandbox';
+}
+
+// Верификатор для окружения из config (обратная совместимость экспорта).
+function getVerifier() {
+  return getVerifierFor(primaryEnvName());
+}
+
+let envFallbackWarned = false;
+/**
+ * Верифицирует JWS методом SignedDataVerifier с fallback по окружению:
+ * сначала config-окружение; если бросило status === 5 (INVALID_ENVIRONMENT) —
+ * повторяем другим окружением. Warn о fallback логируем один раз.
+ * @param {'verifyAndDecodeTransaction'|'verifyAndDecodeNotification'|'verifyAndDecodeRenewalInfo'} method
+ * @param {string} jws
+ */
+async function verifySignedData(method, jws) {
+  const primary = primaryEnvName();
+  const secondary = primary === 'production' ? 'sandbox' : 'production';
+  try {
+    return await getVerifierFor(primary)[method](jws);
+  } catch (err) {
+    if (!err || err.status !== 5) throw err;
+    if (!envFallbackWarned) {
+      envFallbackWarned = true;
+      logger.warn('Apple verify: INVALID_ENVIRONMENT, fallback на другое окружение', {
+        method,
+        primary,
+        fallback: secondary,
+      });
+    }
+    return getVerifierFor(secondary)[method](jws);
+  }
+}
+
+function verifyTransactionJWS(jws) {
+  return verifySignedData('verifyAndDecodeTransaction', jws);
+}
+
+/**
+ * priceUsd для записи Purchase (M6). StoreKit 2 JWS отдаёт price в
+ * миллиединицах валюты (price/1000) + currency. Если валюта USD — берём из
+ * транзакции, иначе — из каталога (Book.priceUsd / Package.priceUsd). Для
+ * подписок без каталога — null. Любая ошибка → null, verify не роняем.
+ */
+async function resolvePriceUsd(tx, mapped) {
+  try {
+    if (tx.price != null && tx.currency === 'USD') {
+      const usd = Number(tx.price) / 1000;
+      if (Number.isFinite(usd)) return usd;
+    }
+    if (mapped.itemType === 'book') {
+      const book = await Book.findOne({ bookSlug: mapped.itemId }).select('priceUsd').lean();
+      return book && book.priceUsd != null ? book.priceUsd : null;
+    }
+    if (mapped.itemType === 'package') {
+      const pkg = await Package.findOne({ packageSlug: mapped.itemId }).select('priceUsd').lean();
+      return pkg && pkg.priceUsd != null ? pkg.priceUsd : null;
+    }
+    return null;
+  } catch (err) {
+    logger.warn('Purchase: не удалось определить priceUsd', { message: err.message });
+    return null;
+  }
 }
 
 /**
@@ -181,9 +250,46 @@ async function applyTransaction({
   const mapped = mapProduct(productId);
   const expiresAt = tx.expiresDate ? new Date(tx.expiresDate) : null;
   const activeByDate = expiresAt ? expiresAt.getTime() > Date.now() : true;
-  const status = statusOverride || (activeByDate ? 'active' : 'expired');
+  let status = statusOverride || (activeByDate ? 'active' : 'expired');
+  // P10(a): revocationDate в транзакции — Apple отозвала/вернула деньги.
+  // Доступ не даём независимо от expiresDate.
+  if (tx.revocationDate) {
+    status = 'refunded';
+  }
+
+  // Существующая запись — для защиты от привязки чужого чека (P10b) и от
+  // даунгрейда refunded/cancelled → active повторным verify того же JWS (P10c).
+  const existing = await Purchase.findOne({ transactionId: originalTransactionId })
+    .select('userId status')
+    .lean();
+  if (existing) {
+    if (String(existing.userId) !== String(userId)) {
+      const tokenUserId = userIdFromAppAccountToken(tx.appAccountToken);
+      const owner = await User.findById(existing.userId).select('isDeleted').lean();
+      if (owner && !owner.isDeleted && tokenUserId !== String(userId).toLowerCase()) {
+        // Purchase уже привязан к другому живому аккаунту, и токен не наш —
+        // не переносим.
+        throw new AppError('FORBIDDEN', 'Покупка принадлежит другому аккаунту', 403);
+      }
+      // M3: прежний владелец удалил аккаунт (isDeleted) либо токен указывает
+      // на текущего юзера — переносим Purchase на него (одноразово).
+      logger.info('Purchase: перенос на другой аккаунт', {
+        transactionId: originalTransactionId,
+        fromUserId: String(existing.userId),
+        toUserId: String(userId),
+      });
+    }
+    if (
+      !statusOverride &&
+      (existing.status === 'refunded' || existing.status === 'cancelled')
+    ) {
+      status = existing.status;
+    }
+  }
   const revoked = status === 'refunded' || status === 'cancelled';
   const active = status === 'active';
+
+  const priceUsd = await resolvePriceUsd(tx, mapped);
 
   await Purchase.findOneAndUpdate(
     { transactionId: originalTransactionId },
@@ -196,6 +302,7 @@ async function applyTransaction({
         appleProductId: productId,
         expiresAt,
         status,
+        ...(priceUsd != null ? { priceUsd } : {}),
       },
       $setOnInsert: {
         purchasedAt: tx.purchaseDate ? new Date(tx.purchaseDate) : new Date(),
@@ -210,13 +317,30 @@ async function applyTransaction({
   }
 
   if (mapped.itemType === 'subscription') {
-    user.subscriptionStatus = active
-      ? (SUBSCRIPTION_TIER_ENUM.includes(mapped.tier) ? mapped.tier : 'basic')
-      : 'expired';
+    // M8: при expire/refund/billing retry не укорачивать дату, если текущая
+    // позже (ручной абонемент из админки не затираем). Если оставили более
+    // позднюю дату и она ещё не истекла — subscriptionStatus тоже НЕ
+    // даунгрейдим в 'expired' (ручной абонемент действует).
+    const keepLaterExpiry =
+      !active &&
+      user.subscriptionExpiresAt &&
+      expiresAt &&
+      user.subscriptionExpiresAt.getTime() > expiresAt.getTime();
+    if (!keepLaterExpiry) {
+      user.subscriptionExpiresAt = expiresAt;
+    }
+    const manualStillValid =
+      keepLaterExpiry && user.subscriptionExpiresAt.getTime() > Date.now();
+    if (active) {
+      user.subscriptionStatus = SUBSCRIPTION_TIER_ENUM.includes(mapped.tier)
+        ? mapped.tier
+        : 'basic';
+    } else if (!manualStillValid) {
+      user.subscriptionStatus = 'expired';
+    }
     user.subscriptionPlan = SUBSCRIPTION_PLAN_ENUM.includes(mapped.period)
       ? mapped.period
       : null;
-    user.subscriptionExpiresAt = expiresAt;
     user.subscriptionOriginalTransactionId = originalTransactionId;
 
     // Льготный период (B3): undefined = не трогать, null = снять, Date = выставить.
@@ -247,6 +371,15 @@ async function applyTransaction({
           user.clubMonthsEntitled.push(k);
         }
       });
+      // S8: grace period — доступ к клубу месяца, следующего за expiresDate
+      // (формат ключа как clubMonthKey: `${year}-${month}` без padStart).
+      if (gracePeriodExpiresAt instanceof Date && expiresAt) {
+        const abs = expiresAt.getFullYear() * 12 + expiresAt.getMonth() + 1;
+        const graceKey = `${Math.floor(abs / 12)}-${(abs % 12) + 1}`;
+        if (!user.clubMonthsEntitled.includes(graceKey)) {
+          user.clubMonthsEntitled.push(graceKey);
+        }
+      }
     }
     // status 'expired'/'cancelled' — набор НЕ трогаем: оплаченный месяц
     // остаётся за человеком, а ограничивает доступ уже временное окно клуба
@@ -285,11 +418,9 @@ async function applyTransaction({
  * @returns {Promise<object>} сводка по подписке/покупкам пользователя
  */
 async function verifyPurchase({ userId, signedTransaction }) {
-  const verifier = getVerifier();
-
   let tx;
   try {
-    tx = await verifier.verifyAndDecodeTransaction(signedTransaction);
+    tx = await verifyTransactionJWS(signedTransaction);
   } catch (err) {
     // VerificationException из @apple/app-store-server-library кладёт причину
     // не в message (он часто пустой), а в числовое поле status. Логируем всё,
@@ -313,17 +444,27 @@ async function verifyPurchase({ userId, signedTransaction }) {
   // чужой подписанный чек на свой аккаунт. Отклоняем. Токена нет / не наш формат
   // (гостевые покупки старого формата) — пропускаем как раньше, привязка идёт по
   // залогиненному userId из JWT.
+  // M3: если токен указывает на УДАЛЁННЫЙ аккаунт (isDeleted) — человек удалил
+  // аккаунт и вошёл снова тем же Apple ID; разрешаем привязку к текущему userId
+  // (Purchase.userId переносится в applyTransaction).
   const tokenUserId = userIdFromAppAccountToken(tx.appAccountToken);
   if (tokenUserId && tokenUserId !== String(userId).toLowerCase()) {
-    logger.warn('Purchase verify: appAccountToken не совпадает с юзером', {
+    const tokenUser = await User.findById(tokenUserId).select('isDeleted').lean();
+    if (!(tokenUser && tokenUser.isDeleted)) {
+      logger.warn('Purchase verify: appAccountToken не совпадает с юзером', {
+        userId: String(userId),
+        originalTransactionId: tx.originalTransactionId || tx.transactionId,
+      });
+      throw new AppError(
+        'PURCHASE_INVALID',
+        'Покупка принадлежит другому аккаунту',
+        403
+      );
+    }
+    logger.info('Purchase verify: appAccountToken удалённого аккаунта, привязываем к текущему', {
       userId: String(userId),
-      originalTransactionId: tx.originalTransactionId || tx.transactionId,
+      deletedUserId: tokenUserId,
     });
-    throw new AppError(
-      'PURCHASE_INVALID',
-      'Покупка принадлежит другому аккаунту',
-      403
-    );
   }
 
   const user = await applyTransaction({ userId, decodedTransaction: tx });
@@ -342,6 +483,8 @@ module.exports = {
   verifyPurchase,
   applyTransaction,
   getVerifier,
+  verifySignedData,
+  verifyTransactionJWS,
   mapProduct,
   userIdFromAppAccountToken,
 };
