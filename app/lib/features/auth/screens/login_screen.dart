@@ -174,19 +174,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               const SizedBox(height: 8),
 
-              // Забыли пароль
-              GestureDetector(
-                onTap: () => context.push(Routes.forgotPassword),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                    'Забыли пароль?',
-                    style: AppTypography.caption.copyWith(
-                      color: AppColors.terracotta,
-                    ),
-                  ),
-                ),
-              ),
+              // P2: ссылка «Забыли пароль?» временно скрыта — серверного
+              // endpoint сброса пароля нет, экран forgot_password вёл в никуда.
+              // Экран и Routes.forgotPassword оставлены; вернуть ссылку сюда
+              // после реализации POST /auth/forgot-password.
               const SizedBox(height: 20),
 
               // GDPR чекбокс. Ссылки «Условия» и «Политика» теперь РАБОЧИЕ —

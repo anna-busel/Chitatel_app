@@ -38,6 +38,16 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
+  /// M1: id архивного клуба, который мы подставили сами после 403 на
+  /// /club/current. Нужен, чтобы не зациклиться, если и архив закрыт.
+  String? _archiveFallbackId;
+
+  /// Показывать баннер «Подписка истекла — доступен архив».
+  bool _showExpiredBanner = false;
+
+  /// Идёт попытка подобрать архивный клуб — вместо paywall показываем лоадер.
+  bool _resolvingArchive = false;
+
   @override
   void initState() {
     super.initState();
@@ -52,6 +62,12 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
 
   @override
   Widget build(BuildContext context) {
+    // 403 обрабатываем в слушателе, а не в build: нужно сходить за /club/list
+    // и, возможно, поменять выбранный клуб (в build менять провайдеры нельзя).
+    ref.listen<AsyncValue<CurrentClubResult>>(currentClubProvider, (_, next) {
+      next.whenOrNull(error: (err, __) => _handleClubError(err));
+    });
+
     final clubAsync = ref.watch(currentClubProvider);
 
     return clubAsync.when(
@@ -60,6 +76,8 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
       error: (err, _) {
         // Нет подписки (SUBSCRIPTION_REQUIRED) → показываем paywall, а не ошибку.
         if (_isSubscriptionRequired(err)) {
+          // Пока подбираем архив — лоадер, чтобы paywall не мигал зря.
+          if (_resolvingArchive) return const _LoadingView();
           return const PaywallScreen();
         }
         return ErrorView(
@@ -76,6 +94,48 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
       return code == 'SUBSCRIPTION_REQUIRED';
     }
     return false;
+  }
+
+  /// Реакция на 403 SUBSCRIPTION_REQUIRED.
+  ///
+  /// M2: если 403 пришёл на клуб, выбранный в переключателе — сбрасываем выбор
+  /// на текущий (null), иначе paywall «залипает» до перезапуска приложения.
+  /// M1: если 403 пришёл на /club/current — подписчица прошлого месяца всё ещё
+  /// имеет право на свой оплаченный архив: берём его из /club/list и открываем
+  /// с баннером. Если архива нет — остаётся paywall, как раньше.
+  Future<void> _handleClubError(Object err) async {
+    if (!_isSubscriptionRequired(err)) return;
+    if (_resolvingArchive) return;
+
+    final selectedId = ref.read(selectedClubIdProvider);
+
+    if (selectedId != null) {
+      // Архив, который мы сами подставили, тоже закрыт — дальше только paywall.
+      if (selectedId == _archiveFallbackId) return;
+      _archiveFallbackId = null;
+      if (mounted && _showExpiredBanner) {
+        setState(() => _showExpiredBanner = false);
+      }
+      ref.read(selectedClubIdProvider.notifier).state = null;
+      return;
+    }
+
+    // Архив уже пробовали — второй раз не ходим.
+    if (_archiveFallbackId != null) return;
+
+    if (mounted) setState(() => _resolvingArchive = true);
+    try {
+      final list = await ref.read(clubListProvider.future);
+      final archive = list.archive;
+      if (archive.isEmpty) return;
+      _archiveFallbackId = archive.first.id;
+      if (mounted) setState(() => _showExpiredBanner = true);
+      ref.read(selectedClubIdProvider.notifier).state = _archiveFallbackId;
+    } catch (_) {
+      // Список не загрузился — остаётся paywall.
+    } finally {
+      if (mounted) setState(() => _resolvingArchive = false);
+    }
   }
 
   Widget _buildContent(CurrentClubResult result) {
@@ -105,7 +165,17 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
             },
           ),
 
-        if (access.kind == ClubAccessKind.archive)
+        // M1: сюда попали после 403 на текущий клуб — объясняем, почему открыт
+        // архив, и даём выход на paywall.
+        if (_showExpiredBanner)
+          _ExpiredArchiveBanner(
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PaywallScreen()),
+              );
+            },
+          )
+        else if (access.kind == ClubAccessKind.archive)
           _ArchiveBanner(archiveUntil: club.archiveUntilDate),
 
         Container(
@@ -153,6 +223,10 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
 
     if (selectedId == null) return;
     if (!mounted) return;
+
+    // Ручной выбор отменяет наш архивный fallback и его баннер.
+    _archiveFallbackId = null;
+    if (_showExpiredBanner) setState(() => _showExpiredBanner = false);
 
     if (selectedId == '__current__') {
       ref.read(selectedClubIdProvider.notifier).state = null;
@@ -291,6 +365,48 @@ class _LoadingView extends StatelessWidget {
         child: CircularProgressIndicator(
           color: AppColors.terracotta,
           strokeWidth: 2.5,
+        ),
+      ),
+    );
+  }
+}
+
+/// M1: баннер для истёкшей подписки, когда вместо paywall открыт оплаченный
+/// архив. Тап → paywall (продлить).
+class _ExpiredArchiveBanner extends StatelessWidget {
+  const _ExpiredArchiveBanner({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceLight,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.history, size: 18, color: AppColors.textTertiary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Подписка истекла — доступен архив',
+                  style: AppTypography.caption,
+                ),
+              ),
+              const Icon(Icons.chevron_right,
+                  size: 18, color: AppColors.textSecondary),
+            ],
+          ),
         ),
       ),
     );
