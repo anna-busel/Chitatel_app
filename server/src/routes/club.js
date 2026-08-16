@@ -6,7 +6,11 @@ const mongoose = require('mongoose');
 const multer = require('multer');
 const { validate } = require('../middleware/validate');
 const { requireAuth } = require('../middleware/auth');
-const { resolveClubAccess } = require('../middleware/subscription');
+const {
+  resolveClubAccess,
+  computeClubAccess,
+  clubMonthKey,
+} = require('../middleware/subscription');
 const { success } = require('../utils/response');
 const { AppError } = require('../middleware/error');
 const { emitToClub } = require('../socket');
@@ -172,13 +176,49 @@ function withFreshMedia(message) {
 }
 
 // Хелпер: загрузить сообщение по id с полным populate (автор + reply-снапшот)
-// и свежими signed URL медиа.
+// и свежими signed URL медиа. readBy клиенту не отдаём (аудит S7).
 async function findMessagePopulated(id) {
   const message = await ChatMessage.findById(id)
+    .select('-readBy')
     .populate('userId', 'name avatarUrl')
     .populate(REPLY_POPULATE)
     .lean();
   return withFreshMedia(message);
+}
+
+// Проверка доступа к клубу СООБЩЕНИЯ для эндпоинтов вида /chat/:messageId
+// (в URL нет clubMonthId, поэтому resolveClubAccess там не применим) —
+// аудит M13/C2. Правила те же: бан → 403 CLUB_BLOCKED, нет доступа по
+// computeClubAccess → 403 SUBSCRIPTION_REQUIRED. Возвращает lean user
+// (с role — нужен вызывающим для проверки админа), чтобы не грузить дважды.
+async function assertClubAccessForMessage(userId, clubMonthId) {
+  const [user, club] = await Promise.all([
+    User.findById(userId)
+      .select(
+        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled role isBanned mutedUntil'
+      )
+      .lean(),
+    ClubMonth.findById(clubMonthId).lean(),
+  ]);
+
+  if (!user) {
+    throw new AppError('UNAUTHORIZED', 'Пользователь не найден', 401);
+  }
+  if (user.isBanned) {
+    throw new AppError(
+      'CLUB_BLOCKED',
+      'Ваш аккаунт заблокирован за нарушение правил',
+      403
+    );
+  }
+  if (!club || !computeClubAccess(user, club, new Date())) {
+    throw new AppError(
+      'SUBSCRIPTION_REQUIRED',
+      'Для доступа к клубу нужна подписка',
+      403
+    );
+  }
+  return user;
 }
 
 const router = Router();
@@ -214,7 +254,8 @@ const uploadVoice = multer({
  *               Одинаково для подписчика и expired (модель доступа 08.07).
  *               Админ видит все архивы (модерация/история).
  * - current[] — текущий активный клуб (0 или 1 элемент)
- * - future[] — ближайшие будущие клубы (отдаём только подписчикам и админу)
+ * - future[] — ближайшие будущие клубы: админу все; подписчику — только те,
+ *              что в его оплаченном наборе clubMonthsEntitled (аудит M2)
  *
  * Используется фронтом для построения dropdown'а переключения клубов.
  * Для каждогоклуба возвращаем минимум полей + relation ('archive'/'current'/'future').
@@ -223,7 +264,7 @@ router.get('/list', async (req, res, next) => {
   try {
     const user = await User.findById(req.user.userId)
       .select(
-        'subscriptionStatus subscriptionExpiresAt gracePeriodExpiresAt role isBanned'
+        'subscriptionStatus subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled role isBanned'
       )
       .lean();
 
@@ -290,14 +331,21 @@ router.get('/list', async (req, res, next) => {
       .lean();
 
     // — Будущие —
-    // Только подписчики и админ видят будущие клубы (анонс).
-    const futureDocs = hasActiveSub
-      ? await ClubMonth.find({ startsAt: { $gt: now } })
-          .select(projection)
-          .sort({ startsAt: 1 })
-          .limit(3) // ближайшие 3 месяца вперёд
-          .lean()
-      : [];
+    // Админ видит все будущие клубы. Подписчик — только те, что уже оплачены
+    // вперёд (ключ месяца клуба в user.clubMonthsEntitled — как в
+    // resolveClubAccess/computeClubAccess), а не любой активный подписчик (M2).
+    let futureDocs = [];
+    if (hasActiveSub) {
+      futureDocs = await ClubMonth.find({ startsAt: { $gt: now } })
+        .select(projection)
+        .sort({ startsAt: 1 })
+        .limit(3) // ближайшие 3 месяца вперёд
+        .lean();
+      if (!isAdmin) {
+        const coveredKeys = new Set(user.clubMonthsEntitled || []);
+        futureDocs = futureDocs.filter((d) => coveredKeys.has(clubMonthKey(d)));
+      }
+    }
 
     const withRelation = (docs, relation) =>
       docs.map((d) => ({ ...d, relation }));
@@ -439,6 +487,7 @@ router.get(
       }
 
       const messages = await ChatMessage.find(filter)
+        .select('-readBy') // read receipts клиенту не отдаём (аудит S7)
         .sort({ createdAt: -1 })
         .limit(limit)
         .populate('userId', 'name avatarUrl')
@@ -552,6 +601,7 @@ router.get(
         ...baseFilter,
         createdAt: { $lt: target.createdAt },
       })
+        .select('-readBy')
         .sort({ createdAt: -1 })
         .limit(radius)
         .populate('userId', 'name avatarUrl')
@@ -564,6 +614,7 @@ router.get(
         ...baseFilter,
         createdAt: { $gt: target.createdAt },
       })
+        .select('-readBy')
         .sort({ createdAt: 1 })
         .limit(radius)
         .populate('userId', 'name avatarUrl')
@@ -604,10 +655,11 @@ router.get(
  * POST /api/club/:clubMonthId/chat
  * Создать text/image/voice сообщение в чате.
  *
- * Примечание: для image обычно используется POST .../chat/image (multipart),
- * который сам создаёт сообщение. Этот эндпоинт принимает уже готовый imageUrl
- * (на случай если клиент шлёт ссылку), но штатный путь картинки — через
- * /chat/image ниже. Голосовые — только через /chat/voice (multipart).
+ * Примечание: картинки — ТОЛЬКО через POST .../chat/image (multipart),
+ * который сам пишет файл и ставит imageUrl/imageStoragePath. Аудит P12: этот
+ * эндпоинт больше НЕ принимает внешний imageUrl из тела (type='image' → 400),
+ * чтобы нельзя было подсунуть произвольную ссылку. Голосовые — только через
+ * /chat/voice (multipart).
  *
  * Запрет ссылок: участницы (не admin) не могут слать ссылки в text —
  * см. assertNoLinkForNonAdmin.
@@ -622,7 +674,6 @@ const chatCreateSchema = z
   .object({
     type: z.enum(['text', 'image', 'voice']).default('text'),
     text: z.string().max(1000).optional().default(''),
-    imageUrl: z.string().url().optional(),
     voiceUrl: z.string().optional(),
     voiceDurationSec: z.number().int().min(1).max(180).optional(),
     voiceWaveform: z.array(z.number().min(0).max(100)).length(40).optional(),
@@ -645,7 +696,8 @@ const chatCreateSchema = z
   .refine(
     (data) => {
       if (data.type === 'text') return data.text && data.text.length > 0;
-      if (data.type === 'image') return !!data.imageUrl;
+      // image — валидируется ниже в роуте (всегда 400: только через /chat/image)
+      if (data.type === 'image') return true;
       if (data.type === 'voice') {
         return !!data.voiceUrl && !!data.voiceDurationSec && !!data.voiceWaveform;
       }
@@ -653,7 +705,7 @@ const chatCreateSchema = z
     },
     {
       message:
-        'Для text — text не пустой; для image — imageUrl; для voice — voiceUrl + voiceDurationSec + voiceWaveform',
+        'Для text — text не пустой; для voice — voiceUrl + voiceDurationSec + voiceWaveform',
     }
   );
 
@@ -697,6 +749,16 @@ router.post(
         );
       }
 
+      // Аудит P12: картинки — только через /chat/image (multipart). Внешний
+      // imageUrl из тела не принимаем и не сохраняем.
+      if (req.body.type === 'image') {
+        throw new AppError(
+          'VALIDATION_ERROR',
+          'Картинки — через /chat/image',
+          400
+        );
+      }
+
       // Запрет ссылок для не-админов (text-сообщения).
       const author = await User.findById(req.user.userId)
         .select('role name')
@@ -726,7 +788,7 @@ router.post(
         userId: req.user.userId,
         type: req.body.type,
         text: req.body.text,
-        imageUrl: req.body.imageUrl || null,
+        imageUrl: null,
         voiceUrl: null,
         voiceDurationSec: null,
         voiceWaveform: [],
@@ -1160,11 +1222,14 @@ router.patch(
         );
       }
 
+      // Доступ к клубу сообщения (бан / подписка) — аудит M13/C2.
+      const editor = await assertClubAccessForMessage(
+        req.user.userId,
+        message.clubMonthId
+      );
+
       // Запрет ссылок при редактировании для не-админов (антиобход).
-      const editor = await User.findById(req.user.userId)
-        .select('role')
-        .lean();
-      const isAdmin = editor && editor.role === 'admin';
+      const isAdmin = editor.role === 'admin';
       assertNoLinkForNonAdmin(req.body.text, isAdmin);
 
       message.text = req.body.text;
@@ -1211,8 +1276,12 @@ router.delete('/chat/:messageId', async (req, res, next) => {
       throw new AppError('NOT_FOUND', 'Сообщение не найдено', 404);
     }
 
-    const user = await User.findById(req.user.userId).select('role').lean();
-    const isAdmin = user && user.role === 'admin';
+    // Доступ к клубу сообщения (бан / подписка) — аудит M13/C2.
+    const user = await assertClubAccessForMessage(
+      req.user.userId,
+      message.clubMonthId
+    );
+    const isAdmin = user.role === 'admin';
     const isAuthor = String(message.userId) === String(req.user.userId);
 
     if (!isAuthor && !isAdmin) {
@@ -1258,9 +1327,13 @@ router.delete('/chat/:messageId', async (req, res, next) => {
  * Эмитит chat:reaction_updated в комнату клуба с полным массивом reactions
  * (клиенты заменяют локальный массив реакций целиком — проще консистентность).
  *
- * Доступ: нужен resolveClubAccess (любой кто видит клуб может реагировать,
- * включая архивный read-only — реакция это не «сообщение», это лёгкий signal;
- * но забаненный/без доступа — не пройдёт middleware).
+ * Доступ: любой кто видит клуб может реагировать, включая архивный read-only
+ * (реакция это не «сообщение», это лёгкий signal). В URL нет clubMonthId,
+ * поэтому доступ проверяется по клубу сообщения — assertClubAccessForMessage
+ * (бан / подписка → 403), аудит M13/C2.
+ *
+ * Аудит S5: вместо read-modify-write (findById → правка массива → save, где
+ * параллельные реакции затирали друг друга) — атомарные $pull/$addToSet/$push.
  */
 const reactionSchema = z.object({
   emoji: z.enum(ALLOWED_REACTIONS),
@@ -1279,44 +1352,72 @@ router.post(
       const { emoji } = req.body;
       const userId = req.user.userId;
 
-      const message = await ChatMessage.findById(messageId);
+      const message = await ChatMessage.findById(messageId)
+        .select('clubMonthId reactions isHidden')
+        .lean();
       if (!message || message.isHidden) {
         throw new AppError('NOT_FOUND', 'Сообщение не найдено', 404);
       }
 
+      // Доступ к клубу сообщения (бан / подписка) — аудит M13/C2.
+      await assertClubAccessForMessage(req.user.userId, message.clubMonthId);
+
       const userIdStr = String(userId);
+      const uid = new mongoose.Types.ObjectId(userIdStr);
 
-      // Убираем юзера из всех групп реакций (один юзер = одна реакция).
-      let hadThisEmoji = false;
-      for (const r of message.reactions) {
-        const idx = r.userIds.findIndex((u) => String(u) === userIdStr);
-        if (idx !== -1) {
-          if (r.emoji === emoji) hadThisEmoji = true;
-          r.userIds.splice(idx, 1);
-        }
-      }
-
-      // Если юзер НЕ снимал этот же эмодзи — значит ставит реакцию.
-      if (!hadThisEmoji) {
-        const existing = message.reactions.find((r) => r.emoji === emoji);
-        if (existing) {
-          existing.userIds.push(userId);
-        } else {
-          message.reactions.push({ emoji, userIds: [userId] });
-        }
-      }
-
-      // Чистим пустые группы.
-      message.reactions = message.reactions.filter(
-        (r) => r.userIds.length > 0
+      // Юзер уже поставил ЭТОТ эмодзи → toggle off (только снять).
+      const hadThisEmoji = (message.reactions || []).some(
+        (r) =>
+          r.emoji === emoji &&
+          (r.userIds || []).some((u) => String(u) === userIdStr)
       );
 
-      await message.save();
+      // 1. Снимаем юзера со ВСЕХ групп реакций (один юзер = одна реакция) —
+      //    одна атомарная операция, чужие реакции не затираются.
+      await ChatMessage.updateOne(
+        { _id: message._id },
+        { $pull: { 'reactions.$[].userIds': uid } }
+      );
+
+      // 2. Если не снимал этот же эмодзи — ставит: добавляем в группу emoji.
+      //    Группа есть → $addToSet по позиционному $; нет → создаём $push
+      //    (с фильтром «группы ещё нет», чтобы не задвоить при гонке).
+      if (!hadThisEmoji) {
+        const added = await ChatMessage.updateOne(
+          { _id: message._id, 'reactions.emoji': emoji },
+          { $addToSet: { 'reactions.$.userIds': uid } }
+        );
+        if (added.matchedCount === 0) {
+          const pushed = await ChatMessage.updateOne(
+            { _id: message._id, 'reactions.emoji': { $ne: emoji } },
+            { $push: { reactions: { emoji, userIds: [uid] } } }
+          );
+          if (pushed.matchedCount === 0) {
+            // Группа появилась параллельно — добавляем в неё.
+            await ChatMessage.updateOne(
+              { _id: message._id, 'reactions.emoji': emoji },
+              { $addToSet: { 'reactions.$.userIds': uid } }
+            );
+          }
+        }
+      }
+
+      // 3. Чистим пустые группы (отдельным апдейтом — MongoDB не даёт менять
+      //    reactions и reactions.$[].userIds в одном запросе) и читаем итог.
+      const updated = await ChatMessage.findOneAndUpdate(
+        { _id: message._id },
+        { $pull: { reactions: { userIds: { $size: 0 } } } },
+        { new: true }
+      )
+        .select('reactions')
+        .lean();
+
+      const reactions = updated ? updated.reactions : [];
 
       const io = req.app.get('io');
       emitToClub(io, message.clubMonthId, 'chat:reaction_updated', {
         messageId: String(message._id),
-        reactions: message.reactions.map((r) => ({
+        reactions: reactions.map((r) => ({
           emoji: r.emoji,
           userIds: r.userIds.map((u) => String(u)),
         })),
@@ -1324,7 +1425,7 @@ router.post(
 
       return success(res, {
         messageId: String(message._id),
-        reactions: message.reactions,
+        reactions,
       });
     } catch (err) {
       return next(err);
@@ -1568,7 +1669,15 @@ router.post(
  */
 router.get('/:clubMonthId/qa', resolveClubAccess, async (req, res, next) => {
   try {
-    const questions = await QAQuestion.find({ clubMonthId: req.club._id })
+    // Вопросы заблокированных пользователей не отдаём (аудит P8) — тот же
+    // список blockedUsers, что фильтрует чат (getBlockedIds).
+    const blockedIds = await getBlockedIds(req.user.userId);
+    const filter = { clubMonthId: req.club._id };
+    if (blockedIds.length > 0) {
+      filter.userId = { $nin: blockedIds };
+    }
+
+    const questions = await QAQuestion.find(filter)
       .sort({ answeredAt: -1, createdAt: -1 })
       .populate('userId', 'name avatarUrl')
       .populate('answeredByUserId', 'name avatarUrl')
