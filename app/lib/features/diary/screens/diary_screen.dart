@@ -131,7 +131,15 @@ class _DiaryScreenState extends ConsumerState<DiaryScreen> {
           children: [
             AppTopBar(
               backLabel: 'Профиль',
-              onBack: () => context.pop(),
+              // Экран может быть открыт из пуша без стека — тогда уходим
+              // на главную, чтобы не остаться в тупике без выхода.
+              onBack: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go(Routes.home);
+                }
+              },
               title: 'Мой дневник',
             ),
             Expanded(

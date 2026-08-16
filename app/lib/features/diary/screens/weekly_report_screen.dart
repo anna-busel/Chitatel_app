@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/app_top_bar.dart';
@@ -35,7 +36,15 @@ class WeeklyReportScreen extends ConsumerWidget {
           children: [
             AppTopBar(
               backLabel: 'Дневник',
-              onBack: () => context.pop(),
+              // Экран может быть открыт из пуша без стека — тогда уходим
+              // на главную, чтобы не остаться в тупике без выхода.
+              onBack: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go(Routes.home);
+                }
+              },
               title: 'Еженедельный отчёт',
             ),
             Expanded(
