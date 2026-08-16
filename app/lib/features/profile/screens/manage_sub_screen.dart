@@ -43,6 +43,35 @@ class ManageSubScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(profileProvider);
 
+    // P3: обратная связь по «Восстановить покупки» (раньше кнопка молчала).
+    ref.listen<PaywallState>(purchaseProvider, (prev, next) {
+      // Если сверху открыт paywall — тосты показывает он, не дублируем.
+      if (ModalRoute.of(context)?.isCurrent == false) return;
+      if (prev?.status == next.status &&
+          next.infoMessage == null &&
+          next.errorMessage == null) {
+        return;
+      }
+      String? text;
+      if (next.infoMessage != null) {
+        text = next.infoMessage;
+      } else if (next.status == PaywallStatus.error &&
+          prev?.status != PaywallStatus.error) {
+        text = next.errorMessage ?? 'Не удалось восстановить покупки';
+      } else if (next.status == PaywallStatus.restored &&
+          prev?.status != PaywallStatus.restored) {
+        text = 'Покупки восстановлены';
+        // Подписка вернулась — перечитываем профиль, чтобы экран обновился.
+        ref.read(profileProvider.notifier).load();
+      }
+      if (text != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(text),
+          backgroundColor: AppColors.textPrimary,
+        ));
+      }
+    });
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(

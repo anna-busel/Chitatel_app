@@ -25,7 +25,15 @@ class NotificationsScreen extends ConsumerWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => Navigator.of(context).maybePop(),
+          // Экран может быть открыт из пуша без стека — тогда уходим
+          // на главную, чтобы не остаться в тупике без выхода.
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go(Routes.home);
+            }
+          },
         ),
         title: Text('Уведомления', style: AppTypography.screenTitle),
         actions: [
