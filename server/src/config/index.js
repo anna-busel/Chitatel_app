@@ -81,4 +81,32 @@ const config = {
   },
 };
 
+// В production секрет, не заданный или равный dev-дефолту, недопустим —
+// падаем на старте, а не подписываем токены/URL dev-ключом. Задан, но короче
+// 32 символов — только предупреждение (не роняем прод на pm2 restart).
+// console.warn, а не logger: config/logger.js сам импортирует этот файл.
+// В dev дефолты остаются.
+if (process.env.NODE_ENV === 'production') {
+  const required = {
+    JWT_SECRET: [process.env.JWT_SECRET, 'dev-jwt-secret'],
+    JWT_REFRESH_SECRET: [process.env.JWT_REFRESH_SECRET, 'dev-refresh-secret'],
+    AUDIO_SECRET: [
+      process.env.AUDIO_SECRET,
+      'dev-audio-secret-CHANGE-IN-PROD-min-32-chars',
+    ],
+  };
+  for (const [name, [value, devDefault]] of Object.entries(required)) {
+    if (!value || value === devDefault) {
+      throw new Error(
+        `${name} не задан (или равен dev-дефолту) — в production обязателен`
+      );
+    }
+    if (value.length < 32) {
+      console.warn(
+        `[config] ${name} короче 32 символов — рекомендуется усилить (min 32)`
+      );
+    }
+  }
+}
+
 module.exports = config;

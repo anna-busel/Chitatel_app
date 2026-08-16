@@ -90,4 +90,22 @@ const shutdown = async (signal) => {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
+// Аудит S4: глобальные ловушки. unhandledRejection — только лог (процесс
+// живёт). uncaughtException — лог и exit(1): состояние процесса неизвестно,
+// PM2 перезапустит чисто.
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection', {
+    message: reason && reason.message ? reason.message : String(reason),
+    stack: reason && reason.stack,
+  });
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught exception', {
+    message: err && err.message,
+    stack: err && err.stack,
+  });
+  process.exit(1);
+});
+
 start();

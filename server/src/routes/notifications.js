@@ -24,6 +24,12 @@ const registerSchema = z.object({
 
 router.post('/register', validate(registerSchema), async (req, res, next) => {
   try {
+    // Один токен = одно устройство: снимаем его у других юзеров (иначе после
+    // смены аккаунта на телефоне предыдущий владелец получал бы чужие пуши).
+    await User.updateMany(
+      { pushToken: req.body.pushToken, _id: { $ne: req.user.userId } },
+      { $unset: { pushToken: 1 } }
+    );
     await User.updateOne(
       { _id: req.user.userId },
       { $set: { pushToken: req.body.pushToken } }

@@ -5,6 +5,7 @@ const { requireAuth } = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/subscription');
 const { success } = require('../utils/response');
 const pushService = require('../services/push.service');
+const logger = require('../config/logger');
 
 const router = Router();
 
@@ -39,8 +40,21 @@ router.post('/send', validate(sendSchema), async (req, res, next) => {
       return success(res, { sent: ok ? 1 : 0, total: 1 });
     }
 
-    const result = await pushService.broadcast({ audience }, payload, null);
-    return success(res, result);
+    // Рассылку не ждём в HTTP (на тысячах токенов запрос висел минутами) —
+    // запускаем в фоне, отвечаем сразу оценкой числа адресатов.
+    const recipients = await pushService.countBroadcastRecipients({ audience });
+    setImmediate(() => {
+      pushService.broadcast({ audience }, payload, null).catch((err) => {
+        logger.error('Push broadcast (фон) упал', { message: err.message });
+      });
+    });
+    // sent — оценочно (число токенов), чтобы не ломать админку.
+    return success(res, {
+      started: true,
+      recipients,
+      sent: recipients,
+      total: recipients,
+    });
   } catch (err) {
     return next(err);
   }
