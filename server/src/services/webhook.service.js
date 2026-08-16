@@ -2,7 +2,7 @@ const logger = require('../config/logger');
 const Purchase = require('../models/Purchase');
 const User = require('../models/User');
 const {
-  getVerifier,
+  verifySignedData,
   applyTransaction,
   userIdFromAppAccountToken,
 } = require('./purchase.service');
@@ -43,9 +43,9 @@ const RENEW_TYPES = new Set(['DID_RENEW', 'SUBSCRIBED']);
  * @param {string} signedPayload — подписанный payload из тела запроса Apple
  */
 async function handleNotification(signedPayload) {
-  const verifier = getVerifier();
-
-  const notification = await verifier.verifyAndDecodeNotification(signedPayload);
+  // P1: verifySignedData — fallback sandbox↔production по status 5
+  // (INVALID_ENVIRONMENT): Apple Review шлёт sandbox-уведомления на prod.
+  const notification = await verifySignedData('verifyAndDecodeNotification', signedPayload);
   const { notificationType, subtype, data } = notification;
 
   if (!data || !data.signedTransactionInfo) {
@@ -53,7 +53,7 @@ async function handleNotification(signedPayload) {
     return;
   }
 
-  const tx = await verifier.verifyAndDecodeTransaction(data.signedTransactionInfo);
+  const tx = await verifySignedData('verifyAndDecodeTransaction', data.signedTransactionInfo);
   const originalTransactionId = tx.originalTransactionId || tx.transactionId;
 
   // Кому принадлежит покупка:
@@ -105,7 +105,8 @@ async function handleNotification(signedPayload) {
     let graceDate = null;
     if (data.signedRenewalInfo) {
       try {
-        const renewalInfo = await verifier.verifyAndDecodeRenewalInfo(
+        const renewalInfo = await verifySignedData(
+          'verifyAndDecodeRenewalInfo',
           data.signedRenewalInfo
         );
         if (renewalInfo && renewalInfo.gracePeriodExpiresDate) {
