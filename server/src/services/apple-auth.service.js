@@ -84,7 +84,7 @@ const getClientSecret = () => {
  * при удалении аккаунта (Apple 5.1.1(v) + требование revoke).
  *
  * Ошибки не пробрасываем: если обмен не удался (нет ключа, Apple недоступен),
- * вход всё равно должен пройти — пользователь не виноват.
+ * вход всᑑ равно должен пройти — пользователь не виноват.
  */
 const exchangeAuthorizationCode = async (authorizationCode) => {
   if (!authorizationCode) return null;
@@ -224,6 +224,10 @@ const authenticateWithApple = async ({
   }
 
   // Для существующего пользователя
+  // Забаненный не входит (requireAuth в БД не ходит — проверяем здесь).
+  if (user.isBanned && user.role !== 'admin') {
+    throw new AppError('USER_BANNED', 'Аккаунт заблокирован', 403);
+  }
   user.refreshTokens.push(tokens.refreshToken);
   if (user.refreshTokens.length > 5) {
     user.refreshTokens = user.refreshTokens.slice(-5);

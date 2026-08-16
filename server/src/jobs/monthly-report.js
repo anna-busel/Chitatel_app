@@ -81,7 +81,25 @@ const topByFrequency = (items, n) => {
  * @param {string|null} options.userId
  * @returns {Promise<number>}
  */
+// Флаг «прогон уже идёт»: cron и админ-триггер/catch-up не должны
+// запускать генерацию параллельно (двойные вызовы OpenAI).
+let running = false;
+const REPORT_CONCURRENCY = 3;
+
 const runMonthlyReports = async ({ force = false, userId = null } = {}) => {
+  if (running) {
+    logger.warn('Monthly report job уже выполняется — пропуск запуска');
+    return 0;
+  }
+  running = true;
+  try {
+    return await runMonthlyReportsInner({ force, userId });
+  } finally {
+    running = false;
+  }
+};
+
+const runMonthlyReportsInner = async ({ force = false, userId = null } = {}) => {
   const { startUtc, endUtc, month, year } = getPreviousMonthRange();
 
   const userFilter = { aiConsent: true, isDeleted: { $ne: true } };
@@ -100,10 +118,11 @@ const runMonthlyReports = async ({ force = false, userId = null } = {}) => {
 
   let created = 0;
 
-  for (const user of users) {
+  // Обработка одного юзера. Возвращает true, если отчёт создан/обновлён.
+  const processUser = async (user) => {
     try {
       if (!force && user.createdAt && new Date(user.createdAt) >= startUtc) {
-        continue;
+        return false;
       }
 
       if (!force) {
@@ -114,7 +133,7 @@ const runMonthlyReports = async ({ force = false, userId = null } = {}) => {
         })
           .select('_id')
           .lean();
-        if (existing) continue;
+        if (existing) return false;
       }
 
       const quotes = await Quote.find({
@@ -125,9 +144,9 @@ const runMonthlyReports = async ({ force = false, userId = null } = {}) => {
         .lean();
 
       if (force) {
-        if (quotes.length === 0) continue;
+        if (quotes.length === 0) return false;
       } else if (quotes.length < MIN_QUOTES_FOR_REPORT) {
-        continue;
+        return false;
       }
 
       // Недельные отчёты этого месяца (для агрегата).
@@ -217,7 +236,7 @@ const runMonthlyReports = async ({ force = false, userId = null } = {}) => {
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
 
-      created += 1;
+      // отчёт создан — учитывается вызывающим циклом
 
       // Push «месячный отчёт готов». Текст/вкл — из редактируемой настройки
       // (notification-setting), гейтится ещё и личной настройкой reports.
@@ -239,12 +258,23 @@ const runMonthlyReports = async ({ force = false, userId = null } = {}) => {
           )
           .catch(() => {});
       }
+      return true;
     } catch (err) {
       logger.error('Monthly report failed for user', {
         userId: String(user._id),
         message: err.message,
       });
+      return false;
     }
+  };
+
+  // Параллелизм ограничен REPORT_CONCURRENCY (батчи по 3): не долбим
+  // OpenAI и БД сотнями одновременных запросов.
+  for (let i = 0; i < users.length; i += REPORT_CONCURRENCY) {
+    const batch = users.slice(i, i + REPORT_CONCURRENCY);
+    // eslint-disable-next-line no-await-in-loop
+    const results = await Promise.all(batch.map(processUser));
+    created += results.filter(Boolean).length;
   }
 
   logger.info('Monthly report job finished', { reports: created });
