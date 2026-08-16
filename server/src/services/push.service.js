@@ -142,6 +142,60 @@ const deliver = async (user, payload) => {
   }
 };
 
+// Мёртвые токены APNs — стираем у юзера, чтобы не долбить APNs впустую.
+const DEAD_REASONS = ['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic'];
+
+/**
+ * Массовая доставка: пачками по 100 токенов одним provider.send (node-apn
+ * принимает массив токенов). Мёртвые токены снимаем у юзеров через updateMany.
+ * @param {Array<{_id, pushToken}>} users - уже отфильтрованные isAllowed
+ * @param {{title, body, data?}} payload
+ * @returns {Promise<number>} число успешно доставленных
+ */
+const deliverMany = async (users, payload) => {
+  const p = getProvider();
+  if (!p || users.length === 0) return 0;
+
+  const CHUNK = 100;
+  let sent = 0;
+  const note = buildNotification(payload);
+
+  for (let i = 0; i < users.length; i += CHUNK) {
+    const tokens = users.slice(i, i + CHUNK).map((u) => u.pushToken);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await p.send(note, tokens);
+      sent += (result.sent || []).length;
+
+      const failed = result.failed || [];
+      if (failed.length > 0) {
+        const dead = failed
+          .filter((f) => f.response && DEAD_REASONS.includes(f.response.reason))
+          .map((f) => f.device)
+          .filter(Boolean);
+        logger.warn('APNs пачка: часть не доставлена', {
+          failed: failed.length,
+          dead: dead.length,
+          reason:
+            (failed[0].response && failed[0].response.reason) ||
+            (failed[0].error && failed[0].error.message) ||
+            'unknown',
+        });
+        if (dead.length > 0) {
+          // eslint-disable-next-line no-await-in-loop
+          await User.updateMany(
+            { pushToken: { $in: dead } },
+            { $unset: { pushToken: '' } }
+          );
+        }
+      }
+    } catch (err) {
+      logger.error('APNs send (пачка) исключение', { message: err.message });
+    }
+  }
+  return sent;
+};
+
 /**
  * Отправить одному пользователю по id.
  * Значимые персональные типы (PERSIST_TYPES) сохраняются в ленту 4.30
@@ -194,13 +248,8 @@ const broadcast = async ({ audience = 'all' } = {}, payload, settingKey = null) 
     .select('pushToken pushSettings isDeleted')
     .lean();
 
-  let sent = 0;
-  for (const user of users) {
-    if (!isAllowed(user, settingKey)) continue;
-    // eslint-disable-next-line no-await-in-loop
-    const ok = await deliver(user, payload);
-    if (ok) sent += 1;
-  }
+  const recipients = users.filter((u) => isAllowed(u, settingKey));
+  const sent = await deliverMany(recipients, payload);
 
   logger.info('Push broadcast завершён', {
     audience,
@@ -252,13 +301,8 @@ const sendNews = async ({ audience = 'all', title, body, data = {} } = {}) => {
   }
 
   // Push — только тем, у кого включена настройка news и есть токен.
-  let sent = 0;
-  for (const user of users) {
-    if (!isAllowed(user, 'news')) continue;
-    // eslint-disable-next-line no-await-in-loop
-    const ok = await deliver(user, { title, body, data: payloadData });
-    if (ok) sent += 1;
-  }
+  const recipients = users.filter((u) => isAllowed(u, 'news'));
+  const sent = await deliverMany(recipients, { title, body, data: payloadData });
 
   logger.info('Push news завершён', {
     audience,
@@ -268,4 +312,20 @@ const sendNews = async ({ audience = 'all', title, body, data = {} } = {}) => {
   return { total: users.length, persisted: users.length, sent };
 };
 
-module.exports = { sendToUser, broadcast, sendNews };
+/**
+ * Оценка числа адресатов рассылки (для мгновенного ответа админке, пока
+ * broadcast идёт в фоне). Тот же фильтр, что и в broadcast.
+ */
+const countBroadcastRecipients = async ({ audience = 'all' } = {}) => {
+  const filter = {
+    pushToken: { $exists: true, $nin: [null, ''] },
+    isDeleted: { $ne: true },
+  };
+  if (audience === 'subscribers') {
+    filter.subscriptionStatus = { $in: ['basic', 'premium'] };
+    filter.subscriptionExpiresAt = { $gt: new Date() };
+  }
+  return User.countDocuments(filter);
+};
+
+module.exports = { sendToUser, broadcast, sendNews, countBroadcastRecipients };
