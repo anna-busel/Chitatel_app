@@ -121,7 +121,9 @@ router.get('/:id', async (req, res, next) => {
  * ------------------------------------------------------------------ */
 
 /**
- * Ключи клубных месяцев 'YYYY-MM' от from до to включительно (UTC). Нужны при
+ * Ключи клубных месяцев 'YYYY-M' (БЕЗ ведущего нуля — как clubMonthKey в
+ * middleware/subscription.js: `${club.year}-${club.month}`) от from до to
+ * включительно (UTC). Нужны при
  * выдаче подписки с ПРОИЗВОЛЬНОЙ датой окончания (перенос уже оплаченных
  * абонементов): по этим месяцам открывается книга клуба.
  */
@@ -132,7 +134,7 @@ function clubMonthKeysBetween(from, to) {
   const ey = to.getUTCFullYear();
   const em = to.getUTCMonth();
   while (y < ey || (y === ey && m <= em)) {
-    keys.push(`${y}-${String(m + 1).padStart(2, '0')}`);
+    keys.push(`${y}-${m + 1}`);
     m += 1;
     if (m > 11) {
       m = 0;
@@ -453,9 +455,12 @@ router.post('/:id/ban', validate(banSchema), async (req, res, next) => {
     if (req.body.banned && target.role === 'admin') {
       throw new AppError('FORBIDDEN', 'Админа заблокировать нельзя', 403);
     }
-    await User.findByIdAndUpdate(req.params.id, {
-      $set: { isBanned: req.body.banned },
-    });
+    // При бане рвём все сессии (refreshTokens) — refresh больше не пройдёт.
+    const update = { $set: { isBanned: req.body.banned } };
+    if (req.body.banned) {
+      update.$set.refreshTokens = [];
+    }
+    await User.findByIdAndUpdate(req.params.id, update);
     return success(res, { ok: true, isBanned: req.body.banned });
   } catch (err) {
     return next(err);
