@@ -6,6 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/router/routes.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../club/providers/club_provider.dart';
 import '../providers/purchase_provider.dart';
 import '../season_window.dart';
@@ -56,6 +58,11 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
       } else if (next.status == PaywallStatus.error && next.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(next.errorMessage!)),
+        );
+      } else if (next.infoMessage != null) {
+        // P3: restore без покупок — «Активных покупок не найдено».
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(next.infoMessage!)),
         );
       }
     });
@@ -127,7 +134,17 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
                     product: p,
                     onTap: busy
                         ? null
-                        : () => ref.read(purchaseProvider.notifier).buy(p),
+                        : () {
+                            // P5: без сессии подписку не начинаем — Apple
+                            // спишет, а привязать не к кому. Ведём на вход
+                            // (как в book_screen для разборов).
+                            if (ref.read(authProvider).status !=
+                                AuthStatus.authenticated) {
+                              context.push(Routes.login);
+                              return;
+                            }
+                            ref.read(purchaseProvider.notifier).buy(p);
+                          },
                   ),
                 ),
               ),

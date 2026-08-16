@@ -24,6 +24,7 @@ class PaywallState {
     this.products = const [],
     this.entitlements,
     this.errorMessage,
+    this.infoMessage,
   });
 
   final PaywallStatus status;
@@ -31,17 +32,24 @@ class PaywallState {
   final Map<String, dynamic>? entitlements; // сводка прав из ответа /verify
   final String? errorMessage;
 
+  /// Информационное сообщение (не ошибка) — напр. «Активных покупок не
+  /// найдено» после restore без транзакций (P3). Как и errorMessage,
+  /// НЕ переносится через copyWith — живёт ровно одно обновление стейта.
+  final String? infoMessage;
+
   PaywallState copyWith({
     PaywallStatus? status,
     List<ProductDetails>? products,
     Map<String, dynamic>? entitlements,
     String? errorMessage,
+    String? infoMessage,
   }) {
     return PaywallState(
       status: status ?? this.status,
       products: products ?? this.products,
       entitlements: entitlements ?? this.entitlements,
       errorMessage: errorMessage,
+      infoMessage: infoMessage,
     );
   }
 }
@@ -134,6 +142,11 @@ class PurchaseNotifier extends StateNotifier<PaywallState> {
   /// Только этот путь разрешает верификацию restored-транзакций.
   Future<void> restore() async {
     _restoreRequested = true;
+    // Запоминаем статус до restore, чтобы вернуть его, если покупок нет
+    // (ready / unavailable — оба возможны).
+    final prevStatus = state.status == PaywallStatus.unavailable
+        ? PaywallStatus.unavailable
+        : PaywallStatus.ready;
     state = state.copyWith(status: PaywallStatus.purchasing);
     try {
       await _service.restore();
@@ -142,6 +155,20 @@ class PurchaseNotifier extends StateNotifier<PaywallState> {
       state = state.copyWith(
         status: PaywallStatus.error,
         errorMessage: 'Не удалось восстановить покупки',
+      );
+      return;
+    }
+    // P3: если у Apple ID нет покупок — StoreKit НЕ пришлёт ни одного события
+    // в purchaseStream, и статус purchasing завис бы навсегда (вечный спиннер).
+    // Ждём 3 с; если restored-транзакции так и не пришли — снимаем спиннер и
+    // сообщаем пользователю. Реальные транзакции обработает _onPurchaseUpdates.
+    await Future<void>.delayed(const Duration(seconds: 3));
+    if (!mounted) return;
+    if (_restoreRequested && state.status == PaywallStatus.purchasing) {
+      _restoreRequested = false;
+      state = state.copyWith(
+        status: prevStatus,
+        infoMessage: 'Активных покупок не найдено',
       );
     }
   }
@@ -206,15 +233,17 @@ class PurchaseNotifier extends StateNotifier<PaywallState> {
         status: isRestore ? PaywallStatus.restored : PaywallStatus.success,
         entitlements: entitlements,
       );
+      // P6: complete() ТОЛЬКО после успешной верификации сервером.
+      await _service.complete(purchase);
     } catch (_) {
+      // Транзакцию НЕ завершаем: StoreKit пере-доставит её при следующем
+      // запуске, и verify повторится (иначе оплаченная покупка потерялась бы).
       state = state.copyWith(
         status: PaywallStatus.error,
         errorMessage: isRestore
             ? 'Не удалось восстановить покупки'
             : 'Не удалось подтвердить покупку',
       );
-    } finally {
-      await _service.complete(purchase);
     }
   }
 
