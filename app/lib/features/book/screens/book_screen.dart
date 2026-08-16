@@ -72,7 +72,7 @@ class BookScreen extends ConsumerWidget {
   }
 }
 
-// ───────────────────────── BODY ─────────────────────────
+// ─────────────────────── BODY ───────────────────────
 
 class _BookContent extends StatelessWidget {
   const _BookContent({required this.book});
@@ -150,7 +150,7 @@ class _BookContent extends StatelessWidget {
   }
 }
 
-// ───────────────────────── TOP BAR ─────────────────────────
+// ─────────────────────── TOP BAR ───────────────────────
 
 class _TopBar extends StatelessWidget {
   @override
@@ -197,7 +197,7 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-// ───────────────────────── COVER ─────────────────────────
+// ─────────────────────── COVER ───────────────────────
 
 /// Секция обложки книги.
 ///
@@ -265,7 +265,7 @@ class _CoverSection extends StatelessWidget {
   }
 }
 
-// ───────────────────────── BADGE ─────────────────────────
+// ─────────────────────── BADGE ───────────────────────
 
 class _Badge extends StatelessWidget {
   const _Badge({
@@ -292,7 +292,7 @@ class _Badge extends StatelessWidget {
   }
 }
 
-// ───────────────────────── TITLE ─────────────────────────
+// ─────────────────────── TITLE ───────────────────────
 
 class _TitleBlock extends StatelessWidget {
   const _TitleBlock({required this.book});
@@ -318,7 +318,7 @@ class _TitleBlock extends StatelessWidget {
   }
 }
 
-// ───────────────────────── META (рейтинг + длительность) ─────────────────────────
+// ─────────────────────── META (рейтинг + длительность) ───────────────────────
 
 class _MetaRow extends StatelessWidget {
   const _MetaRow({required this.book});
@@ -369,7 +369,7 @@ class _MetaRow extends StatelessWidget {
   }
 }
 
-// ───────────────────────── ACTIONS (3 варианта) ─────────────────────────
+// ─────────────────────── ACTIONS (3 варианта) ───────────────────────
 
 class _ActionSection extends ConsumerWidget {
   const _ActionSection({
@@ -462,7 +462,10 @@ class _ActionSection extends ConsumerWidget {
       hasAudio: hasAudio,
       hasPreview: hasPreview,
       isBuying: isBuying,
-      canBuy: productId != null,
+      // M10: без аудио продавать нечего — кнопка «Купить» неактивна
+      // (Apple 2.1: не брать деньги за пустой контент). Разблокируется,
+      // когда import-audio зальёт части.
+      canBuy: productId != null && hasAudio,
       onBuy: () {
         if (productId == null) return;
         // Без сессии покупку не начинаем — Apple спишет, а привязать не к кому.
@@ -574,7 +577,7 @@ class _PaidActions extends StatelessWidget {
 
 // — 4.14 есть полный доступ (куплена ИЛИ открыта подпиской на клуб) —
 // Бейдж «КУПЛЕНО» убран (08.07.2026): клиент не различает покупку и подписку
-// (сервер отдаёт единый hasAccess), бейджврал бы подписчику. Подпись «У вас
+// (сервер отдаёт единый hasAccess), бейдж врал бы подписчику. Подпись «У вас
 // есть полный доступ» тоже убрана (02.08.2026) — кнопка «Слушать» самодостаточна.
 
 class _PurchasedActions extends StatelessWidget {
@@ -765,7 +768,7 @@ class _ProgressCard extends StatelessWidget {
   }
 }
 
-// ───────────────────────── DESCRIPTION ─────────────────────────
+// ─────────────────────── DESCRIPTION ───────────────────────
 
 // — Апселл-карточка «Входит в пакет» на экране разбора —
 // Названия пакетов уже содержат слово «Пакет»/«ФАКУЛЬТАТИВ», поэтому не
@@ -864,7 +867,7 @@ class _DescriptionBlock extends StatelessWidget {
   }
 }
 
-// ───────────────────────── SHIMMER ─────────────────────────
+// ─────────────────────── SHIMMER ───────────────────────
 
 class _BookShimmer extends StatelessWidget {
   const _BookShimmer();
