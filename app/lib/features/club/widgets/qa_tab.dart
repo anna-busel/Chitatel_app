@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import '../../../core/storage/secure_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/app_button.dart';
@@ -8,6 +9,7 @@ import '../../../shared/widgets/error_view.dart';
 import '../models/club_access.dart';
 import '../models/club_month.dart';
 import '../models/qa_question.dart';
+import '../services/block_service.dart';
 import '../services/club_api_service.dart';
 import '../services/qa_admin_service.dart';
 import 'ask_question_sheet.dart';
@@ -41,13 +43,23 @@ class _QATabState extends ConsumerState<QATab> {
   bool _isLoading = true;
   bool _hasError = false;
 
+  /// Мой userId — чтобы не показывать «Пожаловаться» на свой же вопрос.
+  String? _currentUserId;
+
   /// Анна — ведущая клуба. Только у неё есть кнопка «Ответить».
   bool get _isAdmin => widget.access.kind == ClubAccessKind.admin;
 
   @override
   void initState() {
     super.initState();
+    _loadCurrentUserId();
     _load();
+  }
+
+  Future<void> _loadCurrentUserId() async {
+    final id = await ref.read(secureStorageProvider).getUserId();
+    if (!mounted) return;
+    setState(() => _currentUserId = id);
   }
 
   Future<void> _load() async {
@@ -175,6 +187,73 @@ class _QATabState extends ConsumerState<QATab> {
     }
   }
 
+  /// Пожаловаться на автора чужого вопроса (Apple Guideline 1.2, UGC).
+  /// Шторка чата завязана на ChatMessage, поэтому здесь минимальный диалог
+  /// с теми же причинами; отправка — тем же сервисом POST /users/:id/report.
+  Future<void> _reportQuestion(QAQuestion question) async {
+    const reasons = <Map<String, String>>[
+      {'code': 'spam', 'label': 'Спам'},
+      {'code': 'inappropriate', 'label': 'Неуместный контент'},
+      {'code': 'offensive', 'label': 'Оскорбления'},
+      {'code': 'copyright', 'label': 'Нарушение авторских прав'},
+      {'code': 'other', 'label': 'Другое'},
+    ];
+
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.background,
+        title: Text('Пожаловаться', style: AppTypography.sectionHeader),
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final r in reasons)
+              ListTile(
+                title: Text(r['label']!, style: AppTypography.bodyMedium),
+                onTap: () => Navigator.of(ctx).pop(r['code']),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              'Отмена',
+              style: AppTypography.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (reason == null || !mounted) return;
+
+    try {
+      await ref.read(blockServiceProvider).reportUser(
+            userId: question.askedBy.id,
+            reason: reason,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Жалоба отправлена. Мы рассмотрим её в ближайшее время'),
+        backgroundColor: AppColors.success,
+      ));
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final code = ClubApiService.errorCodeFromException(e);
+      final msg = code == 'DUPLICATE_KEY'
+          ? 'Вы уже отправляли жалобу на этого участника'
+          : 'Не удалось отправить жалобу';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.error,
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -216,6 +295,11 @@ class _QATabState extends ConsumerState<QATab> {
                         question: _questions[i],
                         onAnswer: _isAdmin && !_questions[i].isAnswered
                             ? () => _answerQuestion(_questions[i])
+                            : null,
+                        // Жалоба — только на ЧУЖОЙ вопрос (long-press).
+                        onReport: _questions[i].askedBy.id.isNotEmpty &&
+                                _questions[i].askedBy.id != _currentUserId
+                            ? () => _reportQuestion(_questions[i])
                             : null,
                       ),
                     ),
@@ -273,12 +357,22 @@ class _QATabState extends ConsumerState<QATab> {
 /// Свёрнутая показывает только вопрос; раскрытая — ответ Анны (если есть).
 /// Для Анны у неотвеченного вопроса — кнопка «Ответить» (onAnswer != null).
 class _QuestionCard extends StatelessWidget {
-  const _QuestionCard({required this.question, this.onAnswer});
+  const _QuestionCard({required this.question, this.onAnswer, this.onReport});
   final QAQuestion question;
   final VoidCallback? onAnswer;
 
+  /// Долгое нажатие → жалоба. null для своих вопросов.
+  final VoidCallback? onReport;
+
   @override
   Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPress: onReport,
+      child: _card(context),
+    );
+  }
+
+  Widget _card(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
