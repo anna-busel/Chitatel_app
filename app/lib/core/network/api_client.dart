@@ -212,6 +212,14 @@ class ApiClient {
       // покажет экран 4.38 «Нет подключения». Разлогин только при реальном
       // отказе сервера (см. ветки выше: нет refresh-токена / не-200 ответ).
       if (isConnectionError(e)) return null;
+      // S3: 429 (rate limit) и прочие не-auth ответы (5xx) на /auth/refresh —
+      // тоже НЕ разлогиниваем: refresh-токен не отклонён, сервер просто
+      // временно не отвечает. Исходный запрос вернёт ошибку, сессия остаётся.
+      // Logout только когда сам refresh отвергнут: 401/403.
+      if (e is DioException) {
+        final code = e.response?.statusCode;
+        if (code != 401 && code != 403) return null;
+      }
       await _logout();
       return null;
     }

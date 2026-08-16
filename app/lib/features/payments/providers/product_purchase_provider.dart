@@ -147,28 +147,19 @@ class ProductPurchaseNotifier extends StateNotifier<ProductPurchaseState> {
           await _verify(purchase);
           break;
         case PurchaseStatus.restored:
-          // Non-consumable может прийти как restored (переустановка / авто-выдача
-          // StoreKit при запуске, а также повторная покупка того же товара в
-          // Sandbox). Доступ к купленным товарам сервер и так считает по БД
-          // (userHasBookAccess: purchasedBooks/purchasedPackages), поэтому НЕ
-          // верифицируем повторно и НЕ привязываем — только завершаем транзакцию,
-          // чтобы StoreKit не повторял её. Та же модель безопасности, что в
-          // paywall (решение 11.07.2026).
-          await _service.complete(purchase);
-          // Сообщаем экрану (если открыт), что доступ к этому товару подтверждён:
-          // пусть перечитает каталог/доступ, чтобы «Куплено» появилось сразу без
-          // ручного refresh. На холодном старте эти экраны не смонтированы, так
-          // что авто-restore при запуске лишних обновлений не вызовет.
-          state = ProductPurchaseState(
-            status: ProductPurchaseStatus.restored,
-            productId: purchase.productID,
-          );
+          // Non-consumable может прийти как restored (переустановка / «Восстановить
+          // покупки» / повторная покупка того же товара в Sandbox). P6: тоже
+          // отправляем на verify — сервер идемпотентен (повторный JWS того же
+          // товара просто подтверждает доступ), зато переустановка без записи в
+          // БД восстанавливает purchasedBooks/purchasedPackages. complete() —
+          // только после успешной верификации (внутри _verify).
+          await _verify(purchase, isRestore: true);
           break;
       }
     }
   }
 
-  Future<void> _verify(PurchaseDetails purchase) async {
+  Future<void> _verify(PurchaseDetails purchase, {bool isRestore = false}) async {
     state = ProductPurchaseState(
       status: ProductPurchaseStatus.verifying,
       productId: purchase.productID,
@@ -176,18 +167,26 @@ class ProductPurchaseNotifier extends StateNotifier<ProductPurchaseState> {
     try {
       final jws = purchase.verificationData.serverVerificationData;
       await _service.verifyOnServer(jws);
+      // Экран (если открыт) по success/restored перечитывает доступ, чтобы
+      // «Куплено» появилось сразу без ручного refresh.
       state = ProductPurchaseState(
-        status: ProductPurchaseStatus.success,
+        status: isRestore
+            ? ProductPurchaseStatus.restored
+            : ProductPurchaseStatus.success,
         productId: purchase.productID,
       );
+      // P6: complete() ТОЛЬКО после успешной верификации сервером.
+      await _service.complete(purchase);
     } catch (_) {
+      // Транзакцию НЕ завершаем: StoreKit пере-доставит её при следующем
+      // запуске, и verify повторится (иначе оплаченная покупка потерялась бы).
       state = ProductPurchaseState(
         status: ProductPurchaseStatus.error,
         productId: purchase.productID,
-        errorMessage: 'Не удалось подтвердить покупку',
+        errorMessage: isRestore
+            ? 'Не удалось восстановить покупку'
+            : 'Не удалось подтвердить покупку',
       );
-    } finally {
-      await _service.complete(purchase);
     }
   }
 
