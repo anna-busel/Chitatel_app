@@ -122,6 +122,10 @@ const authenticateWithGoogle = async ({ idToken }) => {
   }
 
   // Для существующего пользователя
+  // Забаненный не входит (requireAuth в БД не ходит — проверяем здесь).
+  if (user.isBanned && user.role !== 'admin') {
+    throw new AppError('USER_BANNED', 'Аккаунт заблокирован', 403);
+  }
   user.refreshTokens.push(tokens.refreshToken);
   if (user.refreshTokens.length > 5) {
     user.refreshTokens = user.refreshTokens.slice(-5);

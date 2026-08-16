@@ -92,6 +92,11 @@ const login = async ({ email, password }) => {
     throw new AppError('AUTH_INVALID_CREDENTIALS', 'Неверный email или пароль', 401);
   }
 
+  // Забаненный не входит (requireAuth в БД не ходит — проверяем здесь).
+  if (user.isBanned && user.role !== 'admin') {
+    throw new AppError('USER_BANNED', 'Аккаунт заблокирован', 403);
+  }
+
   const tokens = generateTokens(user._id);
 
   user.refreshTokens.push(tokens.refreshToken);
@@ -125,6 +130,11 @@ const refresh = async ({ refreshToken }) => {
     throw new AppError('AUTH_REFRESH_EXPIRED', 'Пользователь не найден', 401);
   }
 
+  // Забаненный не обновляет токены — сессия умирает вместе с access (15 мин).
+  if (user.isBanned && user.role !== 'admin') {
+    throw new AppError('USER_BANNED', 'Аккаунт заблокирован', 403);
+  }
+
   const tokenIndex = user.refreshTokens.indexOf(refreshToken);
   if (tokenIndex === -1) {
     user.refreshTokens = [];
@@ -154,6 +164,9 @@ const logout = async ({ refreshToken, userId }) => {
   }
 
   user.refreshTokens = user.refreshTokens.filter((t) => t !== refreshToken);
+  // Push-токен устройства снимаем: после выхода пуши этому юзеру на этот
+  // телефон не нужны (иначе следующий вошедший на устройстве получит чужие).
+  user.pushToken = undefined;
   await user.save();
 };
 

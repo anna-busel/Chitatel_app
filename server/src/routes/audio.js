@@ -1,11 +1,23 @@
 const path = require('path');
 const fs = require('fs');
+const { pipeline } = require('stream');
 const { Router } = require('express');
 const config = require('../config');
+const logger = require('../config/logger');
 const { verifySignedUrl } = require('../services/audio.service');
 const { AppError } = require('../middleware/error');
 
 const router = Router();
+
+// Отдача файла через stream.pipeline — при обрыве соединения клиентом
+// read stream закрывается (иначе течёт файловый дескриптор).
+function sendStream(stream, res) {
+  pipeline(stream, res, (err) => {
+    if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+      logger.warn('audio stream error', { error: err.message });
+    }
+  });
+}
 
 /**
  * GET /audio/<filename>?exp=<timestamp>&sig=<hex>
@@ -79,7 +91,7 @@ router.get(/^\/(.+)$/, async (req, res, next) => {
         'Accept-Ranges': 'bytes',
         'Cache-Control': 'private, no-cache, no-store, must-revalidate',
       });
-      return fs.createReadStream(fullPath).pipe(res);
+      return sendStream(fs.createReadStream(fullPath), res);
     }
 
     // — С Range: парсим диапазон и отдаём partial content —
@@ -107,7 +119,7 @@ router.get(/^\/(.+)$/, async (req, res, next) => {
       'Accept-Ranges': 'bytes',
       'Cache-Control': 'private, no-cache, no-store, must-revalidate',
     });
-    return fs.createReadStream(fullPath, { start, end }).pipe(res);
+    return sendStream(fs.createReadStream(fullPath, { start, end }), res);
   } catch (err) {
     return next(err);
   }
