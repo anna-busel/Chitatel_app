@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const util = require('util');
 const { execFile } = require('child_process');
 const { Router } = require('express');
@@ -16,6 +17,7 @@ const imageService = require('../services/image.service');
 const Book = require('../models/Book');
 const ClubMonth = require('../models/ClubMonth');
 const Package = require('../models/Package');
+const User = require('../models/User');
 
 const router = Router();
 
@@ -142,8 +144,17 @@ const AUDIO_ALLOWED_MIME = new Map([
   ['audio/wav', 'wav'],
   ['audio/x-wav', 'wav'],
 ]);
+// Аудио пишем на диск во временную папку (не в память — 500 МБ в буфере
+// роняли процесс по max_memory_restart), в роуте переносим в AUDIO_BASE_PATH.
+const AUDIO_TMP_DIR = path.join(os.tmpdir(), 'chitatel-upload');
 const uploadAudio = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      fs.mkdir(AUDIO_TMP_DIR, { recursive: true }, (err) =>
+        cb(err, AUDIO_TMP_DIR)
+      );
+    },
+  }),
   limits: { fileSize: AUDIO_MAX_BYTES },
 });
 
@@ -570,7 +581,16 @@ router.post(
       const dir = path.join(config.audio.basePath, book.bookSlug);
       await fs.promises.mkdir(dir, { recursive: true });
       const fullPath = path.join(dir, `part-${partNumber}.${ext}`);
-      await fs.promises.writeFile(fullPath, req.file.buffer);
+      // Сначала во временный файл рядом, потом атомарный rename — читатели
+      // не увидят полузаписанную часть. Временный файл multer (в os.tmpdir)
+      // может быть на другой ФС — rename не сработает, тогда copyFile.
+      const tmpPath = `${fullPath}.tmp`;
+      try {
+        await fs.promises.rename(req.file.path, tmpPath);
+      } catch (_e) {
+        await fs.promises.copyFile(req.file.path, tmpPath);
+      }
+      await fs.promises.rename(tmpPath, fullPath);
 
       const duration = await probeDuration(fullPath);
 
@@ -632,7 +652,19 @@ router.post(
         );
       }
       return next(err);
+    } finally {
+      // Временный файл multer (если он ещё есть — при ошибке до rename).
+      if (req.file && req.file.path) {
+        fs.promises.unlink(req.file.path).catch(() => {});
+      }
     }
+  },
+  // Ошибка validate() после multer — файл уже на диске, подчистим.
+  (err, req, _res, next) => {
+    if (req.file && req.file.path) {
+      fs.promises.unlink(req.file.path).catch(() => {});
+    }
+    return next(err);
   }
 );
 
@@ -953,10 +985,21 @@ router.delete('/packages/:id', async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
     }
-    const pkg = await Package.findByIdAndDelete(req.params.id);
+    const pkg = await Package.findById(req.params.id);
     if (!pkg) {
       throw new AppError('NOT_FOUND', 'Пакет не найден', 404);
     }
+    // Пакет уже кто-то купил — удалять нельзя (юзеры потеряют доступ),
+    // только снять с публикации.
+    const hasBuyers = await User.exists({ purchasedPackages: pkg._id });
+    if (hasBuyers) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Пакет куплен участницами — снимите с публикации вместо удаления',
+        400
+      );
+    }
+    await Package.deleteOne({ _id: pkg._id });
     return success(res, { ok: true });
   } catch (err) {
     return next(err);
