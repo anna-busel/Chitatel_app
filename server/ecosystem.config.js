@@ -13,7 +13,9 @@ module.exports = {
       exec_mode: 'fork',
       autorestart: true,
       watch: false,
-      max_memory_restart: '500M',
+      // 900M: загрузка аудио админкой теперь через диск, но ffmpeg/ffprobe +
+      // пики памяти при рассылках/отчётах — 500M было впритык.
+      max_memory_restart: '900M',
       env: {
         NODE_ENV: 'production',
       },
