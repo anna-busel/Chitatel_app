@@ -85,6 +85,15 @@ class _ReportResult {
 /// заранее сохранённый `_messenger`: мессенджер КОРНЕВОЙ, поэтому плашка
 /// переживала уход с экрана и висела поверх другой страницы всё окно отмены.
 ///
+/// ⚠️ 17.08.2026 — УДАЛЕНИЕ НЕ ТЕРЯЕТСЯ ПРИ СВОРАЧИВАНИИ. В окне «Отменить»
+/// (4 с) сообщение удалено только на клиенте, DELETE ещё не ушёл. Уход с
+/// экрана закрывал `dispose()`, но сворачивание приложения — нет: таймер
+/// замирает вместе с процессом, а если iOS выгрузит приложение, `dispose()`
+/// не вызовется вовсе и удаление пропадёт (сообщение вернётся при следующем
+/// запуске, потому что пометка `locallyDeletedMessageIdsProvider` живёт в
+/// памяти). Теперь экран слушает жизненный цикл и на `paused`/`detached`
+/// дожимает отложенное удаление немедленно.
+///
 /// Real-time через Socket.io (singleton; виджет не рвёт сокет — урок #16).
 /// ПРОИЗВОДИТЕЛЬНОСТЬ: RepaintBoundary на каждом элементе, cacheExtent 600,
 /// пузыри без теней (рамка), клипы hardEdge — см. chat_message_bubble.
@@ -97,7 +106,7 @@ class ChatTab extends ConsumerStatefulWidget {
   ConsumerState<ChatTab> createState() => _ChatTabState();
 }
 
-class _ChatTabState extends ConsumerState<ChatTab> {
+class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
   final List<ChatMessage> _messages = [];
 
   String? _currentUserId;
@@ -148,6 +157,7 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pinnedMessageId = widget.club.pinnedMessageId;
     _scrollController.addListener(_onScroll);
     _bootstrap();
@@ -159,8 +169,23 @@ class _ChatTabState extends ConsumerState<ChatTab> {
     _messenger = ScaffoldMessenger.of(context);
   }
 
+  /// Приложение уходит в фон, пока идёт окно «Отменить»: таймер замрёт вместе
+  /// с процессом, а при выгрузке приложения iOS не вызовет `dispose()` —
+  /// удаление пропадёт совсем. Дожимаем его прямо сейчас (отменять всё равно
+  /// уже некому — плашку гасим вместе с окном).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    super.didChangeAppLifecycleState(lifecycleState);
+    final leaving = lifecycleState == AppLifecycleState.paused ||
+        lifecycleState == AppLifecycleState.detached;
+    if (!leaving || _pendingDeleteMessage == null) return;
+    _messenger?.hideCurrentSnackBar();
+    _flushPendingDelete();
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _highlightTimer?.cancel();
     _readDebounce?.cancel();
     if (_deleteTimer != null && _deleteTimer!.isActive) {
