@@ -315,20 +315,29 @@ router.get('/list', async (req, res, next) => {
       .lean();
 
     // — Архивные —
-    // МОДЕЛЬ ДОСТУПА (08.07.2026): архив = ТОЛЬКО клубы в 31-дневном окне
-    // (archiveUntilDate >= now), одинаково для подписчика и expired. Старше
-    // 31 дня закрыто всем кроме админа — платишь за свой месяц, читаешь свой
-    // месяц + 31 день хвоста. Админ видит все архивы (модерация/история).
-    // Синхронно с resolveClubAccess.
+    // МОДЕЛЬ ДОСТУПА: архив = ОПЛАЧЕННЫЕ клубы в архивном окне. Бонус-месяц:
+    // клуб живёт свой месяц + весь следующий календарный, продление не нужно.
+    // Старше окна закрыто всем кроме админа. Админ видит все архивы
+    // (модерация/история). Синхронно с computeClubAccess.
     const archiveFilter = isAdmin
       ? { endsAt: { $lt: now } }
       : { endsAt: { $lt: now }, archiveUntilDate: { $gte: now } };
 
-    const archiveDocs = await ClubMonth.find(archiveFilter)
+    let archiveDocs = await ClubMonth.find(archiveFilter)
       .select(projection)
       .sort({ startsAt: -1 })
       .limit(12) // не больше года назад в dropdown'е
       .lean();
+
+    // ⛔️ 17.08.2026 — фильтр по оплаченному набору обязателен, не убирать.
+    // Без него в списке архива висел клуб, который человек не оплачивал
+    // (сентябрьский подписчик видел август), и открыть его теперь всё равно
+    // нельзя — computeClubAccess отдаст 403. Показывать то, что не открывается,
+    // хуже, чем не показывать.
+    if (!isAdmin) {
+      const archiveKeys = new Set(user.clubMonthsEntitled || []);
+      archiveDocs = archiveDocs.filter((d) => archiveKeys.has(clubMonthKey(d)));
+    }
 
     // — Будущие —
     // Админ видит все будущие клубы. Подписчик — только те, что уже оплачены
