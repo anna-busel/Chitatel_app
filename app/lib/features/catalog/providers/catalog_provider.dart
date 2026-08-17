@@ -72,7 +72,14 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
 
   final CatalogService _service;
 
+  /// Номер последнего запущенного запроса. Ответ более раннего запроса
+  /// игнорируем: иначе медленный ответ по старому фильтру перезаписывает
+  /// свежий и кажется, что чипы «не работают» (после покупки разбора
+  /// book_screen дёргает load() параллельно с тапом по категории).
+  int _requestId = 0;
+
   Future<void> load() async {
+    final requestId = ++_requestId;
     // Пакеты грузятся отдельным провайдером (packagesProvider); для фильтра
     // «Пакеты» список книг каталога не запрашиваем.
     if (state.filter is PackagesFilter) {
@@ -87,11 +94,13 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
     try {
       final query = _buildQuery(state.filter);
       final result = await _service.fetchBooks(query);
+      if (requestId != _requestId || !mounted) return;
       state = state.copyWith(
         books: result.books,
         isLoading: false,
       );
     } catch (e) {
+      if (requestId != _requestId || !mounted) return;
       state = state.copyWith(
         isLoading: false,
         error: 'Не удалось загрузить каталог',

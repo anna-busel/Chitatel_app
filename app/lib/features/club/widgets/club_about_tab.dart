@@ -44,6 +44,11 @@ class ClubAboutTab extends StatelessWidget {
         ? gradientRaw.map((e) => e.toString()).toList(growable: false)
         : const <String>[];
 
+    // Есть ли ещё не открытые части — от этого зависит строка про понедельники.
+    final now = DateTime.now();
+    final hasUpcomingParts = now.isBefore(club.endsAt) &&
+        club.partSchedule.any((p) => p.opensAt.isAfter(now));
+
     return Container(
       color: AppColors.background,
       child: SingleChildScrollView(
@@ -105,11 +110,11 @@ class ClubAboutTab extends StatelessWidget {
             ),
 
             // — Ритм выхода частей —
-            // Спокойная строка о том, что клуб пополняется каждую неделю. Без
+            // Спокойная строка о том, что разбор пополняется каждую неделю. Без
             // конкретных дат: части появляются по факту загрузки, а не по
-            // расписанию. Показываем только для действующего клуба — в архиве
-            // месяц уже завершён, и «выходят по понедельникам» там неуместно.
-            if (DateTime.now().isBefore(club.endsAt)) ...[
+            // расписанию. Показываем только пока есть неоткрытые части — если
+            // все части месяца уже вышли (или это архив), обещать новые нельзя.
+            if (hasUpcomingParts) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -121,7 +126,7 @@ class ClubAboutTab extends StatelessWidget {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'Новые разборы выходят по понедельникам',
+                      'Новые части разбора выходят по понедельникам',
                       style: AppTypography.caption.copyWith(
                         color: AppColors.textSecondary,
                       ),

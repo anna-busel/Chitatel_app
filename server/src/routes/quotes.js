@@ -54,7 +54,11 @@ router.post('/', validate(createSchema), async (req, res, next) => {
       );
     }
 
-    const user = await User.findById(req.user.userId).select('aiConsent').lean();
+    // name и surveyAnswers нужны анализу: имя — для личного обращения
+    // ({userName}), surveyAnswers — для {userContext} в промпте разбора цитаты.
+    const user = await User.findById(req.user.userId)
+      .select('aiConsent name surveyAnswers')
+      .lean();
     if (!user) {
       throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
     }
