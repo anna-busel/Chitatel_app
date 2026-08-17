@@ -14,10 +14,12 @@
 ///
 /// ⚠️ Формулировки в UI — спокойно-информативные, без таймеров и
 /// «только сегодня!» — Apple ревью не любит manipulative scarcity.
-/// ⚠️ «По цене двух»: честная математика при базовых ценах ASC
-/// monthly $27.99 × 2 = $55.98 ≥ season $54.99. Если цены в ASC когда-нибудь
-/// изменятся — ПЕРЕПРОВЕРИТЬ эту фразу (openCardNote/announceText/
-/// clubBannerText), иначе она станет враньём.
+/// ⚠️ 17.08.2026: из текстов УБРАНА фраза «по цене двух месяцев». Она была
+/// завязана на конкретные цены ASC (monthly $27.99 × 2 ≥ season $54.99) и
+/// переставала быть правдой при любой смене цен. Теперь тексты не содержат
+/// арифметических обещаний вообще — цену показывает сам StoreKit на карточке,
+/// и её не надо дублировать словами. ⛔️ Не возвращать сравнения цен в строки
+/// openCardNote/announceText/clubBannerText.
 ///
 /// ТЕСТОВАЯ РУЧКА: debugNowOverride подменяет «сегодня» для всей формулы.
 /// На paywall тройной тап по заголовку циклически переключает даты
@@ -130,23 +132,24 @@ class SeasonWindow {
   }
 
   /// Подпись на карточке Сезона в окно покупки (фаза open).
-  /// Пример: «Сентябрь, октябрь и ноябрь — по цене двух месяцев.
-  /// Оформление открыто до 30 сентября. Продлевается автоматически.»
+  /// Пример: «Сентябрь, октябрь и ноябрь — одной подпиской.
+  /// Оформление открыто до 30 сентября. Продлевается автоматически
+  /// каждые три месяца.»
   static String openCardNote() {
     final m = now.month;
-    return '${_seasonMonthsList(m)} — по цене двух месяцев. '
+    return '${_seasonMonthsList(m)} — одной подпиской. '
         'Оформление открыто до ${_openUntil(m)}. '
-        'Продлевается автоматически.';
+        'Продлевается автоматически каждые три месяца.';
   }
 
   /// Текст плашки-анонса на paywall (фаза announce).
-  /// Пример: «С 1 сентября — осенний сезон: три месяца клуба по цене двух».
+  /// Пример: «С 1 сентября — осенний сезон: три месяца клуба одной подпиской».
   static String announceText() {
     final d = now;
     final firstMonth = d.month == 12 ? 1 : d.month + 1;
     final name = _seasonNameByFirstMonth(firstMonth);
     final genitive = _monthGenitive[firstMonth] ?? '';
-    return 'С 1 $genitive — $name сезон: три месяца клуба по цене двух';
+    return 'С 1 $genitive — $name сезон: три месяца клуба одной подпиской';
   }
 
   /// Текст плашки в КЛУБЕ и полоски на ГЛАВНОЙ (для действующих подписчиц
@@ -157,11 +160,11 @@ class SeasonWindow {
         final firstMonth = now.month == 12 ? 1 : now.month + 1;
         final name = _seasonNameByFirstMonth(firstMonth);
         final genitive = _monthGenitive[firstMonth] ?? '';
-        return 'С 1 $genitive — $name сезон: три месяца по цене двух';
+        return 'С 1 $genitive — $name сезон: три месяца клуба одной подпиской';
       case SeasonPhase.open:
         final name = _seasonNameByFirstMonth(now.month);
         return '${name[0].toUpperCase()}${name.substring(1)} сезон открыт: '
-            'три месяца по цене двух — оформление до ${_openUntil(now.month)}';
+            'три месяца одной подпиской — оформление до ${_openUntil(now.month)}';
       case SeasonPhase.none:
         return null;
     }
