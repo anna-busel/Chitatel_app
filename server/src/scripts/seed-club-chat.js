@@ -7,10 +7,12 @@
  * выглядят как постановка, и это первое, что бросается в глаза. Скрипт пишет
  * напрямую в базу и расставляет даты с разбросом по дням и часам.
  *
- * ⚠️ ЭТО НЕ seed-club.js. Тот пересоздаёт клубы и ВЫТИРАЕТ чат — на проде его
- * запускать нельзя. Этот скрипт НИЧЕГО не удаляет: только переименовывает
- * четыре аккаунта и добавляет сообщения. Идемпотентный: сообщение с таким же
- * текстом от того же автора в том же клубе повторно не создаётся.
+ * ⚠️ ЭТО НЕ seed-club.js. Тот пересоздаёт клубы и БЕЗВОЗВРАТНО вытирает чат —
+ * на проде его запускать нельзя. Этот скрипт по умолчанию ничего не удаляет:
+ * только переименовывает аккаунты и добавляет сообщения. Идемпотентный:
+ * сообщение с таким же текстом от того же автора в том же клубе повторно не
+ * создаётся. Удалить старое можно, но только явно — флагом --clean, и удаление
+ * там мягкое (deletedAt), то есть обратимое.
  *
  * ЗАПУСК (из папки server):
  *   node src/scripts/seed-club-chat.js --dry-run     # показать план, ничего не писать
@@ -22,6 +24,9 @@
  *   --ksenia=EMAIL     четвёртая участница (опционально; без неё её реплики
  *                      пропускаются, ответы на них не завязаны)
  *   --no-rename        не переименовывать аккаунты
+ *   --clean            скрыть сообщения, которые уже лежат в этих клубах
+ *                      (старые записи от seed-club). Удаление МЯГКОЕ: ставится
+ *                      deletedAt, история их не отдаёт, но вернуть можно
  *
  * ЧЕГО СКРИПТ НЕ ДЕЛАЕТ: голосовое сообщение. Его записывает только живой
  * человек в приложении (и только админ) — файл со стороны туда не положить.
@@ -47,6 +52,7 @@ const getOpt = (name) => {
 
 const DRY_RUN = hasFlag('dry-run');
 const NO_RENAME = hasFlag('no-rename');
+const CLEAN = hasFlag('clean');
 const ANNA_EMAIL = getOpt('anna');
 const KSENIA_EMAIL = getOpt('ksenia');
 
@@ -327,6 +333,40 @@ async function seedClub({ club, messages, users, label }) {
     console.log(`    пропущено реплик (нет аккаунта): ${skipped}`);
   }
 
+  // --clean: убрать то, что лежит в чате сейчас (старые сообщения от seed-club).
+  // Удаление МЯГКОЕ (deletedAt) — история фильтрует их на сервере, в ленте они
+  // не появятся, но при желании всё можно вернуть, сняв deletedAt.
+  if (CLEAN) {
+    const stale = await ChatMessage.find({
+      clubMonthId: club._id,
+      deletedAt: null,
+    })
+      .select('_id userId text')
+      .lean();
+
+    if (stale.length === 0) {
+      console.log('    --clean: чат пуст, удалять нечего');
+    } else {
+      console.log(`    --clean: будет скрыто существующих сообщений: ${stale.length}`);
+      for (const s of stale.slice(0, 5)) {
+        console.log(`       − ${s.text.replace(/\n+/g, ' ').slice(0, 50)}`);
+      }
+      if (stale.length > 5) console.log(`       − … и ещё ${stale.length - 5}`);
+
+      if (!DRY_RUN) {
+        await ChatMessage.updateMany(
+          { clubMonthId: club._id, deletedAt: null },
+          { $set: { deletedAt: now, isPinned: false } }
+        );
+        // Закреп мог указывать на удалённое сообщение — снимаем.
+        await ClubMonth.updateOne(
+          { _id: club._id },
+          { $set: { pinnedMessageId: null } }
+        );
+      }
+    }
+  }
+
   const refToId = new Map();
   const created = [];
   let existing = 0;
@@ -336,10 +376,13 @@ async function seedClub({ club, messages, users, label }) {
     const author = users[m.who];
 
     // Идемпотентность: тот же автор + тот же текст в том же клубе = уже есть.
+    // Только среди ЖИВЫХ: удалённое (в т.ч. только что через --clean) за
+    // дубликат не считаем, иначе после очистки скрипт ничего бы не создал.
     const dup = await ChatMessage.findOne({
       clubMonthId: club._id,
       userId: author._id,
       text: m.text,
+      deletedAt: null,
     })
       .select('_id')
       .lean();
