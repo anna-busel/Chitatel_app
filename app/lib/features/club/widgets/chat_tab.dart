@@ -81,7 +81,9 @@ class _ReportResult {
 /// ⛔️ НИКОГДА не убирать ключи из itemBuilder ленты чата.
 ///
 /// ⚠️ СНЕКБАР «Сообщение удалено» ЗАКРЫВАЕМ САМИ: после Flutter 3.44 он перестал
-/// уходить по `duration`.
+/// уходить по `duration`. 17.08.2026 — гасим его ещё и в `dispose()` через
+/// заранее сохранённый `_messenger`: мессенджер КОРНЕВОЙ, поэтому плашка
+/// переживала уход с экрана и висела поверх другой страницы всё окно отмены.
 ///
 /// Real-time через Socket.io (singleton; виджет не рвёт сокет — урок #16).
 /// ПРОИЗВОДИТЕЛЬНОСТЬ: RepaintBoundary на каждом элементе, cacheExtent 600,
@@ -137,6 +139,12 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   StreamSubscription<ClubSocketEvent>? _socketSub;
   final ScrollController _scrollController = ScrollController();
 
+  /// ScaffoldMessenger приложения, сохранённый заранее. В `dispose()` вызывать
+  /// `ScaffoldMessenger.of(context)` уже нельзя, а снекбар «Сообщение удалено»
+  /// живёт на корневом мессенджере и переживает уход с экрана — без этой
+  /// ссылки плашка висит поверх другой страницы до конца своего duration.
+  ScaffoldMessengerState? _messenger;
+
   @override
   void initState() {
     super.initState();
@@ -146,11 +154,21 @@ class _ChatTabState extends ConsumerState<ChatTab> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger = ScaffoldMessenger.of(context);
+  }
+
+  @override
   void dispose() {
     _highlightTimer?.cancel();
     _readDebounce?.cancel();
     if (_deleteTimer != null && _deleteTimer!.isActive) {
       _deleteTimer!.cancel();
+      // Плашка «Сообщение удалено» с кнопкой «Отменить» ещё висит: она живёт на
+      // корневом ScaffoldMessenger и переживает уход с экрана. Отменять уже
+      // некому — гасим её вместе с экраном.
+      _messenger?.hideCurrentSnackBar();
       final pending = _pendingDeleteMessage;
       if (pending != null) {
         // Экран умирает, но удаление должно дойти до сервера. Id остаётся в
