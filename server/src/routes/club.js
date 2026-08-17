@@ -866,7 +866,7 @@ router.post(
  *
  * Поток:
  * 1. multer принимает файл в память (лимит 8 МБ).
- * 2. Проверяем mime по白списку (jpeg/png/webp/heic/heif).
+ * 2. Проверяем mime по белому списку (jpeg/png/webp/heic/heif).
  * 3. Пишем файл на диск: AUDIO_BASE_PATH/club-images/<clubId>/<uuid>.<ext>.
  * 4. Создаём ChatMessage type=image, imageUrl = signed URL (TTL 1 час).
  * 5. Эмитим chat:new_message в комнату клуба.
