@@ -142,7 +142,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// Подписка и доступ к разборам кэшируются провайдерами и грузятся при
   /// входе/старте — из-за этого выданная (например, вручную из админки)
   /// подписка или разбор появлялись только после ПОЛНОГО перезапуска
-  /// приложения. Здесь при каждом resume инвалидируем пользовательские данные,
+  /// приложения. Здесь при каждом resume обновляем пользовательские данные,
   /// чтобы они перечитались с сервера: профиль (подписка), главная,
   /// каталог/пакеты (бейджи «Куплено»), история покупок и клуб
   /// (currentClubProvider тянет доступ заново).
@@ -150,12 +150,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// НЕ трогаем selectedClubIdProvider (выбранный месяц — UI-выбор юзера),
   /// токены и локальные флаги: это не смена аккаунта, а лишь обновление данных.
   /// Только для авторизованных — гостю обновлять нечего.
+  ///
+  /// ⚠️ 17.08.2026 — catalogProvider НЕ инвалидируем, а просим перечитать
+  /// список. Разница принципиальная: `invalidate` уничтожает CatalogNotifier
+  /// и создаёт новый с фильтром «Все», а `load()` обновляет книги и оставляет
+  /// выбранную категорию. Инвалидация ломала каталог после покупки: StoreKit
+  /// показывает системную шторку → приложение получает resumed → провайдер
+  /// пересоздавался, но лента чипов не перестраивалась (const-виджет + select
+  /// по фильтру, который не изменился) и держала в onTap ссылку на уже
+  /// уничтоженный notifier — чипы переставали переключать фильтр до ухода на
+  /// другую вкладку. Плюс выбранная категория молча слетала при каждом
+  /// сворачивании приложения. ⛔️ Не менять обратно на invalidate.
   void refreshOnResume() {
     if (state.status != AuthStatus.authenticated) return;
     _ref.invalidate(profileProvider);
     _ref.invalidate(purchaseHistoryProvider);
     _ref.invalidate(homeProvider);
-    _ref.invalidate(catalogProvider);
+    _ref.read(catalogProvider.notifier).load();
     _ref.invalidate(packagesProvider);
     _ref.invalidate(clubListProvider);
     _ref.invalidate(currentClubProvider);

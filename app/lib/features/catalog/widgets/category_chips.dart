@@ -15,29 +15,41 @@ import '../providers/catalog_provider.dart';
 /// (sentence case для UI), но фильтрация — по исходному значению (КАПС из БД).
 /// Это нужно потому что `book.categories` в БД хранится капсом, и точное
 /// совпадение строк требуется для CategoryFilter.
+///
+/// ⛔️ 17.08.2026 — НЕ сохранять notifier в переменную в `build`. Раньше здесь
+/// было `final notifier = ref.read(catalogProvider.notifier)`, и эта ссылка
+/// попадала в замыкания onTap. Если провайдер успевал пересоздаться, а виджет
+/// при этом не перестраивался (он вставлен как `const CategoryChips()`, а
+/// `select` по фильтру не видел изменения, потому что `AllBooksFilter` —
+/// const и равен сам себе), чипы держали УНИЧТОЖЕННЫЙ notifier: тап проходил,
+/// а фильтр не переключался, пока не уйдёшь на другую вкладку и обратно.
+/// Читаем notifier В МОМЕНТ ТАПА — тогда устаревшей ссылки быть не может.
 class CategoryChips extends ConsumerWidget {
   const CategoryChips({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final filter = ref.watch(catalogProvider.select((s) => s.filter));
-    final notifier = ref.read(catalogProvider.notifier);
+
+    void apply(CatalogFilter next) {
+      ref.read(catalogProvider.notifier).setFilter(next);
+    }
 
     final items = <_ChipItem>[
       _ChipItem(
         label: 'Все',
         isActive: filter is AllBooksFilter,
-        onTap: () => notifier.setFilter(const AllBooksFilter()),
+        onTap: () => apply(const AllBooksFilter()),
       ),
       _ChipItem(
         label: 'Бесплатные',
         isActive: filter is FreeOnlyFilter,
-        onTap: () => notifier.setFilter(const FreeOnlyFilter()),
+        onTap: () => apply(const FreeOnlyFilter()),
       ),
       _ChipItem(
         label: 'Пакеты',
         isActive: filter is PackagesFilter,
-        onTap: () => notifier.setFilter(const PackagesFilter()),
+        onTap: () => apply(const PackagesFilter()),
       ),
       ...BookCategories.all.map((category) {
         final isActive =
@@ -45,7 +57,7 @@ class CategoryChips extends ConsumerWidget {
         return _ChipItem(
           label: BookCategories.labelFor(category),
           isActive: isActive,
-          onTap: () => notifier.setFilter(CategoryFilter(category)),
+          onTap: () => apply(CategoryFilter(category)),
         );
       }),
     ];
