@@ -124,9 +124,9 @@ function loadRootCerts() {
 // --- SignedDataVerifier (кэш) ---
 // P1 (аудит 08.2026): ДВА верификатора — PRODUCTION и SANDBOX. Apple Review
 // тестирует покупки в sandbox даже на production-билде (чеки подписаны
-// sandbox-окружением), а у нас environment один по config → status 5
-// (INVALID_ENVIRONMENT) и ревью падает. Поэтому сначала пробуем окружение из
-// config, при status === 5 — повторяем другим (см. verifySignedData).
+// sandbox-окружением), а у нас environment один по config → верификация
+// падает и ревью вместе с ней. Поэтому сначала пробуем окружение из config,
+// не вышло — повторяем другим (см. verifySignedData).
 const cachedVerifiers = {}; // { production?: SignedDataVerifier, sandbox?: SignedDataVerifier }
 function getVerifierFor(envName) {
   if (cachedVerifiers[envName]) return cachedVerifiers[envName];
@@ -154,28 +154,60 @@ function getVerifier() {
 
 let envFallbackWarned = false;
 /**
- * Верифицирует JWS методом SignedDataVerifier с fallback по окружению:
- * сначала config-окружение; если бросило status === 5 (INVALID_ENVIRONMENT) —
- * повторяем другим окружением. Warn о fallback логируем один раз.
+ * Верифицирует JWS методом SignedDataVerifier с fallback по окружению.
+ * Сначала окружение из config; не вышло — повторяем ДРУГИМ.
+ *
+ * ⚠️ 17.08.2026 — ПОЧЕМУ РЕТРАЙ НА ЛЮБОЙ ОШИБКЕ, А НЕ ТОЛЬКО НА status 5.
+ * Первая версия (аудит P1) ретраила только при status === 5
+ * (INVALID_ENVIRONMENT) — и на живой покупке не сработала. При
+ * APPLE_ENVIRONMENT=production sandbox-чек падает у production-верификатора
+ * со status === 4 (INVALID_CHAIN): проверка ЦЕПОЧКИ СЕРТИФИКАТОВ идёт РАНЬШЕ
+ * сверки окружения, до `status === 5` дело не доходит. Покупка отваливалась
+ * с «Не удалось проверить покупку» (лог 17.08, status 4).
+ *
+ * Ломалось в ОБЕ стороны: с APPLE_ENVIRONMENT=sandbox ровно так же упали бы
+ * реальные покупки после релиза. Поэтому ретраим на любой ошибке верификации.
+ *
+ * Безопасность не страдает: оба верификатора делают полную криптографическую
+ * проверку подписи и цепочки против корневых сертификатов Apple. Поддельный
+ * чек не пройдёт ни в одном окружении — он лишь получит две попытки вместо
+ * одной. Если отклонили оба — бросаем ИСХОДНУЮ ошибку primary-окружения:
+ * в ней настоящая причина (её status виден в логе).
+ *
  * @param {'verifyAndDecodeTransaction'|'verifyAndDecodeNotification'|'verifyAndDecodeRenewalInfo'} method
  * @param {string} jws
  */
 async function verifySignedData(method, jws) {
   const primary = primaryEnvName();
   const secondary = primary === 'production' ? 'sandbox' : 'production';
+
+  let primaryErr;
   try {
     return await getVerifierFor(primary)[method](jws);
   } catch (err) {
-    if (!err || err.status !== 5) throw err;
+    primaryErr = err;
+  }
+
+  try {
+    const result = await getVerifierFor(secondary)[method](jws);
     if (!envFallbackWarned) {
       envFallbackWarned = true;
-      logger.warn('Apple verify: INVALID_ENVIRONMENT, fallback на другое окружение', {
+      logger.warn('Apple verify: сработал fallback на другое окружение', {
         method,
         primary,
         fallback: secondary,
+        primaryStatus: primaryErr && primaryErr.status,
       });
     }
-    return getVerifierFor(secondary)[method](jws);
+    return result;
+  } catch (secondaryErr) {
+    logger.warn('Apple verify: чек отклонён обоими окружениями', {
+      method,
+      primary,
+      primaryStatus: primaryErr && primaryErr.status,
+      secondaryStatus: secondaryErr && secondaryErr.status,
+    });
+    throw primaryErr;
   }
 }
 
