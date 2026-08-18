@@ -31,7 +31,17 @@ import '../services/purchase_service.dart';
 /// должна уезжать в ревью Apple. Подмена даты остаётся в season_window.dart
 /// (debugNowOverride) и вызывается только из кода при отладке.
 class PaywallScreen extends ConsumerStatefulWidget {
-  const PaywallScreen({super.key});
+  const PaywallScreen({super.key, this.showClose = true});
+
+  /// Показывать крестик закрытия в шапке.
+  ///
+  /// ⛔️ 18.08.2026 — когда пейвол открыт как ОТДЕЛЬНЫЙ экран (с главной, из
+  /// карточек клуба, по маршруту /paywall), крестик нужен и работает: там есть
+  /// что снять со стека. Но в табе «Клуб» без подписки пейвол подставляется
+  /// как обычный виджет внутрь ShellRoute (club_screen.dart), маршрута нет, и
+  /// maybePop() молча ничего не делает — кнопка выглядела сломанной. Там
+  /// передаётся showClose: false, выход из таба — нижней навигацией.
+  final bool showClose;
 
   // Легальные страницы (A3). Отдаются Express'ом с api.chitatel.app —
   // те же URL указаны в App Store Connect (Privacy Policy / EULA).
@@ -72,10 +82,13 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.background,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: AppColors.textPrimary),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
+        leading: widget.showClose
+            ? IconButton(
+                icon: const Icon(Icons.close, color: AppColors.textPrimary),
+                onPressed: () => Navigator.of(context).maybePop(),
+              )
+            : null,
+        automaticallyImplyLeading: false,
         centerTitle: true,
         title: Text('Клуб ЧИТАТЕЛЬ', style: AppTypography.screenTitle),
       ),
