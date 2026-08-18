@@ -78,7 +78,9 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
         if (_isSubscriptionRequired(err)) {
           // Пока подбираем архив — лоадер, чтобы paywall не мигал зря.
           if (_resolvingArchive) return const _LoadingView();
-          return const PaywallScreen();
+          // showClose: false — пейвол здесь встроен в таб, а не открыт
+          // маршрутом; крестик снимать нечего (см. PaywallScreen.showClose).
+          return const PaywallScreen(showClose: false);
         }
         return ErrorView(
           message: 'Не удалось загрузить клуб',
