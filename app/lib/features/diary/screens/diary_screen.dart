@@ -7,6 +7,7 @@ import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/app_top_bar.dart';
+import '../../../core/utils/plural.dart';
 import '../models/quote.dart';
 import '../providers/diary_provider.dart';
 import '../widgets/quote_card.dart';
@@ -232,9 +233,19 @@ class _StatsRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _StatItem(value: '${stats.quotesCount}', label: 'цитат'),
-          _StatItem(value: '${stats.analysesCount}', label: 'анализов'),
-          _StatItem(value: '${stats.streakDays}', label: 'дней подряд'),
+          _StatItem(
+            value: '${stats.quotesCount}',
+            label: plural(stats.quotesCount, 'цитата', 'цитаты', 'цитат'),
+          ),
+          _StatItem(
+            value: '${stats.analysesCount}',
+            label: plural(stats.analysesCount, 'анализ', 'анализа', 'анализов'),
+          ),
+          _StatItem(
+            value: '${stats.streakDays}',
+            label: plural(
+                stats.streakDays, 'день подряд', 'дня подряд', 'дней подряд'),
+          ),
         ],
       ),
     );
