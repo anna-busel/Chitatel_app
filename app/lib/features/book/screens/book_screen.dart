@@ -14,6 +14,7 @@ import '../../auth/providers/auth_provider.dart';
 import '../../catalog/providers/catalog_provider.dart';
 import '../../catalog/providers/packages_provider.dart';
 import '../../payments/providers/product_purchase_provider.dart';
+import '../../payments/providers/store_prices_provider.dart';
 import '../../player/providers/player_provider.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../providers/book_provider.dart';
@@ -517,7 +518,7 @@ class _FreeActions extends StatelessWidget {
 // (правило 3.1.1, послабления 3.1.1(a) действуют только в US storefront).
 // Поэтому здесь ТОЛЬКО IAP-кнопка и превью. Никаких ссылок на внешние сайты.
 
-class _PaidActions extends StatelessWidget {
+class _PaidActions extends ConsumerWidget {
   const _PaidActions({
     required this.book,
     required this.hasAudio,
@@ -543,8 +544,12 @@ class _PaidActions extends StatelessWidget {
   final VoidCallback onPreview;
 
   @override
-  Widget build(BuildContext context) {
-    final priceLabel = book.displayPriceUsd;
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 1.0.1: живая цена StoreKit (валюта сторфронта покупателя), БД — запасной
+    // вариант, пока StoreKit не ответил.
+    ref.read(storePricesProvider.notifier).ensure([book.appleProductId]);
+    final priceLabel = ref.watch(storePricesProvider)[book.appleProductId] ??
+        book.displayPriceUsd;
     final buyText =
         priceLabel != null ? 'Купить за $priceLabel' : 'Купить разбор';
 
@@ -570,6 +575,16 @@ class _PaidActions extends StatelessWidget {
           const SizedBox(height: 10),
           _DisabledAudioHint(),
         ],
+        // 1.0.1: в части стран Apple добавляет налог при списании — честно
+        // предупреждаем. Формулировка верна и для стран с налогом в цене.
+        const SizedBox(height: 8),
+        Text(
+          'Итоговая сумма с учётом налогов — в окне оплаты Apple',
+          textAlign: TextAlign.center,
+          style: AppTypography.caption.copyWith(
+            color: AppColors.textSecondary,
+          ),
+        ),
       ],
     );
   }
