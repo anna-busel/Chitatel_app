@@ -5,6 +5,7 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/plural.dart';
 import '../../../shared/widgets/app_top_bar.dart';
 import '../models/report_summary.dart';
 import '../models/weekly_report.dart';
@@ -112,9 +113,20 @@ class _Content extends StatelessWidget {
           ),
           child: Row(
             children: [
-              _StatItem(value: '${report.stats.quotesCount}', label: 'цитат'),
-              _StatItem(value: '${report.stats.uniqueAuthors}', label: 'авторов'),
-              _StatItem(value: '${report.stats.activeDays}', label: 'дней'),
+              _StatItem(
+                value: '${report.stats.quotesCount}',
+                label: plural(
+                    report.stats.quotesCount, 'цитата', 'цитаты', 'цитат'),
+              ),
+              _StatItem(
+                value: '${report.stats.uniqueAuthors}',
+                label: plural(
+                    report.stats.uniqueAuthors, 'автор', 'автора', 'авторов'),
+              ),
+              _StatItem(
+                value: '${report.stats.activeDays}',
+                label: plural(report.stats.activeDays, 'день', 'дня', 'дней'),
+              ),
             ],
           ),
         ),
