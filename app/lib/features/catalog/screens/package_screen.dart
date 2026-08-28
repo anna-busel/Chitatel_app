@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/models/book_model.dart';
 import '../../../shared/models/package_model.dart';
+import '../../payments/providers/store_prices_provider.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
@@ -64,9 +65,12 @@ class _PackageBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final price = package.displayPriceUsd;
-    final buyText = price != null ? 'Купить пакет за $price' : 'Купить пакет';
     final productId = package.appleProductId;
+    // 1.0.1: живая цена StoreKit, БД — запасной вариант.
+    ref.read(storePricesProvider.notifier).ensure([productId]);
+    final price =
+        ref.watch(storePricesProvider)[productId] ?? package.displayPriceUsd;
+    final buyText = price != null ? 'Купить пакет за $price' : 'Купить пакет';
 
     // Реакция на результат покупки ИМЕННО этого пакета (провайдер общий на все
     // товары, поэтому сверяем productId).
