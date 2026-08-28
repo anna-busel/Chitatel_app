@@ -8,6 +8,7 @@ import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../payments/providers/product_purchase_provider.dart';
+import '../../payments/providers/store_prices_provider.dart';
 
 /// Шторка покупки в плеере — поднимается, когда закончился 5-мин отрывок-превью
 /// (или юзер упёрся в платную часть). «Купить» запускает StoreKit-покупку прямо
@@ -40,7 +41,10 @@ class PaywallSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final productId = book.appleProductId;
-    final price = book.displayPriceUsd;
+    // 1.0.1: живая цена StoreKit, БД — запасной вариант.
+    ref.read(storePricesProvider.notifier).ensure([productId]);
+    final price =
+        ref.watch(storePricesProvider)[productId] ?? book.displayPriceUsd;
     final pkg = book.package;
 
     // Реакция на результат покупки ИМЕННО этого разбора.
