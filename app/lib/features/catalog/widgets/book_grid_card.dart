@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../features/payments/providers/store_prices_provider.dart';
 import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 
@@ -13,7 +15,7 @@ import '../../../shared/widgets/book_cover_image.dart';
 /// Структура: обложка (соотношение 2:3) + название + автор + статус/цена.
 /// Нижняя строка: «Бесплатно» / «Куплено» (тёмно-зелёный) либо цена (винный).
 /// Без рейтинга и длительности — этих данных в БД пока нет.
-class BookGridCard extends StatelessWidget {
+class BookGridCard extends ConsumerWidget {
   const BookGridCard({
     super.key,
     required this.book,
@@ -24,9 +26,13 @@ class BookGridCard extends StatelessWidget {
   final double coverWidth;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final coverHeight = coverWidth * 1.5; // соотношение 2:3
-    final price = book.displayPriceUsd;
+    // 1.0.1: цена — живая из StoreKit (валюта сторфронта покупателя),
+    // приценка из БД остаётся запасной, пока StoreKit не ответил.
+    ref.read(storePricesProvider.notifier).ensure([book.appleProductId]);
+    final price = ref.watch(storePricesProvider)[book.appleProductId] ??
+        book.displayPriceUsd;
     // «Куплено» показываем только для платных купленных (у бесплатных свой бейдж).
     final showBought = !book.isFree && book.isOwned;
 
