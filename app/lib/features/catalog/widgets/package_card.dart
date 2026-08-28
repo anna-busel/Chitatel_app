@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../features/payments/providers/store_prices_provider.dart';
 import '../../../shared/models/package_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 
@@ -12,7 +14,7 @@ import '../../../shared/widgets/book_cover_image.dart';
 ///
 /// Тип (ПАКЕТ / ФАКУЛЬТАТИВ) показываем МЕТКОЙ-надстрочником над названием
 /// (по packageSlug), а не плашкой на обложке — чище и как на экране пакета.
-class PackageCard extends StatelessWidget {
+class PackageCard extends ConsumerWidget {
   const PackageCard({
     super.key,
     required this.package,
@@ -23,9 +25,12 @@ class PackageCard extends StatelessWidget {
   final double coverWidth;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final coverHeight = coverWidth * 1.5; // соотношение 2:3
-    final price = package.displayPriceUsd;
+    // 1.0.1: живая цена StoreKit, БД — запасной вариант.
+    ref.read(storePricesProvider.notifier).ensure([package.appleProductId]);
+    final price = ref.watch(storePricesProvider)[package.appleProductId] ??
+        package.displayPriceUsd;
 
     return InkWell(
       onTap: () => context.push(Routes.package(package.id)),
