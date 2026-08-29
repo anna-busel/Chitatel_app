@@ -47,15 +47,25 @@ router.get('/', async (req, res, next) => {
       Purchase.countDocuments(filter),
       // Реальная выручка (Apple) по текущему фильтру — для шапки списка.
       Purchase.aggregate([
-        { $match: { ...filter, platform: 'apple' } },
+        {
+          $match: {
+            ...filter,
+            platform: 'apple',
+            environment: { $ne: 'sandbox' },
+          },
+        },
         { $group: { _id: null, sum: { $sum: '$priceUsd' } } },
       ]),
     ]);
 
     const items = rows.map((p) => ({
       id: String(p._id),
+      // id пользователя — для перехода из строки оплаты в карточку «Люди».
+      userId: p.userId ? String(p.userId._id) : null,
       userName: p.userId ? p.userId.name || '' : '',
       userEmail: p.userId ? p.userId.email || '' : '',
+      // sandbox = тестовая покупка (TestFlight/ревью), в выручке не считается.
+      environment: p.environment || 'production',
       itemType: p.itemType,
       itemLabel: TYPE_LABEL[p.itemType] || p.itemType,
       itemId: p.itemId || '',
