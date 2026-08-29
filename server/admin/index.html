@@ -889,7 +889,8 @@ async function loadPayments(){
     if(!d.items.length){ el.innerHTML=head+'<div class="empty">Оплат нет</div>'; return; }
     el.innerHTML=head+'<div class="card" style="padding:4px 12px">'+d.items.map(function(p){
       var who=esc(p.userName||p.userEmail||'—');
-      var badge=p.isApple?'<span class="badge b-basic">Apple</span>':'<span class="badge b-exp">вручную</span>';
+      if(p.userId){ who='<a href="#" style="color:inherit;text-decoration:underline" onclick="tab(\'people\');openUser(\''+p.userId+'\');return false">'+who+'</a>'; }
+      var badge=p.isApple?(p.environment==='sandbox'?'<span class="badge b-exp">sandbox</span>':'<span class="badge b-basic">Apple</span>'):'<span class="badge b-exp">вручную</span>';
       var sum=p.isApple?money(p.priceUsd):'—';
       var item=esc(p.itemLabel)+(p.itemId?(' · '+esc(p.itemId)):'');
       return '<div class="trow"><span class="tn">'+who+' · '+item+'</span>'+
