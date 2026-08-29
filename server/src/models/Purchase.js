@@ -46,6 +46,17 @@ const purchaseSchema = new mongoose.Schema(
       default: 'apple',
     },
 
+    // Окружение Apple (26.08.2026): sandbox-покупки (TestFlight, тесты
+    // разработчика, ревьюеры Apple) не деньги — аналитика их не считает.
+    // Заполняется в applyTransaction из декодированной транзакции
+    // (tx.environment). Старые записи помечены разовым скриптом
+    // scripts/mark-sandbox-purchases.js.
+    environment: {
+      type: String,
+      enum: ['production', 'sandbox'],
+      default: 'production',
+    },
+
     // Apple originalTransactionId — стабильный идентификатор покупки/подписки
     // (через renew остаётся тем же). Уникален, чтобы повторная верификация
     // того же чека обновляла запись, а не плодила дубликаты.
