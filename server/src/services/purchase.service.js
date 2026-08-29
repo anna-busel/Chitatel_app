@@ -331,6 +331,12 @@ async function applyTransaction({
         itemType: mapped.itemType,
         itemId: mapped.itemId,
         platform: 'apple',
+        // sandbox/production из самой транзакции Apple (поле environment в
+        // JWS-payload). Sandbox-покупки не попадают в выручку админки.
+        environment:
+          String(tx.environment || '').toLowerCase() === 'sandbox'
+            ? 'sandbox'
+            : 'production',
         appleProductId: productId,
         expiresAt,
         status,
