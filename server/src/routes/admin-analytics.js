@@ -154,7 +154,7 @@ router.get('/', async (req, res, next) => {
     ] = await Promise.all([
       // Ряд по дням/месяцам за выбранный диапазон (Apple / вручную).
       Purchase.aggregate([
-        { $match: { purchasedAt: { $gte: sinceRange } } },
+        { $match: { purchasedAt: { $gte: sinceRange }, environment: { $ne: 'sandbox' } } },
         {
           $group: {
             _id: bucketExpr,
@@ -166,7 +166,7 @@ router.get('/', async (req, res, next) => {
       ]),
       // Итоги за выбранный диапазон (Apple / вручную).
       Purchase.aggregate([
-        { $match: { purchasedAt: { $gte: sinceRange } } },
+        { $match: { purchasedAt: { $gte: sinceRange }, environment: { $ne: 'sandbox' } } },
         {
           $group: {
             _id: null,
@@ -179,7 +179,7 @@ router.get('/', async (req, res, next) => {
       ]),
       // По типам за выбранный диапазон (Apple / вручную, суммы и количества).
       Purchase.aggregate([
-        { $match: { purchasedAt: { $gte: sinceRange } } },
+        { $match: { purchasedAt: { $gte: sinceRange }, environment: { $ne: 'sandbox' } } },
         {
           $group: {
             _id: '$itemType',
@@ -192,7 +192,7 @@ router.get('/', async (req, res, next) => {
       ]),
       // Быстрые итоги выручки (только Apple) за 7/30/90/365 дней и за всё время.
       Purchase.aggregate([
-        { $match: { platform: 'apple' } },
+        { $match: { platform: 'apple', environment: { $ne: 'sandbox' } } },
         {
           $group: {
             _id: null,
@@ -225,7 +225,7 @@ router.get('/', async (req, res, next) => {
       // itemId: это bookSlug (см. purchase.service и grant-book), одинаковый
       // для всех покупок одного разбора, — поэтому дублей одной книги не будет.
       Purchase.aggregate([
-        { $match: { itemType: 'book', platform: 'apple', itemId: { $ne: null } } },
+        { $match: { itemType: 'book', platform: 'apple', itemId: { $ne: null }, environment: { $ne: 'sandbox' } } },
         {
           $group: {
             _id: '$itemId',
@@ -272,6 +272,7 @@ router.get('/', async (req, res, next) => {
       Purchase.countDocuments({
         itemType: 'subscription',
         platform: 'apple',
+        environment: { $ne: 'sandbox' },
         purchasedAt: { $gte: since7 },
       }),
       Purchase.countDocuments({
