@@ -217,6 +217,20 @@ function applyAppleProductId(book) {
   book.appleProductId = book.isFree ? null : `book.${book.bookSlug}`;
 }
 
+// Клубный разбор (isPartOfClub) не продаётся отдельно: его нет в каталоге,
+// доступ даёт только подписка на клуб (books.js checkPartAccess →
+// userHasBookAccess → clubMonthsEntitled). Поэтому isFree/цены/IAP-продукт
+// для него принудительно пустые — что бы ни пришло из формы. «Бесплатный»
+// клубный разбор был бы дырой: checkPartAccess при isFree отдаёт аудио всем
+// без авторизации, то есть в обход подписки.
+function applyClubExclusive(book) {
+  book.isFree = false;
+  book.priceRub = null;
+  book.priceUsd = null;
+  book.priceByn = null;
+  book.appleProductId = null;
+}
+
 /* ================================================================== *
  *                            КАТЕГОРИИ                               *
  * ================================================================== */
@@ -367,6 +381,7 @@ router.post('/', validate(upsertSchema), async (req, res, next) => {
       isPartOfClub: data.isClubExclusive === true,
     });
     applyAppleProductId(book);
+    if (book.isPartOfClub) applyClubExclusive(book);
     await book.save();
 
     return success(res, { book: serializeBook(book) }, 201);
@@ -407,6 +422,7 @@ router.patch('/:id', validate(upsertSchema), async (req, res, next) => {
     book.purchaseUrl = data.purchaseUrl;
     book.freeChapterIndex = data.freeChapterIndex;
     applyAppleProductId(book);
+    if (book.isPartOfClub) applyClubExclusive(book);
     await book.save();
 
     return success(res, { book: serializeBook(book) });

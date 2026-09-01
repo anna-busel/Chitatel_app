@@ -94,15 +94,31 @@ async function markBookInClub(bookId, year, month) {
   );
 }
 
+// Отвязка разбора от клуба (смена книги / удаление клуба). Снимаем только
+// clubMonth: флаг isPartOfClub ОСТАЁТСЯ — клубный разбор эксклюзивен навсегда.
+// Раньше флаг сбрасывался, и опубликованный разбор после удаления клуба
+// всплывал в общем каталоге (books.js фильтрует по isPartOfClub), а заново
+// привязать его к клубу было уже нельзя (см. assertClubBook).
 async function unmarkBookIfUnused(bookId, exceptClubId) {
   const stillUsed = await ClubMonth.exists({
     bookId,
     _id: { $ne: exceptClubId },
   });
   if (!stillUsed) {
-    await Book.updateOne(
-      { _id: bookId },
-      { $set: { isPartOfClub: false, clubMonth: null } }
+    await Book.updateOne({ _id: bookId }, { $set: { clubMonth: null } });
+  }
+}
+
+// К клубу привязывается ТОЛЬКО разбор, созданный для клуба (кнопка «Создать
+// разбор для клуба» → isPartOfClub с рождения). Обычный каталожный разбор
+// сюда не пускаем: markBookInClub поставил бы ему isPartOfClub и он молча
+// исчез бы из каталога, «Популярного» и главной для всех покупательниц.
+function assertClubBook(book) {
+  if (!book.isPartOfClub) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'Этот разбор из общего каталога. Для клуба выберите разбор, созданный кнопкой «Создать разбор для клуба»',
+      400
     );
   }
 }
@@ -184,6 +200,7 @@ router.post('/', validate(clubSchema), async (req, res, next) => {
     if (!book) {
       throw new AppError('NOT_FOUND', 'Разбор для клуба не найден', 404);
     }
+    assertClubBook(book);
 
     // month/year: из payload или выводим из startsAt (UTC — детерминированно).
     const year = data.year || data.startsAt.getUTCFullYear();
@@ -250,6 +267,7 @@ router.patch('/:id', validate(clubSchema), async (req, res, next) => {
     if (!book) {
       throw new AppError('NOT_FOUND', 'Разбор для клуба не найден', 404);
     }
+    assertClubBook(book);
 
     const year = data.year || data.startsAt.getUTCFullYear();
     const month = data.month || data.startsAt.getUTCMonth() + 1;
