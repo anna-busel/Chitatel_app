@@ -1,7 +1,7 @@
 name: chitatel_app
 description: "ЧИТАТЕЛЬ — книжный клуб Анны Бусел"
 publish_to: 'none'
-version: 1.0.1+1
+version: 1.0.2+1
 
 environment:
   sdk: '>=3.6.0 <4.0.0'

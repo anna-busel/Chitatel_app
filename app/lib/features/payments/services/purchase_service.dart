@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import '../../../core/network/api_client.dart';
@@ -105,5 +106,30 @@ class PurchaseService {
       data: {'signedTransaction': signedTransaction},
     );
     return response.data['data'] as Map<String, dynamic>;
+  }
+
+  /// Транзакция принадлежит ДРУГОМУ аккаунту приложения (1.0.2).
+  ///
+  /// Сервер отвечает так — 403 PURCHASE_INVALID — когда appAccountToken в
+  /// транзакции не совпадает с текущим userId (purchase.service.js,
+  /// «Покупка принадлежит другому аккаунту»). Это окончательный отказ: сколько
+  /// StoreKit ни доставляй эту транзакцию, для этого аккаунта она своей не
+  /// станет. Если её не завершить, она висит в очереди и мешает остальным
+  /// покупкам на устройстве («не удалось начать покупку», 22.08.2026).
+  ///
+  /// Только 403. Ошибки 400 (не прошла подпись, битые данные), сеть, 5xx —
+  /// НЕ сюда: там транзакцию по-прежнему не завершаем, чтобы оплаченная
+  /// покупка не потерялась при временном сбое.
+  static bool isForeignAccountError(Object error) {
+    if (error is! DioException) return false;
+    if (error.response?.statusCode != 403) return false;
+    final data = error.response?.data;
+    if (data is Map<String, dynamic>) {
+      final err = data['error'];
+      if (err is Map<String, dynamic>) {
+        return err['code']?.toString() == 'PURCHASE_INVALID';
+      }
+    }
+    return false;
   }
 }

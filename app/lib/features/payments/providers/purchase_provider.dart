@@ -235,9 +235,26 @@ class PurchaseNotifier extends StateNotifier<PaywallState> {
       );
       // P6: complete() ТОЛЬКО после успешной верификации сервером.
       await _service.complete(purchase);
-    } catch (_) {
-      // Транзакцию НЕ завершаем: StoreKit пере-доставит её при следующем
-      // запуске, и verify повторится (иначе оплаченная покупка потерялась бы).
+    } catch (e) {
+      // 1.0.2: транзакция ДРУГОГО аккаунта приложения (403 PURCHASE_INVALID) —
+      // завершаем её на устройстве, иначе она навсегда застревает в очереди
+      // StoreKit и блокирует остальные покупки. Доступа она не даёт; у Apple
+      // покупка владельца сохраняется, он вернёт её через «Восстановить».
+      if (PurchaseService.isForeignAccountError(e)) {
+        try {
+          await _service.complete(purchase);
+        } catch (_) {
+          // Не удалось завершить — StoreKit доставит снова, попробуем ещё.
+        }
+        state = state.copyWith(
+          status: PaywallStatus.error,
+          errorMessage: 'Эта подписка оформлена под другим аккаунтом',
+        );
+        return;
+      }
+      // Остальные ошибки: транзакцию НЕ завершаем — StoreKit пере-доставит её
+      // при следующем запуске, и verify повторится (иначе оплаченная покупка
+      // потерялась бы).
       state = state.copyWith(
         status: PaywallStatus.error,
         errorMessage: isRestore
