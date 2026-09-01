@@ -31,7 +31,7 @@ import '../services/purchase_service.dart';
 /// должна уезжать в ревью Apple. Подмена даты остаётся в season_window.dart
 /// (debugNowOverride) и вызывается только из кода при отладке.
 class PaywallScreen extends ConsumerStatefulWidget {
-  const PaywallScreen({super.key, this.showClose = true});
+  const PaywallScreen({super.key, this.showClose = true, this.showAppBar = true});
 
   /// Показывать крестик закрытия в шапке.
   ///
@@ -42,6 +42,14 @@ class PaywallScreen extends ConsumerStatefulWidget {
   /// maybePop() молча ничего не делает — кнопка выглядела сломанной. Там
   /// передаётся showClose: false, выход из таба — нижней навигацией.
   final bool showClose;
+
+  /// Показывать верхнюю панель «Клуб ЧИТАТЕЛЬ».
+  ///
+  /// 1.0.2: во вкладке «Клуб» пейвол теперь рисуется ПОД шапкой-переключателем
+  /// клуба («КЛУБ СЕНТЯБРЯ · название книги ˅»), чтобы из пейвола можно было
+  /// вернуться в свой архив. Вторая шапка под первой лишняя — там передаётся
+  /// showAppBar: false. Сам пейвол (заголовок, планы, кнопки) не меняется.
+  final bool showAppBar;
 
   // Легальные страницы (A3). Отдаются Express'ом с api.chitatel.app —
   // те же URL указаны в App Store Connect (Privacy Policy / EULA).
@@ -79,19 +87,21 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        leading: widget.showClose
-            ? IconButton(
-                icon: const Icon(Icons.close, color: AppColors.textPrimary),
-                onPressed: () => Navigator.of(context).maybePop(),
-              )
-            : null,
-        automaticallyImplyLeading: false,
-        centerTitle: true,
-        title: Text('Клуб ЧИТАТЕЛЬ', style: AppTypography.screenTitle),
-      ),
+      appBar: widget.showAppBar
+          ? AppBar(
+              backgroundColor: AppColors.background,
+              elevation: 0,
+              leading: widget.showClose
+                  ? IconButton(
+                      icon: const Icon(Icons.close, color: AppColors.textPrimary),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    )
+                  : null,
+              automaticallyImplyLeading: false,
+              centerTitle: true,
+              title: Text('Клуб ЧИТАТЕЛЬ', style: AppTypography.screenTitle),
+            )
+          : null,
       body: SafeArea(child: _buildBody(context, state)),
     );
   }

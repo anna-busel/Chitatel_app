@@ -109,6 +109,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     // новый юзер попадает в клуб, который выбрал предыдущий (симптом 2 выше).
     _ref.invalidate(homeProvider);
     _ref.invalidate(selectedClubIdProvider);
+    _ref.invalidate(clubArchiveFallbackProvider);
+    _ref.invalidate(clubManualCurrentProvider);
     _ref.invalidate(currentClubProvider);
     _ref.invalidate(clubListProvider);
   }

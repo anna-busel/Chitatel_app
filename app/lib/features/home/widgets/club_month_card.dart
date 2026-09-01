@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
@@ -6,6 +7,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
+import '../../club/providers/club_provider.dart';
 
 /// Карточка «Клуб месяца» на главной.
 /// Баннер с обложкой книги, названием клуба, кнопкой «Подробнее».
@@ -16,7 +18,14 @@ import '../../../shared/widgets/book_cover_image.dart';
 ///
 /// Если clubBook == null (в БД нет книги клуба текущего месяца) —
 /// показываем нейтральный плейсхолдер-баннер с приглашением в клуб.
-class ClubMonthCard extends StatelessWidget {
+///
+/// ⚠️ 1.0.2 (01.09.2026): тап — это явный выбор ТЕКУЩЕГО клуба. Раньше карточка
+/// просто открывала вкладку, а там подписчицу прошлого месяца встречал её
+/// архив (M1), и «Подробнее» про новый клуб выглядело как «ничего не
+/// произошло». Теперь перед переходом сбрасываем выбранный клуб на текущий и
+/// помечаем выбор ручным (clubManualCurrentProvider): без доступа вкладка
+/// покажет пейвол нового клуба с шапкой-переключателем, с доступом — сам клуб.
+class ClubMonthCard extends ConsumerWidget {
   const ClubMonthCard({
     super.key,
     required this.book,
@@ -28,11 +37,16 @@ class ClubMonthCard extends StatelessWidget {
   final String? monthLabel;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenPadding),
       child: InkWell(
-        onTap: () => context.go(Routes.club),
+        onTap: () {
+          ref.read(clubManualCurrentProvider.notifier).state = true;
+          ref.read(clubArchiveFallbackProvider.notifier).state = null;
+          ref.read(selectedClubIdProvider.notifier).state = null;
+          context.go(Routes.club);
+        },
         borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
         child: Container(
           decoration: BoxDecoration(
