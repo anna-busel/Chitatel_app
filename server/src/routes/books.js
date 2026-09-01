@@ -147,8 +147,12 @@ router.get('/search', optionalAuth, async (req, res, next) => {
     const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const rx = new RegExp(escaped, 'i');
 
+    // isPartOfClub исключаем, как в списке каталога выше: клубный разбор
+    // эксклюзивен, в поиске его быть не должно (01.09.2026 — клубный разбор
+    // сентября нашёлся в поиске и открывался карточкой с «Купить»).
     const books = await Book.find({
       isPublished: true,
+      isPartOfClub: { $ne: true },
       $or: [{ title: rx }, { author: rx }],
     })
       .select('-parts.audioFilename')
