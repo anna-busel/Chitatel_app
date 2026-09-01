@@ -155,7 +155,12 @@ class _PackageBody extends ConsumerWidget {
         // (не нажимается — разборы слушаются со своих экранов, они уже
         // разблокированы). Иначе — кнопка покупки.
         if (package.hasAccess)
-          const _BoughtButton()
+          // 1.0.2: админу — «Доступ администратора» (см. isAdminProvider).
+          _BoughtButton(
+            label: ref.watch(isAdminProvider)
+                ? 'Доступ администратора'
+                : 'Куплено',
+          )
         else
           AppButton(
             text: buyText,
@@ -193,7 +198,9 @@ class _PackageBody extends ConsumerWidget {
 /// AppButton, но не интерактивная. Показывается на месте «Купить пакет» сразу
 /// после покупки (package.hasAccess).
 class _BoughtButton extends StatelessWidget {
-  const _BoughtButton();
+  const _BoughtButton({required this.label});
+
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -211,7 +218,7 @@ class _BoughtButton extends StatelessWidget {
             const Icon(Icons.check_rounded, color: Colors.white, size: 20),
             const SizedBox(width: 8),
             Text(
-              'Куплено',
+              label,
               style: AppTypography.button.copyWith(color: Colors.white),
             ),
           ],

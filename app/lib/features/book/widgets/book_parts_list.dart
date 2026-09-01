@@ -91,6 +91,11 @@ class BookPartsList extends ConsumerWidget {
     final bool isListened = listenedPartNumbers.contains(part.number);
     final bool isPreview =
         !isPurchased && !book.isFree && part.isPreviewAvailable;
+    // 1.0.2: приветствие Анны в клубном разборе грузится первой частью с
+    // названием «Приветствие». Подпись «ЧАСТЬ 1» над ним сбивает нумерацию
+    // («Часть 2 · Часть 1»), поэтому у приветствия показываем только название,
+    // а дальше части идут со своими номерами.
+    final bool isGreeting = _isGreeting(part);
 
     return Opacity(
       opacity: isLocked ? 0.4 : 1.0,
@@ -120,7 +125,7 @@ class BookPartsList extends ConsumerWidget {
                     Row(
                       children: [
                         Text(
-                          'Часть ${part.number}',
+                          isGreeting ? 'Приветствие' : 'Часть ${part.number}',
                           style: AppTypography.microBold.copyWith(
                             color: AppColors.terracotta,
                             letterSpacing: 0.5,
@@ -138,7 +143,12 @@ class BookPartsList extends ConsumerWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      part.title,
+                      // У приветствия название совпадает с подписью —
+                      // вместо дубля показываем, от кого оно.
+                      isGreeting &&
+                              part.title.trim().toLowerCase() == 'приветствие'
+                          ? 'Анна Бусел'
+                          : part.title,
                       style: AppTypography.bodyMedium,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -156,6 +166,14 @@ class BookPartsList extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Приветствие ведущей: первая часть, названная «Приветствие» (так её
+  /// загружает админка по инструкции CLUB-UPLOAD-GUIDE). Сравнение без учёта
+  /// регистра и с допуском «Приветствие от Анны».
+  bool _isGreeting(BookPart part) {
+    if (part.number != 1) return false;
+    return part.title.trim().toLowerCase().startsWith('приветствие');
   }
 
   /// Часть заблокирована для платной книги если она не куплена

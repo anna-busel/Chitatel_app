@@ -15,6 +15,7 @@ import '../../catalog/providers/catalog_provider.dart';
 import '../../catalog/providers/packages_provider.dart';
 import '../../payments/providers/product_purchase_provider.dart';
 import '../../payments/providers/store_prices_provider.dart';
+import '../../payments/screens/paywall_screen.dart';
 import '../../player/providers/player_provider.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../providers/book_provider.dart';
@@ -451,6 +452,24 @@ class _ActionSection extends ConsumerWidget {
       );
     }
 
+    // 1.0.2: разбор клуба без доступа. Он не продаётся отдельно (в каталоге его
+    // нет, appleProductId = null — см. admin-catalog applyClubExclusive), доступ
+    // даёт только подписка на клуб. Раньше сюда попадала общая ветка 4.13 с
+    // «Купить разбор» без цены — кнопка была неактивна и ничего не объясняла.
+    if (book.isPartOfClub) {
+      return _ClubOnlyActions(
+        onSubscribe: () {
+          if (ref.read(authProvider).status != AuthStatus.authenticated) {
+            context.push(Routes.login);
+            return;
+          }
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PaywallScreen()),
+          );
+        },
+      );
+    }
+
     // Вариант 4.13: платная без доступа
     final purchase = ref.watch(productPurchaseProvider);
     final isBuying = productId != null &&
@@ -584,6 +603,52 @@ class _PaidActions extends ConsumerWidget {
           style: AppTypography.caption.copyWith(
             color: AppColors.textSecondary,
           ),
+        ),
+      ],
+    );
+  }
+}
+
+// — 1.0.2: разбор клуба без доступа —
+// Отдельно не продаётся: только подписка на клуб. Кнопка ведёт на пейвол.
+
+class _ClubOnlyActions extends StatelessWidget {
+  const _ClubOnlyActions({required this.onSubscribe});
+
+  final VoidCallback onSubscribe;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.terracotta.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+            border: Border.all(color: AppColors.terracotta.withOpacity(0.35)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.groups_outlined,
+                  size: 20, color: AppColors.terracotta),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Разбор книжного клуба — доступен участницам по подписке',
+                  style: AppTypography.caption.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        AppButton(
+          text: 'Оформить подписку на клуб',
+          onPressed: onSubscribe,
         ),
       ],
     );

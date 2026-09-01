@@ -6,6 +6,7 @@ import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../features/payments/providers/store_prices_provider.dart';
+import '../../../features/profile/providers/profile_provider.dart';
 import '../../../shared/models/package_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 
@@ -31,6 +32,8 @@ class PackageCard extends ConsumerWidget {
     ref.read(storePricesProvider.notifier).ensure([package.appleProductId]);
     final price = ref.watch(storePricesProvider)[package.appleProductId] ??
         package.displayPriceUsd;
+    // 1.0.2: админу — «Доступ админа» вместо «Куплено» (см. isAdminProvider).
+    final isAdmin = package.hasAccess && ref.watch(isAdminProvider);
 
     return InkWell(
       onTap: () => context.push(Routes.package(package.id)),
@@ -75,7 +78,7 @@ class PackageCard extends ConsumerWidget {
           // Иначе — цена. Доступ считает сервер (package.hasAccess в списке).
           if (package.hasAccess)
             Text(
-              'Куплено',
+              isAdmin ? 'Доступ админа' : 'Куплено',
               style: AppTypography.bodyBold.copyWith(
                 color: AppColors.freeBadge,
               ),

@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../features/payments/providers/store_prices_provider.dart';
+import '../../../features/profile/providers/profile_provider.dart';
 import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 
@@ -35,6 +36,9 @@ class BookGridCard extends ConsumerWidget {
         book.displayPriceUsd;
     // «Куплено» показываем только для платных купленных (у бесплатных свой бейдж).
     final showBought = !book.isFree && book.isOwned;
+    // 1.0.2: админу сервер отдаёт доступ ко всему — подписываем честно.
+    // isAdminProvider читаем только при showBought (гостю профиль не грузим).
+    final isAdmin = showBought && ref.watch(isAdminProvider);
 
     return InkWell(
       onTap: () => context.push(Routes.book(book.id)),
@@ -100,7 +104,7 @@ class BookGridCard extends ConsumerWidget {
             )
           else if (showBought)
             Text(
-              'Куплено',
+              isAdmin ? 'Доступ админа' : 'Куплено',
               style: AppTypography.bodyBold.copyWith(
                 color: AppColors.freeBadge,
               ),

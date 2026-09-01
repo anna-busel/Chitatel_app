@@ -16,6 +16,16 @@ final profileProvider =
   return ProfileNotifier(ref.read(profileServiceProvider));
 });
 
+/// Текущий пользователь — админ (role == 'admin' в профиле). 1.0.2: карточки
+/// каталога и пакетов показывают админу «Доступ админа» вместо «Куплено» —
+/// сервер отдаёт админу hasAccess=true на всё, и «Куплено» на 50 разборах
+/// пугало Анну (29.08.2026, «у Алёны всё куплено» — смотрела со своего
+/// аккаунта). ⚠️ Смотреть только там, где доступ уже есть: у гостя профиль
+/// не грузим (401 → лишний refresh/logout-цикл).
+final isAdminProvider = Provider<bool>((ref) {
+  return ref.watch(profileProvider).valueOrNull?.isAdmin ?? false;
+});
+
 class ProfileNotifier extends StateNotifier<AsyncValue<UserProfile>> {
   ProfileNotifier(this._service) : super(const AsyncValue.loading()) {
     load();
