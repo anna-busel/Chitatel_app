@@ -39,10 +39,13 @@ const router = Router();
  */
 router.get('/', optionalAuth, async (req, res, next) => {
   try {
+    // appleProductId обязателен: с 1.0.1 карточки «Популярного» берут живую
+    // цену StoreKit по productId, без него клиент падал на статичный priceUsd
+    // из БД (01.09.2026 — на главной были «старые» цены, в каталоге верные).
     const bookFields =
       'title author coverImageUrl coverGradientColors coverLabel bookSlug ' +
       'durationTotal rating reviewCount priceUsd priceRub priceByn isFree isPartOfClub ' +
-      'categories parts';
+      'appleProductId categories parts';
 
     // Бесплатные разборы
     const freeBooks = await Book.find({ isPublished: true, isFree: true })
