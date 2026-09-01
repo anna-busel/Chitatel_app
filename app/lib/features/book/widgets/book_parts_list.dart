@@ -92,10 +92,23 @@ class BookPartsList extends ConsumerWidget {
     final bool isPreview =
         !isPurchased && !book.isFree && part.isPreviewAvailable;
     // 1.0.2: приветствие Анны в клубном разборе грузится первой частью с
-    // названием «Приветствие». Подпись «ЧАСТЬ 1» над ним сбивает нумерацию
-    // («Часть 2 · Часть 1»), поэтому у приветствия показываем только название,
-    // а дальше части идут со своими номерами.
+    // названием «Приветствие» (см. docs/CLUB-UPLOAD-GUIDE.md). Тогда:
+    // — у него подпись «Приветствие», а не «Часть 1»;
+    // — остальные части нумеруются со сдвигом, чтобы совпадать с тем, как их
+    //   назвала админка: файл «Часть 1» лежит вторым и показывается как
+    //   «Часть 1», а не «Часть 2».
     final bool isGreeting = _isGreeting(part);
+    final int displayNumber = _hasGreeting ? part.number - 1 : part.number;
+    final String label = isGreeting ? 'Приветствие' : 'Часть $displayNumber';
+    // Название дублирует подпись («Часть 1 · Часть 1») — второй строки не надо.
+    final String subtitle = isGreeting
+        ? (part.title.trim().toLowerCase() == 'приветствие'
+            ? 'Анна Бусел'
+            : part.title)
+        : part.title;
+    final bool showSubtitle =
+        subtitle.trim().isNotEmpty &&
+            subtitle.trim().toLowerCase() != label.trim().toLowerCase();
 
     return Opacity(
       opacity: isLocked ? 0.4 : 1.0,
@@ -125,7 +138,7 @@ class BookPartsList extends ConsumerWidget {
                     Row(
                       children: [
                         Text(
-                          isGreeting ? 'Приветствие' : 'Часть ${part.number}',
+                          label,
                           style: AppTypography.microBold.copyWith(
                             color: AppColors.terracotta,
                             letterSpacing: 0.5,
@@ -141,18 +154,15 @@ class BookPartsList extends ConsumerWidget {
                         ],
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      // У приветствия название совпадает с подписью —
-                      // вместо дубля показываем, от кого оно.
-                      isGreeting &&
-                              part.title.trim().toLowerCase() == 'приветствие'
-                          ? 'Анна Бусел'
-                          : part.title,
-                      style: AppTypography.bodyMedium,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    if (showSubtitle) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: AppTypography.bodyMedium,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -175,6 +185,11 @@ class BookPartsList extends ConsumerWidget {
     if (part.number != 1) return false;
     return part.title.trim().toLowerCase().startsWith('приветствие');
   }
+
+  /// В разборе есть приветствие первой частью — значит нумерацию остальных
+  /// частей показываем со сдвигом на единицу.
+  bool get _hasGreeting =>
+      book.parts.any((p) => p.number == 1 && _isGreeting(p));
 
   /// Часть заблокирована для платной книги если она не куплена
   /// И эта часть не доступна для превью.
