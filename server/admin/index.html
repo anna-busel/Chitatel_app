@@ -614,6 +614,7 @@ async function openBook(id){ try{ await loadCats(); var d=await api('/admin/cata
 
 function renderBook(){
   var b=_curBook;
+  var isClub=!!(b.isClubExclusive||b.isPartOfClub);
   var catChips=(_cats||[]).map(function(c,i){ var on=b.categories.indexOf(c.value)>=0?' on':''; return '<div class="opt'+on+'" data-i="'+i+'" onclick="chip(this)">'+esc(c.label)+'</div>'; }).join('');
   var priceFields='<div id="priceFields" style="'+(b.isFree?'display:none':'')+'">'+
     '<div class="fld"><label>Цена, $ (ориентир на карточке)</label><input id="bPriceUsd" type="number" min="0" step="0.01" value="'+(b.priceUsd!=null?b.priceUsd:'')+'"></div>'+
@@ -630,10 +631,11 @@ function renderBook(){
     partsHtml='<div class="divider"></div><div class="lbl" style="margin-top:0">Аудио-части</div>'+rows+
       '<div class="card" style="margin-top:10px">'+
         '<div class="fld"><label>Номер части</label><input id="pNum" type="number" min="1" value="'+nextPart+'"></div>'+
-        '<div class="fld"><label>Название (необязательно)</label><input id="pTitle" placeholder="Часть '+nextPart+'"></div>'+
+        '<div class="fld"><label>Название (необязательно)</label><input id="pTitle" placeholder="'+(isClub&&nextPart===1?'Приветствие от Анны':'Часть '+nextPart)+'"></div>'+
         '<div class="fld"><label>Аудиофайл (mp3, m4a, aac, wav)</label><input id="pFile" type="file" accept="audio/*"></div>'+
         '<button class="btn ghost" onclick="uploadAudio()">Загрузить часть</button>'+
-        '<div class="hint">Длительность считается автоматически на сервере (ffprobe). Повторная загрузка с тем же номером заменяет часть.</div>'+
+        '<div class="hint">Длительность считается автоматически на сервере (ffprobe). Повторная загрузка с тем же номером заменяет часть.'+
+          (isClub?' В приложении части идут по номерам («Часть 1», «Часть 2»…), под номером — ваше название. Приветствие удобно загрузить первой частью и назвать «Приветствие от Анны», дальше — части разбора.':'')+'</div>'+
       '</div>';
   }
 
@@ -644,32 +646,37 @@ function renderBook(){
     '</div>';
 
   var pubBtn=b.id?('<button class="btn '+(b.isPublished?'ghost':'primary')+' sm" onclick="togglePublish()">'+(b.isPublished?'Снять с публикации':'Опубликовать')+'</button>'):'';
+  var clubBtn=(isClub&&b.id)?('<button class="btn '+(b.isPublished?'primary':'ghost')+' sm" onclick="clubForBook(\''+b.id+'\')">К клубу месяца →</button>'):'';
   var delBtn=b.id?'<button class="btn danger sm" onclick="delBook()">Удалить разбор</button>':'';
 
   openModal(
     '<h2>'+(b.id?'Редактирование разбора':'Новый разбор')+'</h2>'+
     (b.id?'<div class="msub">slug: '+esc(b.bookSlug)+' · '+(b.isPublished?'опубликован':'черновик')+'</div>':'<div class="msub">Заполните основные поля и сохраните</div>')+
-    ((b.isClubExclusive||b.isPartOfClub)?'<div class="banner">Клубный разбор — в общем каталоге не показывается, доступен только участницам клуба и в архиве. Не забудьте создать клуб месяца с этим разбором.</div>':'')+
+    (isClub?('<div class="banner">Разбор клуба — в общем каталоге не показывается и отдельно не продаётся: доступ даёт подписка на клуб.'+
+      (b.id?'<br>Шаги: обложка → аудио-части → «Опубликовать» → «К клубу месяца».':'<br>Шаги: заполните название, автора и описание → «Сохранить» — после этого появятся обложка и аудио.')+'</div>'):'')+
     '<div class="fld"><label>Название *</label><input id="bTitle" value="'+esc(b.title)+'" maxlength="300"></div>'+
     '<div class="fld"><label>Автор книги</label><input id="bAuthor" value="'+esc(b.author)+'" maxlength="200"></div>'+
     '<div class="fld"><label>Описание *</label><textarea id="bDesc" maxlength="5000">'+esc(b.description)+'</textarea></div>'+
-    '<div class="fld"><label>Категории</label><div class="seg" id="bCats">'+catChips+'</div></div>'+
+    (isClub?'':'<div class="fld"><label>Категории</label><div class="seg" id="bCats">'+catChips+'</div></div>'+
     '<div class="fld"><label>Тип</label><div class="seg" id="bFree">'+
       '<div class="opt'+(b.isFree?'':' on')+'" data-v="paid" onclick="pickFree(this,false)">Платный</div>'+
       '<div class="opt'+(b.isFree?' on':'')+'" data-v="free" onclick="pickFree(this,true)">Бесплатный</div></div></div>'+
-    priceFields+
+    priceFields)+
     coverBlock+
-    '<div class="btnrow" style="margin-top:6px"><button class="btn primary" onclick="saveBook()">Сохранить</button>'+pubBtn+'</div>'+
+    '<div class="btnrow" style="margin-top:6px"><button class="btn primary" onclick="saveBook()">Сохранить</button>'+pubBtn+clubBtn+'</div>'+
     partsHtml+
     (delBtn?('<div class="divider"></div>'+delBtn):'')
   );
 }
 
 function collectBook(){
-  var isFree=segVal('bFree')==='free';
+  // Клубный разбор: полей типа/цены/категорий в форме нет — шлём пустые
+  // (сервер их и так принудительно обнуляет, см. admin-catalog applyClubExclusive).
+  var isClub=!!(_curBook.isClubExclusive||_curBook.isPartOfClub);
+  var isFree=isClub?false:segVal('bFree')==='free';
   var p={ title:val('bTitle'), author:val('bAuthor'), description:val('bDesc'),
-    categories:chipVals('bCats'), tags:[], isFree:isFree, freeChapterIndex:0 };
-  p.priceUsd = isFree ? null : numOrNull('bPriceUsd');
+    categories:isClub?[]:chipVals('bCats'), tags:[], isFree:isFree, freeChapterIndex:0 };
+  p.priceUsd = (isFree||isClub) ? null : numOrNull('bPriceUsd');
   // Клубный разбор помечаем только ПРИ СОЗДАНИИ — сервер сразу ставит
   // isPartOfClub, и разбор не попадает в каталог (см. admin-catalog POST).
   if(!_curBook.id && _curBook.isClubExclusive) p.isClubExclusive=true;
@@ -732,38 +739,57 @@ function renderClubList(){
       '<div class="em">'+fmtDate(c.startsAt)+' — '+fmtDate(c.endsAt)+'</div></div>'+st+'<span class="chev">›</span></div>';
   }).join('')+'</div>';
 }
-async function newClub(){ await ensureBooks(); _curClub={ id:null, bookId:(_books[0]?_books[0].id:''), startsAt:'', endsAt:'' }; renderClub(); }
+async function newClub(){ await ensureBooks(); _curClub={ id:null, bookId:'', startsAt:'', endsAt:'' }; renderClub(); }
 async function openClub(id){ await ensureBooks(); try{ var d=await api('/admin/club/'+id); _curClub=d.club; renderClub(); }catch(e){ toast(e.message); } }
 function renderClub(){
   var c=_curClub;
-  var opts=_books.map(function(b){ return '<option value="'+b.id+'"'+(b.id===c.bookId?' selected':'')+'>'+esc(b.title)+(b.isPartOfClub?' · клуб':'')+'</option>'; }).join('')||'<option value="">— разборов нет —</option>';
+  // В списке ТОЛЬКО клубные разборы (isPartOfClub — созданы кнопкой «Создать
+  // разбор для клуба»), не занятые другим клубом. Каталожные разборы сюда не
+  // попадают: привязка к клубу убрала бы их из общего каталога (сервер такую
+  // привязку тоже отклоняет).
+  var busy={}; _clubs.forEach(function(k){ if(k.id!==c.id) busy[k.bookId]=true; });
+  var clubBooks=_books.filter(function(b){ return b.isPartOfClub && (!busy[b.id]||b.id===c.bookId); });
+  var opts='<option value=""'+(c.bookId?'':' selected')+'>— выберите разбор клуба —</option>'+clubBooks.map(function(b){ return '<option value="'+b.id+'"'+(b.id===c.bookId?' selected':'')+'>'+esc(b.title)+(b.isPublished?'':' · черновик')+'</option>'; }).join('');
   openModal(
     '<h2>'+(c.id?'Редактирование клуба':'Новый клуб месяца')+'</h2>'+
-    '<div class="msub">Один месяц — один эксклюзивный разбор</div>'+
-    '<div class="fld"><label>Эксклюзивный разбор клуба</label><select id="cBook" onchange="updateClubPreview()">'+opts+'</select>'+
+    '<div class="msub">Один месяц — один эксклюзивный разбор. Клуб открывается 1-го числа и закрывается в последний день месяца.</div>'+
+    '<div class="fld"><label>1. Месяц клуба</label><input id="cMonth" type="month" value="'+toMonthInput(c.startsAt)+'"></div>'+
+    '<div class="fld"><label>2. Разбор клуба</label><select id="cBook" onchange="updateClubPreview()">'+opts+'</select>'+
       '<div id="clubBookPreview">'+clubBookPreviewHtml(c.bookId)+'</div>'+
-      '<button class="btn ghost sm" style="margin-top:8px" onclick="newClubBook()">＋ Создать новый разбор для клуба</button>'+
-      '<div class="hint">Этот разбор доступен только участницам клуба и в архиве — в общем каталоге он не показывается. Обложка, аудио и описание задаются внутри самого разбора (кнопка «Редактировать разбор»).</div></div>'+
-    '<div class="fld"><label>Начало</label><input id="cStart" type="date" value="'+toDateInput(c.startsAt)+'"></div>'+
-    '<div class="fld"><label>Конец</label><input id="cEnd" type="date" value="'+toDateInput(c.endsAt)+'"></div>'+
-    '<div class="hint">Архивный доступ для истёкших подписок считается автоматически: месяц клуба + весь следующий месяц.</div>'+
-    '<div class="btnrow" style="margin-top:6px"><button class="btn primary" onclick="saveClub()">Сохранить</button>'+
+      (c.bookId?'':'<button class="btn ghost sm" style="margin-top:8px" onclick="newClubBook()">＋ Создать разбор для клуба</button>')+
+      '<div class="hint">Разбор клуба не показывается в общем каталоге и не продаётся отдельно — его слушают только участницы клуба (и в архиве на следующий месяц). Описание, обложка и аудио задаются внутри разбора.</div></div>'+
+    '<div class="btnrow" style="margin-top:6px"><button class="btn primary" onclick="saveClub()">'+(c.id?'Сохранить':'Создать клуб')+'</button>'+
       (c.id?'<button class="btn danger sm" onclick="delClub()">Удалить</button>':'')+'</div>'
   );
 }
+function toMonthInput(d){ var s=toDateInput(d); return s?s.slice(0,7):''; }
 // Создать разбор для клуба: закрываем окно клуба и открываем редактор разбора
 // (там явная загрузка обложки, аудио и описание). После публикации разбора
 // админ возвращается в «Клуб месяца» и выбирает его в списке.
-async function newClubBook(){ closeModal(); await loadCats(); _curBook=blankBook(); _curBook.isClubExclusive=true; renderBook(); toast('Заполните разбор, загрузите обложку и аудио — он сразу помечен клубным и в каталог не попадёт'); }
+var _clubMonthDraft='';
+async function newClubBook(){ _clubMonthDraft=(document.getElementById('cMonth')||{}).value||''; closeModal(); await loadCats(); _curBook=blankBook(); _curBook.isClubExclusive=true; renderBook(); }
+// Из редактора клубного разбора обратно в клуб: если разбор уже привязан —
+// открываем этот клуб, иначе новый клуб с этим разбором и месяцем, который
+// админ успел выбрать до перехода в редактор.
+async function clubForBook(bookId){
+  closeModal();
+  try{ var d=await api('/admin/club'); _clubs=d.items||[]; }catch(e){}
+  await loadCatalog();
+  var mine=_clubs.filter(function(k){ return k.bookId===bookId; })[0];
+  if(mine){ openClub(mine.id); return; }
+  var startsAt=_clubMonthDraft?(_clubMonthDraft+'-01T00:00:00'):'';
+  _curClub={ id:null, bookId:bookId, startsAt:startsAt, endsAt:'' }; renderClub();
+}
 async function saveClub(){
   var bookId=document.getElementById('cBook').value;
-  var startsAt=document.getElementById('cStart').value;
-  var endsAt=document.getElementById('cEnd').value;
+  var ym=document.getElementById('cMonth').value; // 'YYYY-MM'
+  if(!ym){ toast('Выберите месяц клуба'); return; }
   if(!bookId){ toast('Выберите или создайте разбор клуба'); return; }
-  if(!startsAt||!endsAt){ toast('Укажите даты начала и конца'); return; }
-  var sp=startsAt.split('-');
-  var p={ bookId:bookId, startsAt:startsAt+'T00:00:00', endsAt:endsAt+'T23:59:59',
-    year:parseInt(sp[0],10), month:parseInt(sp[1],10) };
+  var sp=ym.split('-'), year=parseInt(sp[0],10), month=parseInt(sp[1],10);
+  var last=new Date(Date.UTC(year, month, 0)).getUTCDate();
+  // Сервер и сам нормализует к полному календарному месяцу (monthBounds), но
+  // отправляем уже границы месяца — чтобы форма и сервер говорили одно.
+  var p={ bookId:bookId, startsAt:ym+'-01T00:00:00', endsAt:ym+'-'+String(last).padStart(2,'0')+'T23:59:59', year:year, month:month };
   try{
     if(_curClub.id) await api('/admin/club/'+_curClub.id,{method:'PATCH',body:JSON.stringify(p)});
     else await api('/admin/club',{method:'POST',body:JSON.stringify(p)});
@@ -825,11 +851,13 @@ function clubBookPreviewHtml(bookId){
   var img=b.coverImageUrl?'<img src="'+esc(b.coverImageUrl)+'" style="width:56px;height:76px;object-fit:cover;border-radius:8px;flex:none" onerror="this.style.display=\'none\'">':'<div style="width:56px;height:76px;border-radius:8px;background:var(--line);flex:none"></div>';
   var parts=(b.partsCount||0);
   var audioWarn=parts?'':' <span class="badge b-exp">нет аудио</span>';
+  var draftWarn=b.isPublished?'':' <span class="badge b-exp">черновик — опубликуйте</span>';
   return '<div class="card" style="display:flex;gap:12px;align-items:center;margin:8px 0 0">'+img+
     '<div style="flex:1;min-width:0"><div style="font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(b.title||'Без названия')+'</div>'+
     (b.author?'<div class="muted">'+esc(b.author)+'</div>':'')+
-    '<div class="muted">'+parts+' ч. · '+fmtDur(b.durationTotal)+audioWarn+'</div></div></div>'+
-    '<button class="btn ghost sm" style="margin-top:6px" onclick="openBook(\''+b.id+'\')">Редактировать разбор (обложка · аудио · описание)</button>';
+    '<div class="muted">'+parts+' ч. · '+fmtDur(b.durationTotal)+audioWarn+draftWarn+'</div></div></div>'+
+    (b.isPublished?'':'<div class="hint">Пока разбор в черновике, в приложении кнопка «Слушать разбор» не откроется. Опубликуйте его в редакторе.</div>')+
+    '<button class="btn ghost sm" style="margin-top:6px" onclick="openBook(\''+b.id+'\')">Открыть разбор (описание · обложка · аудио)</button>';
 }
 function updateClubPreview(){
   var el=document.getElementById('clubBookPreview'); if(!el) return;
