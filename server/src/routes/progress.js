@@ -15,6 +15,38 @@ const router = Router();
 router.use(requireAuth);
 
 /**
+ * Ключ ТЕКУЩЕГО месяца в формате Book.clubMonth ('2026-09'). UTC —
+ * согласовано с monthBounds в admin-club.js (VPS живёт в UTC).
+ */
+function currentClubMonthKey() {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Считать ли разбор ДОСЛУШАННЫМ (01.09.2026).
+ *
+ * Общее правило: прослушаны все части. Для каталога верно — там разбор залит
+ * целиком. Для клуба неверно: месяц идёт, части добавляются в течение месяца,
+ * и человек, послушавший одно приветствие, получал «разбор дослушан» и +1 к
+ * счётчику «дослушано» в профиле (симптом 01.09: «Грёзы об Эдеме» в
+ * дослушанных после 8-минутного приветствия).
+ *
+ * Поэтому клубный разбор ТЕКУЩЕГО месяца дослушанным не считается никогда —
+ * пока месяц не кончился, разбор не полон. Прошлые клубные месяцы и обычные
+ * разборы считаются как раньше.
+ */
+function isBookCompleted(book, listenedCount) {
+  if (!book) return false;
+  const totalParts = (book.parts || []).length;
+  if (totalParts === 0 || listenedCount < totalParts) return false;
+  if (book.isPartOfClub && book.clubMonth === currentClubMonthKey()) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * GET /api/progress/stats
  * Сводная статистика прослушивания (экран «Мой прогресс», 4.45, задача 6.2).
  *
@@ -49,11 +81,12 @@ router.get('/stats', async (req, res, next) => {
     // такие книги отфильтрованы (симптом «2 начато, а карточка одна»).
     const bookIds = progresses.map((p) => p.bookId);
     const books = await Book.find({ _id: { $in: bookIds }, isPublished: true })
-      .select('parts')
+      .select('parts isPartOfClub clubMonth')
       .lean();
     const partsByBook = new Map(
       books.map((b) => [String(b._id), (b.parts || []).length])
     );
+    const bookById = new Map(books.map((b) => [String(b._id), b]));
 
     let totalSeconds = 0;
     let booksStarted = 0;
@@ -63,9 +96,10 @@ router.get('/stats', async (req, res, next) => {
       if (!partsByBook.has(String(p.bookId))) continue; // осиротевшая/снятая
       booksStarted += 1;
       totalSeconds += p.totalListenedSeconds || 0;
-      const totalParts = partsByBook.get(String(p.bookId)) || 0;
       const listened = (p.listenedPartNumbers || []).length;
-      if (totalParts > 0 && listened >= totalParts) booksCompleted += 1;
+      if (isBookCompleted(bookById.get(String(p.bookId)), listened)) {
+        booksCompleted += 1;
+      }
       if (
         p.lastListenedAt &&
         (!lastListenedAt || p.lastListenedAt > lastListenedAt)
@@ -124,7 +158,7 @@ router.get('/list', async (req, res, next) => {
     const bookFields =
       'title author coverImageUrl coverGradientColors coverLabel bookSlug ' +
       'durationTotal rating reviewCount priceUsd priceRub priceByn isFree isPartOfClub ' +
-      'categories parts';
+      'clubMonth categories parts';
 
     const bookIds = progresses.map((p) => p.bookId);
     const books = await Book.find({ _id: { $in: bookIds }, isPublished: true })
@@ -139,7 +173,7 @@ router.get('/list', async (req, res, next) => {
 
       const totalParts = (book.parts || []).length;
       const listenedParts = (p.listenedPartNumbers || []).length;
-      const isCompleted = totalParts > 0 && listenedParts >= totalParts;
+      const isCompleted = isBookCompleted(book, listenedParts);
 
       items.push({
         book,
