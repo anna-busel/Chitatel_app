@@ -9,6 +9,7 @@ import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
+import '../../../shared/widgets/listen_button.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../catalog/providers/catalog_provider.dart';
@@ -524,7 +525,7 @@ class _FreeActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _GreenListenButton(
+    return ListenButton(
       label: 'Слушать бесплатно',
       onTap: onListen,
       enabled: hasAudio,
@@ -676,7 +677,7 @@ class _PurchasedActions extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _GreenListenButton(
+        ListenButton(
           label: progressPercent > 0 ? 'Продолжить' : 'Слушать',
           onTap: onListen,
           enabled: hasAudio,
@@ -686,80 +687,6 @@ class _PurchasedActions extends StatelessWidget {
           _ProgressCard(percent: progressPercent),
         ],
       ],
-    );
-  }
-}
-
-// — Зелёная кнопка «Слушать» с поддержкой disabled-state —
-
-class _GreenListenButton extends StatelessWidget {
-  const _GreenListenButton({
-    required this.label,
-    required this.onTap,
-    required this.enabled,
-  });
-
-  final String label;
-  final VoidCallback onTap;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!enabled) {
-      // Disabled-вариант: серый фон, текст «Аудио загружается».
-      return SizedBox(
-        width: double.infinity,
-        height: 48,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppColors.surfaceMedium,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.hourglass_empty,
-                  color: AppColors.textTertiary, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Аудио загружается',
-                style: AppTypography.button.copyWith(
-                  color: AppColors.textTertiary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppColors.freeBadge,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.play_arrow, color: Colors.white, size: 24),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: AppTypography.button.copyWith(color: Colors.white),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

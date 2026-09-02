@@ -4,9 +4,11 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/models/book_model.dart';
 import '../../../shared/utils/part_labels.dart';
-import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/book_cover_image.dart';
+import '../../../shared/widgets/listen_button.dart';
+import '../../book/widgets/book_parts_list.dart';
 import '../models/club_month.dart';
 
 /// Таб «Разборы» на экране клуба. Источник: MASTER.md секция 4.21.
@@ -28,6 +30,9 @@ import '../models/club_month.dart';
 /// по факту («Слушать приветствие», пока частей нет) и ведёт сразу в плеер.
 /// Карточка разбора клубной книге не нужна: она не продаётся, апселла и
 /// превью у неё нет (см. _ClubOnlyActions в book_screen для прямых заходов).
+/// Кнопка и список частей — ТЕ ЖЕ виджеты, что в каталоге (ListenButton,
+/// BookPartsList): вид и поведение обязаны совпадать, иначе клуб выглядит
+/// «другим приложением».
 ///
 /// `bookJson` — сырой JSON книги от сервера. Парсим только нужные поля
 /// (coverImageUrl, coverGradient, description) без полноценного Book.fromJson —
@@ -49,28 +54,31 @@ class ClubAboutTab extends StatelessWidget {
     final description = bookJson?['description']?.toString() ?? '';
     final bookId = bookJson?['_id']?.toString() ?? club.bookId;
 
-    // Аудио-части разбора. Приходят в bookJson (GET /api/club/current отдаёт
-    // документ книги целиком). Парсим минимум — номер, название, длительность.
-    final parts = _parseParts(bookJson?['parts']);
-    final hasGreeting = hasGreetingPart(
-      parts.map((p) => (number: p.number, title: p.title)),
-    );
+    // Книга клуба — та же модель, что в каталоге: bookJson это документ Book
+    // целиком (GET /api/club/current). Через модель получаем части и отдаём их
+    // штатному BookPartsList, чтобы вид совпадал с карточкой разбора.
+    final book = bookJson != null ? BookModel.fromJson(bookJson!) : null;
+    final parts = book?.parts ?? const [];
+    final hasGreeting = parts.isNotEmpty &&
+        isGreetingPart(parts.first.number, parts.first.title);
     // Пока загружено только приветствие — так и пишем на кнопке, чтобы никто
     // не ждал разбор книги.
     final onlyGreeting = parts.length == 1 && hasGreeting;
     final buttonText = onlyGreeting ? 'Слушать приветствие' : 'Слушать разбор';
 
-    // coverGradient в Book — массив строк hex. Если null/пусто — пустой массив,
-    // BookCoverImage сам подставит дефолтный градиент.
-    final gradientRaw = bookJson?['coverGradient'];
-    final gradientColors = gradientRaw is List
-        ? gradientRaw.map((e) => e.toString()).toList(growable: false)
-        : const <String>[];
+    // Градиент-подложка обложки — из модели (поле coverGradientColors). Раньше
+    // здесь читался несуществующий ключ 'coverGradient', и всегда подставлялся
+    // дефолт; теперь берём то же, что каталог.
+    final gradientColors = book?.coverGradientColors ?? const <String>[];
 
-    // Есть ли ещё не открытые части — от этого зависит строка про понедельники.
+    // Идёт ли месяц этого клуба — от этого зависит строка про новые части.
+    // 1.0.2: раньше условие смотрело на club.partSchedule, но расписание в
+    // админке не заполняется (сервер всегда сохраняет пустой список), поэтому
+    // строка не показывалась НИ РАЗУ. Части действительно добавляются в
+    // течение месяца, поэтому показываем, пока месяц клуба не закончился;
+    // в архиве обещать новые части нельзя.
     final now = DateTime.now();
-    final hasUpcomingParts = now.isBefore(club.endsAt) &&
-        club.partSchedule.any((p) => p.opensAt.isAfter(now));
+    final isClubRunning = now.isBefore(club.endsAt);
 
     return Container(
       color: AppColors.background,
@@ -127,57 +135,34 @@ class ClubAboutTab extends StatelessWidget {
             const SizedBox(height: 24),
 
             // — Кнопка запуска: плеер сам продолжит с сохранённого места
-            //   (audio_service тянет прогресс по книге). Если аудио ещё нет —
-            //   кнопка неактивна, ниже строка про ожидание.
-            AppButton(
-              text: buttonText,
-              onPressed: parts.isEmpty
-                  ? null
-                  : () => context.push(Routes.player(bookId)),
+            //   (audio_service тянет прогресс по книге). Тот же зелёный вид,
+            //   что на карточке разбора в каталоге.
+            ListenButton(
+              label: buttonText,
+              enabled: parts.isNotEmpty,
+              onTap: () => context.push(Routes.player(bookId)),
             ),
 
-            // — Список частей: тап → плеер с этой части (как в каталоге) —
-            if (parts.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              ...parts.map(
-                (part) => _ClubPartRow(
-                  label: partLabel(
-                    number: part.number,
-                    title: part.title,
-                    hasGreeting: hasGreeting,
-                  ),
-                  subtitle: partSubtitle(
-                    number: part.number,
-                    title: part.title,
-                    label: partLabel(
-                      number: part.number,
-                      title: part.title,
-                      hasGreeting: hasGreeting,
-                    ),
-                  ),
-                  duration: part.duration,
-                  onTap: () => context.push(
-                    Routes.player(bookId),
-                    extra: {'startPart': part.number, 'startPosition': 0},
-                  ),
-                ),
-              ),
-            ] else ...[
-              const SizedBox(height: 12),
-              Text(
-                'Аудио загружается. Скоро здесь появятся части разбора.',
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.textSecondary,
+            // — Список частей: штатный виджет каталога. isPurchased: true —
+            //   в клуб без доступа не пускает пейвол, а архив открыт целиком,
+            //   поэтому замков здесь нет.
+            if (book != null && parts.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              BookPartsList(
+                book: book,
+                isPurchased: true,
+                listenedPartNumbers: const <int>{},
+                onPartTap: (part) => context.push(
+                  Routes.player(bookId),
+                  extra: {'startPart': part.number, 'startPosition': 0},
                 ),
               ),
             ],
 
             // — Ритм выхода частей —
-            // Спокойная строка о том, что разбор пополняется каждую неделю. Без
-            // конкретных дат: части появляются по факту загрузки, а не по
-            // расписанию. Показываем только пока есть неоткрытые части — если
-            // все части месяца уже вышли (или это архив), обещать новые нельзя.
-            if (hasUpcomingParts) ...[
+            // Спокойная строка о том, что разбор пополняется в течение месяца.
+            // Без конкретных дат: части появляются по факту загрузки.
+            if (isClubRunning) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -222,98 +207,6 @@ class ClubAboutTab extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               ...club.partSchedule.map((p) => _PartScheduleRow(part: p)),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Части разбора из сырого JSON книги: номер, название, длительность (сек).
-/// Сортируем по номеру — порядок в БД не гарантирован.
-List<({int number, String title, int duration})> _parseParts(dynamic raw) {
-  if (raw is! List) return const [];
-  final parts = <({int number, String title, int duration})>[];
-  for (final item in raw) {
-    if (item is! Map) continue;
-    final number = (item['number'] as num?)?.toInt() ?? 0;
-    if (number <= 0) continue;
-    parts.add((
-      number: number,
-      title: item['title']?.toString() ?? '',
-      duration: (item['duration'] as num?)?.toInt() ?? 0,
-    ));
-  }
-  parts.sort((a, b) => a.number.compareTo(b.number));
-  return parts;
-}
-
-/// Строка части во вкладке клуба. Тап → плеер с этой части.
-/// Замок не нужен: в клуб без доступа не пускает пейвол, а архив открыт весь.
-class _ClubPartRow extends StatelessWidget {
-  const _ClubPartRow({
-    required this.label,
-    required this.subtitle,
-    required this.duration,
-    required this.onTap,
-  });
-
-  final String label;
-  final String subtitle;
-  final int duration;
-  final VoidCallback onTap;
-
-  String get _durationText {
-    if (duration <= 0) return '';
-    final minutes = (duration / 60).round();
-    return '$minutes мин';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
-          boxShadow: AppColors.cardShadow,
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.play_circle_outline,
-                size: 22, color: AppColors.terracotta),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: AppTypography.microBold.copyWith(
-                      color: AppColors.terracotta,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  if (subtitle.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: AppTypography.bodyMedium,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (_durationText.isNotEmpty) ...[
-              const SizedBox(width: 12),
-              Text(_durationText, style: AppTypography.caption),
             ],
           ],
         ),
