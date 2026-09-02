@@ -5,6 +5,7 @@ import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../shared/utils/part_labels.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../player/providers/player_provider.dart';
 import '../services/home_service.dart';
@@ -64,14 +65,22 @@ class ContinueListeningCard extends ConsumerWidget {
       minutesLeft = data.minutesLeft;
     }
 
-    // Название части: серверный partTitle корректен только для серверной части.
-    final partLabel = (!live &&
-            data.partTitle != null &&
-            data.partTitle!.isNotEmpty)
-        ? data.partTitle!
-        : 'Часть $partNumber';
-    final subtitle =
-        minutesLeft != null ? '$partLabel · осталось $minutesLeft мин' : partLabel;
+    // Подпись части. 1.0.2: считаем по частям книги общим хелпером — иначе на
+    // приветствии клубного разбора («Приветствие» первой частью) здесь стояло
+    // «Часть 1», а в плеере — «Приветствие от Анны». Серверный partTitle
+    // оставляем запасным вариантом: он корректен только для серверной части
+    // (не для той, что играет прямо сейчас).
+    final parts = book.parts
+        .map((p) => (number: p.number, title: p.title))
+        .toList(growable: false);
+    final partLabelText = parts.isNotEmpty
+        ? partLabelInBook(number: partNumber, parts: parts)
+        : ((!live && data.partTitle != null && data.partTitle!.isNotEmpty)
+            ? data.partTitle!
+            : 'Часть $partNumber');
+    final subtitle = minutesLeft != null
+        ? '$partLabelText · осталось $minutesLeft мин'
+        : partLabelText;
 
     void open() {
       context.push(

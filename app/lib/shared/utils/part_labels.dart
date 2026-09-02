@@ -36,6 +36,35 @@ String partLabel({
   return 'Часть $displayNumber';
 }
 
+/// Подпись части по книге: находит часть по номеру и строит подпись с учётом
+/// приветствия. Для мест, где на руках вся книга (главная «Продолжить
+/// слушать», «Мой прогресс»), — чтобы там не было «Часть 1» на приветствии.
+String partLabelInBook({
+  required int number,
+  required Iterable<({int number, String title})> parts,
+}) {
+  final list = parts.toList(growable: false);
+  final title = list
+      .where((p) => p.number == number)
+      .map((p) => p.title)
+      .followedBy(const [''])
+      .first;
+  return partLabel(
+    number: number,
+    title: title,
+    hasGreeting: hasGreetingPart(list),
+  );
+}
+
+/// Сколько частей показывать в «Часть N из M»: приветствие в счёт разбора не
+/// идёт.
+int partsCountForDisplay({
+  required int totalParts,
+  required Iterable<({int number, String title})> parts,
+}) {
+  return hasGreetingPart(parts) ? totalParts - 1 : totalParts;
+}
+
 /// Вторая строка под подписью. Пустая, если название дублирует подпись
 /// («Часть 1 · Часть 1») — тогда её не показываем.
 String partSubtitle({

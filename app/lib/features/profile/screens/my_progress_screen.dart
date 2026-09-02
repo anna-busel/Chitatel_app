@@ -5,6 +5,7 @@ import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../shared/utils/part_labels.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../player/providers/player_provider.dart';
@@ -278,9 +279,24 @@ class _ProgressMiniCard extends ConsumerWidget {
     // «Дослушано» показываем только по серверным данным; если книга играет
     // прямо сейчас — показываем живую часть.
     final bool showCompleted = item.isCompleted && !live;
-    final String subtitle = showCompleted
-        ? 'Дослушано'
-        : 'Часть $partNumber из ${item.totalParts}';
+    // 1.0.2: подпись части через общий хелпер — на приветствии клубного
+    // разбора здесь стояло «Часть 1 из 1», хотя это приветствие, а не разбор.
+    // Приветствие в счёт частей разбора не идёт.
+    final parts = book.parts
+        .map((p) => (number: p.number, title: p.title))
+        .toList(growable: false);
+    final String partText = parts.isEmpty
+        ? 'Часть $partNumber из ${item.totalParts}'
+        : () {
+            final label = partLabelInBook(number: partNumber, parts: parts);
+            if (label == 'Приветствие') return label;
+            final total = partsCountForDisplay(
+              totalParts: item.totalParts,
+              parts: parts,
+            );
+            return '$label из $total';
+          }();
+    final String subtitle = showCompleted ? 'Дослушано' : partText;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
