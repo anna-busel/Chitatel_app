@@ -4,6 +4,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../shared/models/book_model.dart';
+import '../../../shared/utils/part_labels.dart';
 import '../../player/providers/player_provider.dart';
 
 /// Список частей разбора для экрана книги (MASTER 4.12–4.14).
@@ -91,24 +92,18 @@ class BookPartsList extends ConsumerWidget {
     final bool isListened = listenedPartNumbers.contains(part.number);
     final bool isPreview =
         !isPurchased && !book.isFree && part.isPreviewAvailable;
-    // 1.0.2: приветствие Анны в клубном разборе грузится первой частью с
-    // названием «Приветствие» (см. docs/CLUB-UPLOAD-GUIDE.md). Тогда:
-    // — у него подпись «Приветствие», а не «Часть 1»;
-    // — остальные части нумеруются со сдвигом, чтобы совпадать с тем, как их
-    //   назвала админка: файл «Часть 1» лежит вторым и показывается как
-    //   «Часть 1», а не «Часть 2».
-    final bool isGreeting = _isGreeting(part);
-    final int displayNumber = _hasGreeting ? part.number - 1 : part.number;
-    final String label = isGreeting ? 'Приветствие' : 'Часть $displayNumber';
-    // Название дублирует подпись («Часть 1 · Часть 1») — второй строки не надо.
-    final String subtitle = isGreeting
-        ? (part.title.trim().toLowerCase() == 'приветствие'
-            ? 'Анна Бусел'
-            : part.title)
-        : part.title;
-    final bool showSubtitle =
-        subtitle.trim().isNotEmpty &&
-            subtitle.trim().toLowerCase() != label.trim().toLowerCase();
+    // 1.0.2: подписи частей — общий хелпер с клубом (shared/utils/part_labels).
+    final String label = partLabel(
+      number: part.number,
+      title: part.title,
+      hasGreeting: _hasGreeting,
+    );
+    final String subtitle = partSubtitle(
+      number: part.number,
+      title: part.title,
+      label: label,
+    );
+    final bool showSubtitle = subtitle.isNotEmpty;
 
     return Opacity(
       opacity: isLocked ? 0.4 : 1.0,
@@ -178,18 +173,10 @@ class BookPartsList extends ConsumerWidget {
     );
   }
 
-  /// Приветствие ведущей: первая часть, названная «Приветствие» (так её
-  /// загружает админка по инструкции CLUB-UPLOAD-GUIDE). Сравнение без учёта
-  /// регистра и с допуском «Приветствие от Анны».
-  bool _isGreeting(BookPart part) {
-    if (part.number != 1) return false;
-    return part.title.trim().toLowerCase().startsWith('приветствие');
-  }
-
   /// В разборе есть приветствие первой частью — значит нумерацию остальных
   /// частей показываем со сдвигом на единицу.
   bool get _hasGreeting =>
-      book.parts.any((p) => p.number == 1 && _isGreeting(p));
+      book.parts.any((p) => isGreetingPart(p.number, p.title));
 
   /// Часть заблокирована для платной книги если она не куплена
   /// И эта часть не доступна для превью.
