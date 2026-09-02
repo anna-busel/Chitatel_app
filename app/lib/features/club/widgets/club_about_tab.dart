@@ -143,6 +143,20 @@ class ClubAboutTab extends StatelessWidget {
               onTap: () => context.push(Routes.player(bookId)),
             ),
 
+            // — Описание книги —
+            // Без заголовка «О книге» — как на карточке разбора в каталоге,
+            // где описание идёт просто текстом (1.0.2: клуб и каталог должны
+            // выглядеть одинаково).
+            if (description.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Text(
+                description,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+
             // — Список частей: штатный виджет каталога. isPurchased: true —
             //   в клуб без доступа не пускает пейвол, а архив открыт целиком,
             //   поэтому замков здесь нет.
@@ -181,20 +195,6 @@ class ClubAboutTab extends StatelessWidget {
                     ),
                   ),
                 ],
-              ),
-            ],
-
-            // — Описание книги —
-            // Без заголовка «О книге» — как на карточке разбора в каталоге,
-            // где описание идёт просто текстом (1.0.2: клуб и каталог должны
-            // выглядеть одинаково).
-            if (description.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              Text(
-                description,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: AppColors.textSecondary,
-                ),
               ),
             ],
 
