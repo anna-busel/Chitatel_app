@@ -185,16 +185,16 @@ class ClubAboutTab extends StatelessWidget {
             ],
 
             // — Описание книги —
+            // Без заголовка «О книге» — как на карточке разбора в каталоге,
+            // где описание идёт просто текстом (1.0.2: клуб и каталог должны
+            // выглядеть одинаково).
             if (description.isNotEmpty) ...[
-              const SizedBox(height: 28),
-              Text(
-                'О книге',
-                style: AppTypography.sectionHeader,
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 24),
               Text(
                 description,
-                style: AppTypography.body,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
               ),
             ],
 
