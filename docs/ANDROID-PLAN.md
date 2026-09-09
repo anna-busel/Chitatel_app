@@ -75,11 +75,11 @@ Google Play по первоисточникам (ссылки в разделе 
 - [ ] B1. `login_screen.dart`: `_googleEnabled = true` **только для Android** (через `Platform.isAndroid` или `defaultTargetPlatform`) — на iOS оставить как есть, чтобы не трогать одобренную сборку.
 - [ ] B2. `auth_provider.dart:233`: вместо захардкоженного iOS clientId — `serverClientId` для Android (Web client ID из Google Cloud); SHA-1 debug и release в Google Cloud Console.
 - [x] B3. Кнопку «Войти через Apple» на Android скрыть (решение: не поддерживаем).
-- [ ] B4. Проверить email-регистрацию: чекбокс согласия с условиями обязателен (R6).
+- [x] B4. Проверить email-регистрацию: чекбокс согласия с условиями обязателен (R6). **Проверено 09.09.2026:** чекбокс живёт на экране входа и гейтит все три кнопки, включая «Email и пароль». Экран регистрации достижим только через него (вход по почте → «Зарегистрироваться»), поэтому согласие принимается до создания аккаунта и до первого сообщения. Отдельный чекбокс на форме регистрации не нужен, правок нет.
 
 ### C. Push (3–4 дня)
 
-- [ ] C1. Сервер, схема: `User.pushToken: String` → `User.devices: [{token, platform: 'ios'|'android', updatedAt}]`. Скрипт миграции существующих токенов в `{platform:'ios'}`. Роут `notifications.js` — сохранять `platform`.
+- [x] C1. Сервер, схема: `User.pushToken: String` → `User.devices: [{token, platform: 'ios'|'android', updatedAt}]`. Скрипт миграции существующих токенов в `{platform:'ios'}`. Роут `notifications.js` — сохранять `platform`. **Код в `main`, на сервер НЕ выкачен** — деплой вместе с C2. Старое поле `pushToken` намеренно оставлено как запасной источник, чтобы iOS-пуши не могли сломаться ни при каком порядке действий (см. AI-CONTEXT-5, раздел 20).
 - [ ] C2. Сервер: `push.service.js` — вторая ветка отправки через FCM (пакет `firebase-admin`), чанки по 100 как у APNs, мёртвые токены FCM → удалять из `devices`. Service account JSON — в `.env`-путь, не в репо.
 - [ ] C3. Клиент: Firebase в проекте (`firebase_core`, `firebase_messaging`), `google-services.json` (в `.gitignore`? — нет, он не секрет, но решить).
 - [ ] C4. Клиент: Kotlin-сторона канала `chitatel/push` — те же методы `requestPermissionAndRegister` / `getToken` / `getNotificationStatus`, обратные `onToken` / `onTap`. `push_service.dart:~95` — `platform: 'android'` вместо захардкоженного `'ios'`.
@@ -211,6 +211,9 @@ Apple проверяет сборку **36**, а не репозиторий. Н
   debug-ключом. В `codemagic.yaml` добавлен workflow `android-debug` (APK).
   **A8 не выполнен**: нужен запуск сборки и телефон. Подробности и список
   известных хвостов — `docs/AI-CONTEXT-5.md`, раздел 19.
+- 09.09.2026 — C1: хранение push-токенов переехало из одного поля в список
+  устройств с платформой; добавлен скрипт миграции. Код в `main`,
+  **деплой отложен** до готовности C2 (Firebase). Раздел 20.
 - 09.09.2026 (вечер) — блок E: E1–E6 написаны (проверка чеков Google,
   вебхук RTDN, развилка в клиенте, экран подписки). E7/E8 ждут аккаунта.
   Сделан F2 — страница `/legal/delete-account`. Серверное в `main`,
