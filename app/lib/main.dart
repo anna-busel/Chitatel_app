@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 import 'core/services/push_service.dart';
@@ -83,6 +85,19 @@ class _ChitatelAppState extends ConsumerState<ChitatelApp>
   @override
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
+
+    // D3 ANDROID-PLAN: системные панели под тему приложения. AppBarTheme уже
+    // задаёт стиль для экранов с шапкой, но табы её не имеют — на Android там
+    // оставались системные умолчания, и значки статус-бара могли слиться со
+    // светлым фоном. На iOS это ровно то же, что делает AppBarTheme
+    // (тёмный текст на светлом), поэтому внешний вид iOS не меняется.
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark, // Android: тёмные значки
+      statusBarBrightness: Brightness.light, // iOS: светлый фон под статус-баром
+      systemNavigationBarColor: AppColors.background,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ));
 
     return MaterialApp.router(
       title: 'ЧИТАТЕЛЬ',
