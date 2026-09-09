@@ -227,8 +227,8 @@ class PurchaseNotifier extends StateNotifier<PaywallState> {
   Future<void> _verify(PurchaseDetails purchase, {required bool isRestore}) async {
     state = state.copyWith(status: PaywallStatus.verifying);
     try {
-      final jws = purchase.verificationData.serverVerificationData;
-      final entitlements = await _service.verifyOnServer(jws);
+      // Развилка iOS/Android внутри сервиса: у платформ разный формат чека.
+      final entitlements = await _service.verify(purchase);
       state = state.copyWith(
         status: isRestore ? PaywallStatus.restored : PaywallStatus.success,
         entitlements: entitlements,
