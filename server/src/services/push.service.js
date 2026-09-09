@@ -6,8 +6,12 @@ const Notification = require('../models/Notification');
 /**
  * Отправка push через APNs (MASTER 7.9), token-based (.p8).
  *
- * Только iOS (приложение iPhone-only). Firebase/FCM НЕ используем — лишняя
- * Google-зависимость для аудитории РФ/РБ и для iOS-only избыточна.
+ * Пока только iOS. Ветка FCM для Android — задача C2 ANDROID-PLAN.
+ *
+ * ⚠️ 09.09.2026 (задача C1): токены переехали из одного поля User.pushToken в
+ * список User.devices [{token, platform, updatedAt}]. Устаревшее поле
+ * ЧИТАЕТСЯ как запасной источник iOS-токена, поэтому пуши на iPhone работают
+ * и до прогона scripts/migrate-push-devices.js, и если код откатят назад.
  *
  * Перед каждой отправкой проверяем user.pushSettings[settingKey] — если тип
  * выключен пользователем (экран 4.31), не шлём. settingKey=null → системная/
@@ -39,6 +43,18 @@ const PERSIST_TYPES = new Set([
   'new_audio',
   'news',
 ]);
+
+// Поля пользователя, нужные для отправки. pushToken — устаревший запасной
+// источник токена, см. комментарий в шапке.
+const PUSH_FIELDS = 'devices pushToken pushSettings isDeleted';
+
+// Условие «есть куда слать iOS-пуш»: новое поле devices ИЛИ устаревшее.
+const HAS_IOS_DEVICE = {
+  $or: [
+    { devices: { $elemMatch: { platform: 'ios' } } },
+    { pushToken: { $exists: true, $nin: [null, ''] } },
+  ],
+};
 
 /**
  * Ленивая инициализация APNs-провайдера. Возвращает null, если apn не
@@ -89,12 +105,32 @@ const buildNotification = ({ title, body, data }) => {
 };
 
 /**
+ * APNs-токены пользователя: устройства с platform === 'ios' плюс устаревшее
+ * поле pushToken, если оно ещё не попало в devices. Дубли снимаются.
+ * Android-токены сюда НЕ попадают — их шлёт FCM (задача C2).
+ */
+const iosTokensOf = (user) => {
+  const tokens = [];
+  if (user && Array.isArray(user.devices)) {
+    for (const device of user.devices) {
+      if (device && device.platform === 'ios' && device.token) {
+        if (!tokens.includes(device.token)) tokens.push(device.token);
+      }
+    }
+  }
+  if (user && user.pushToken && !tokens.includes(user.pushToken)) {
+    tokens.push(user.pushToken);
+  }
+  return tokens;
+};
+
+/**
  * Можно ли слать этому пользователю данный тип.
  * settingKey — ключ user.pushSettings; null → не гейтить.
  */
 const isAllowed = (user, settingKey) => {
   if (!user || user.isDeleted) return false;
-  if (!user.pushToken) return false;
+  if (iosTokensOf(user).length === 0) return false;
   if (
     settingKey &&
     user.pushSettings &&
@@ -105,34 +141,54 @@ const isAllowed = (user, settingKey) => {
   return true;
 };
 
-/** Низкоуровневая доставка на токен + очистка мёртвых токенов. */
+// Мёртвые токены APNs — стираем у юзера, чтобы не долбить APNs впустую.
+const DEAD_REASONS = ['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic'];
+
+/** Забыть мёртвые токены: и в devices, и в устаревшем поле. */
+const forgetTokens = async (tokens) => {
+  if (!tokens || tokens.length === 0) return;
+  await User.updateMany(
+    { 'devices.token': { $in: tokens } },
+    { $pull: { devices: { token: { $in: tokens } } } }
+  );
+  await User.updateMany(
+    { pushToken: { $in: tokens } },
+    { $unset: { pushToken: '' } }
+  );
+};
+
+/** Низкоуровневая доставка на все iOS-токены юзера + очистка мёртвых. */
 const deliver = async (user, payload) => {
   const p = getProvider();
   if (!p) return false;
 
-  try {
-    const result = await p.send(buildNotification(payload), user.pushToken);
+  const tokens = iosTokensOf(user);
+  if (tokens.length === 0) return false;
 
-    if (result.failed && result.failed.length > 0) {
-      const fail = result.failed[0];
+  try {
+    const result = await p.send(buildNotification(payload), tokens);
+
+    const failed = result.failed || [];
+    if (failed.length > 0) {
+      const fail = failed[0];
       const reason =
         (fail.response && fail.response.reason) ||
         (fail.error && fail.error.message) ||
         'unknown';
       logger.warn('APNs доставка не удалась', {
         userId: String(user._id),
+        failed: failed.length,
         reason,
       });
 
-      // Мёртвый токен — стираем, чтобы не долбить APNs впустую.
-      const dead = ['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic'];
-      if (fail.response && dead.includes(fail.response.reason)) {
-        await User.updateOne({ _id: user._id }, { $unset: { pushToken: '' } });
-      }
-      return false;
+      const dead = failed
+        .filter((f) => f.response && DEAD_REASONS.includes(f.response.reason))
+        .map((f) => f.device)
+        .filter(Boolean);
+      if (dead.length > 0) await forgetTokens(dead);
     }
 
-    return true;
+    return (result.sent || []).length > 0;
   } catch (err) {
     logger.error('APNs send исключение', {
       userId: String(user._id),
@@ -142,13 +198,10 @@ const deliver = async (user, payload) => {
   }
 };
 
-// Мёртвые токены APNs — стираем у юзера, чтобы не долбить APNs впустую.
-const DEAD_REASONS = ['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic'];
-
 /**
  * Массовая доставка: пачками по 100 токенов одним provider.send (node-apn
  * принимает массив токенов). Мёртвые токены снимаем у юзеров через updateMany.
- * @param {Array<{_id, pushToken}>} users - уже отфильтрованные isAllowed
+ * @param {Array<{_id, devices, pushToken}>} users - уже отфильтрованные isAllowed
  * @param {{title, body, data?}} payload
  * @returns {Promise<number>} число успешно доставленных
  */
@@ -156,15 +209,23 @@ const deliverMany = async (users, payload) => {
   const p = getProvider();
   if (!p || users.length === 0) return 0;
 
+  const tokens = [];
+  for (const user of users) {
+    for (const token of iosTokensOf(user)) {
+      if (!tokens.includes(token)) tokens.push(token);
+    }
+  }
+  if (tokens.length === 0) return 0;
+
   const CHUNK = 100;
   let sent = 0;
   const note = buildNotification(payload);
 
-  for (let i = 0; i < users.length; i += CHUNK) {
-    const tokens = users.slice(i, i + CHUNK).map((u) => u.pushToken);
+  for (let i = 0; i < tokens.length; i += CHUNK) {
+    const chunk = tokens.slice(i, i + CHUNK);
     try {
       // eslint-disable-next-line no-await-in-loop
-      const result = await p.send(note, tokens);
+      const result = await p.send(note, chunk);
       sent += (result.sent || []).length;
 
       const failed = result.failed || [];
@@ -183,10 +244,7 @@ const deliverMany = async (users, payload) => {
         });
         if (dead.length > 0) {
           // eslint-disable-next-line no-await-in-loop
-          await User.updateMany(
-            { pushToken: { $in: dead } },
-            { $unset: { pushToken: '' } }
-          );
+          await forgetTokens(dead);
         }
       }
     } catch (err) {
@@ -221,9 +279,7 @@ const sendToUser = async (userId, payload, settingKey = null) => {
     }
   }
 
-  const user = await User.findById(userId)
-    .select('pushToken pushSettings isDeleted')
-    .lean();
+  const user = await User.findById(userId).select(PUSH_FIELDS).lean();
   if (!isAllowed(user, settingKey)) return false;
   return deliver(user, payload);
 };
@@ -236,7 +292,7 @@ const sendToUser = async (userId, payload, settingKey = null) => {
  */
 const broadcast = async ({ audience = 'all' } = {}, payload, settingKey = null) => {
   const filter = {
-    pushToken: { $exists: true, $nin: [null, ''] },
+    ...HAS_IOS_DEVICE,
     isDeleted: { $ne: true },
   };
   if (audience === 'subscribers') {
@@ -244,9 +300,7 @@ const broadcast = async ({ audience = 'all' } = {}, payload, settingKey = null) 
     filter.subscriptionExpiresAt = { $gt: new Date() };
   }
 
-  const users = await User.find(filter)
-    .select('pushToken pushSettings isDeleted')
-    .lean();
+  const users = await User.find(filter).select(PUSH_FIELDS).lean();
 
   const recipients = users.filter((u) => isAllowed(u, settingKey));
   const sent = await deliverMany(recipients, payload);
@@ -275,7 +329,7 @@ const sendNews = async ({ audience = 'all', title, body, data = {} } = {}) => {
   }
 
   const users = await User.find(feedFilter)
-    .select('_id pushToken pushSettings isDeleted')
+    .select('_id ' + PUSH_FIELDS)
     .lean();
 
   const payloadData = { ...data, type: 'news' };
@@ -318,7 +372,7 @@ const sendNews = async ({ audience = 'all', title, body, data = {} } = {}) => {
  */
 const countBroadcastRecipients = async ({ audience = 'all' } = {}) => {
   const filter = {
-    pushToken: { $exists: true, $nin: [null, ''] },
+    ...HAS_IOS_DEVICE,
     isDeleted: { $ne: true },
   };
   if (audience === 'subscribers') {
