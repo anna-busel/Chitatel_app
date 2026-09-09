@@ -165,8 +165,8 @@ class ProductPurchaseNotifier extends StateNotifier<ProductPurchaseState> {
       productId: purchase.productID,
     );
     try {
-      final jws = purchase.verificationData.serverVerificationData;
-      await _service.verifyOnServer(jws);
+      // Развилка iOS/Android внутри сервиса: у платформ разный формат чека.
+      await _service.verify(purchase);
       // Экран (если открыт) по success/restored перечитывает доступ, чтобы
       // «Куплено» появилось сразу без ручного refresh.
       state = ProductPurchaseState(
