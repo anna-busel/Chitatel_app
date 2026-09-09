@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import '../../../core/network/api_client.dart';
@@ -79,6 +82,12 @@ class PurchaseService {
   /// PurchaseParam.applicationUserName: на iOS StoreKit кладёт его в
   /// appAccountToken транзакции, и он приходит серверу в каждом
   /// S2S-уведомлении. null — покупка без токена (гость до логин-гейта и т.п.).
+  ///
+  /// На Android (задача E2 ANDROID-PLAN) тот же параметр плагин кладёт в
+  /// obfuscatedAccountId покупки Google Play, и он возвращается в ответе
+  /// Play Developer API — сервер читает его тем же кодом, что и у Apple.
+  /// Ограничение Google на длину (64 символа) наш UUID из 36 символов
+  /// соблюдает.
   Future<void> buy(ProductDetails product, {String? appAccountToken}) async {
     final param = PurchaseParam(
       productDetails: product,
@@ -98,7 +107,7 @@ class PurchaseService {
     }
   }
 
-  /// Отправляет JWS транзакции на бэкенд для верификации.
+  /// Отправляет JWS транзакции Apple на бэкенд для верификации.
   /// Возвращает сводку прав пользователя (data из ответа).
   Future<Map<String, dynamic>> verifyOnServer(String signedTransaction) async {
     final response = await _apiClient.dio.post(
@@ -108,7 +117,63 @@ class PurchaseService {
     return response.data['data'] as Map<String, dynamic>;
   }
 
-  /// Транзакция принадлежит ДРУГОМУ аккаунту приложения (1.0.2).
+  /// Отправляет токен покупки Google Play на бэкенд (задача E1 ANDROID-PLAN).
+  Future<Map<String, dynamic>> verifyGoogleOnServer({
+    required String purchaseToken,
+    required String productId,
+    String? packageName,
+  }) async {
+    final response = await _apiClient.dio.post(
+      ApiEndpoints.purchasesVerifyGoogle,
+      data: {
+        'purchaseToken': purchaseToken,
+        'productId': productId,
+        if (packageName != null) 'packageName': packageName,
+      },
+    );
+    return response.data['data'] as Map<String, dynamic>;
+  }
+
+  /// Верификация покупки, единая точка для обеих платформ (задача E1).
+  ///
+  /// Развилка здесь, а не в провайдерах: содержимое
+  /// `verificationData.serverVerificationData` у платформ разное —
+  /// на iOS это подписанный JWS транзакции, на Android — токен покупки.
+  /// Провайдеры (подписка и отдельные разборы) просто зовут этот метод.
+  Future<Map<String, dynamic>> verify(PurchaseDetails purchase) async {
+    final data = purchase.verificationData.serverVerificationData;
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return verifyOnServer(data);
+    }
+    return verifyGoogleOnServer(
+      purchaseToken: data,
+      productId: purchase.productID,
+      packageName: _androidPackageName(purchase),
+    );
+  }
+
+  /// packageName из исходного JSON покупки Google (localVerificationData).
+  /// Не критично: если распарсить не вышло, сервер подставит своё значение
+  /// из настроек.
+  static String? _androidPackageName(PurchaseDetails purchase) {
+    try {
+      final raw = purchase.verificationData.localVerificationData;
+      if (raw.isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        final name = decoded['packageName'];
+        if (name is String && name.isNotEmpty) return name;
+      }
+    } catch (_) {
+      // Формат не тот — не беда, packageName не обязателен.
+    }
+    return null;
+  }
+
+  /// Покупка принадлежит ДРУГОМУ аккаунту приложения (1.0.2).
+  ///
+  /// Работает и для Google Play: сервер отвечает тем же 403 PURCHASE_INVALID,
+  /// когда obfuscatedAccountId покупки указывает на другого юзера.
   ///
   /// Сервер отвечает так — 403 PURCHASE_INVALID — когда appAccountToken в
   /// транзакции не совпадает с текущим userId (purchase.service.js,
