@@ -21,9 +21,14 @@ import '../services/profile_service.dart';
 ///
 /// ⚠️ 24.07.2026 — КРОП/ЗУМ ФОТО. Раньше фото грузилось целиком, как в
 /// оригинале, — нельзя было выбрать зону. Теперь после выбора картинки
-/// открывается нативный iOS-кроппер (TOCropViewController через image_cropper):
-/// квадрат с зумом и перемещением, как в Instagram. Загружается уже обрезанный
-/// файл. Отмена кропа = отмена загрузки.
+/// открывается нативный кроппер (image_cropper): квадрат с зумом и
+/// перемещением, как в Instagram. Загружается уже обрезанный файл.
+/// Отмена кропа = отмена загрузки.
+///
+/// 09.09.2026 (задача A7 ANDROID-PLAN) — рядом с IOSUiSettings добавлены
+/// AndroidUiSettings (uCrop). Без них на Android кроппер открывается в
+/// дефолтных оранжевых цветах библиотеки. Поведение iOS не меняется:
+/// image_cropper берёт из списка настройки своей платформы.
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
 
@@ -114,6 +119,15 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             rotateButtonsHidden: true,
             doneButtonTitle: 'Готово',
             cancelButtonTitle: 'Отмена',
+          ),
+          AndroidUiSettings(
+            toolbarTitle: 'Фото профиля',
+            toolbarColor: AppColors.background,
+            toolbarWidgetColor: AppColors.textPrimary,
+            backgroundColor: AppColors.background,
+            activeControlsWidgetColor: AppColors.terracotta,
+            lockAspectRatio: true,
+            hideBottomControls: true,
           ),
         ],
       );
