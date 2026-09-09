@@ -35,6 +35,37 @@ router.post('/verify', validate(verifySchema), async (req, res, next) => {
 });
 
 /**
+ * POST /api/purchases/verify-google
+ * Принимает токен покупки Google Play, спрашивает у Google её состояние и
+ * обновляет права (задачи E1/E4 ANDROID-PLAN).
+ *
+ * Почему отдельный роут, а не общий с Apple: у платформ принципиально разные
+ * входные данные. Apple отдаёт подписанный чек, который мы проверяем сами;
+ * Google отдаёт только токен, состояние покупки запрашивается у их API.
+ *
+ * Body: { purchaseToken: string, productId: string, packageName?: string }
+ */
+const verifyGoogleSchema = z.object({
+  purchaseToken: z.string().min(1).max(2000),
+  productId: z.string().min(1).max(200),
+  packageName: z.string().min(1).max(200).optional(),
+});
+
+router.post('/verify-google', validate(verifyGoogleSchema), async (req, res, next) => {
+  try {
+    const result = await purchaseService.verifyGooglePurchase({
+      userId: req.user.userId,
+      purchaseToken: req.body.purchaseToken,
+      productId: req.body.productId,
+      packageName: req.body.packageName,
+    });
+    return success(res, result);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
  * Обложка для карточки «Мои покупки» — минимальный набор полей, который
  * рисует клиентский BookCoverImage (реальный ассет/сеть, иначе градиент+label).
  */
