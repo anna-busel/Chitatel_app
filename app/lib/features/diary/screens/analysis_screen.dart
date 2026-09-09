@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +9,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/app_top_bar.dart';
 import '../models/quote.dart';
 import '../providers/diary_provider.dart';
+import '../services/diary_service.dart';
 import '../widgets/analysis_card.dart';
 
 /// Экран анализа цитаты (MASTER 4.25).
@@ -197,6 +199,8 @@ class _Content extends StatelessWidget {
             style: AppTypography.micro,
             textAlign: TextAlign.center,
           ),
+          if (_ReportAnalysisButton.isEnabled)
+            _ReportAnalysisButton(quoteId: quote.id),
         ] else
           Text(
             'ИИ-анализ для этой цитаты выключен',
@@ -204,6 +208,114 @@ class _Content extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
       ],
+    );
+  }
+}
+
+/// Кнопка «Пожаловаться на разбор» (задача F1 ANDROID-PLAN).
+///
+/// Google требует, чтобы у приложений с генеративным ИИ была кнопка жалобы на
+/// сгенерированный контент внутри приложения (support.google.com/googleplay/
+/// android-developer/answer/17190352). Жалоба уходит в общий список модерации
+/// админки — туда же, где жалобы на сообщения чата.
+///
+/// Пока показывается ТОЛЬКО на Android: на iOS это новый элемент в уже
+/// одобренной сборке, и включать его отдельным решением. Технически достаточно
+/// снять условие в [isEnabled].
+class _ReportAnalysisButton extends ConsumerStatefulWidget {
+  const _ReportAnalysisButton({required this.quoteId});
+
+  final String quoteId;
+
+  static bool get isEnabled => defaultTargetPlatform == TargetPlatform.android;
+
+  @override
+  ConsumerState<_ReportAnalysisButton> createState() =>
+      _ReportAnalysisButtonState();
+}
+
+class _ReportAnalysisButtonState extends ConsumerState<_ReportAnalysisButton> {
+  bool _sending = false;
+  bool _sent = false;
+
+  static const List<(String, String)> _reasons = [
+    ('inappropriate', 'Неуместный разбор'),
+    ('offensive', 'Оскорбляет или задевает'),
+    ('spam', 'Бессмыслица или ошибка'),
+    ('other', 'Другое'),
+  ];
+
+  Future<void> _pickReasonAndSend() async {
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.cardBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Text('Что не так с разбором?', style: AppTypography.captionMedium),
+            const SizedBox(height: 4),
+            for (final (code, label) in _reasons)
+              ListTile(
+                title: Text(label, style: AppTypography.body),
+                onTap: () => Navigator.of(ctx).pop(code),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (reason == null || !mounted) return;
+
+    setState(() => _sending = true);
+    try {
+      await ref
+          .read(diaryServiceProvider)
+          .reportAnalysis(widget.quoteId, reason: reason);
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _sent = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Спасибо, жалоба отправлена'),
+        backgroundColor: AppColors.textPrimary,
+      ));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _sending = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Не удалось отправить жалобу'),
+        backgroundColor: AppColors.error,
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_sent) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text(
+          'Жалоба отправлена',
+          style: AppTypography.micro,
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+    return Center(
+      child: TextButton(
+        onPressed: _sending ? null : _pickReasonAndSend,
+        child: Text(
+          'Пожаловаться на разбор',
+          style: AppTypography.micro.copyWith(color: AppColors.textSecondary),
+        ),
+      ),
     );
   }
 }
