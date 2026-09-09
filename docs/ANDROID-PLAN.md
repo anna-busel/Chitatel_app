@@ -97,12 +97,12 @@ Google Play по первоисточникам (ссылки в разделе 
 
 ### E. Платежи Google (5–7 дней)
 
-- [ ] E1. Клиент: `purchase_provider.dart:230`, `product_purchase_provider.dart:168` — на Android `serverVerificationData` это purchase token, а не JWS. Ветка: Android → POST `/api/purchases/verify-google` с `{purchaseToken, productId, packageName}`.
-- [ ] E2. Клиент: `applicationUserName` на Android уходит в `obfuscatedAccountId` — сервер должен уметь его читать (E4).
-- [ ] E3. Клиент: `manage_sub_screen.dart:30` — на Android ссылка на `https://play.google.com/store/account/subscriptions`; тексты «App Store» → нейтральные или по платформе.
-- [ ] E4. Сервер: `purchase.service.js` — `verifyGooglePurchase()` через Google Play Developer API (`googleapis`, `purchases.subscriptionsv2.get` / `purchases.products.get`), service account с доступом в Play Console. Результат → тот же `applyTransaction()`, `Purchase.platform = 'google'`.
-- [ ] E5. Сервер: Real-time Developer Notifications через Pub/Sub → роут `POST /api/webhooks/google`; маппинг типов (RENEWED, CANCELED, REVOKED, EXPIRED, GRACE_PERIOD) на те же действия, что в `webhook.service.js` для Apple.
-- [ ] E6. Сервер: `User.subscriptionOriginalTransactionId` — Apple-термин; для Google хранить `purchaseToken`. Решить: переименовать в `subscriptionExternalId` + `subscriptionPlatform`, или добавить поле.
+- [x] E1. Клиент: `purchase_provider.dart:230`, `product_purchase_provider.dart:168` — на Android `serverVerificationData` это purchase token, а не JWS. Ветка: Android → POST `/api/purchases/verify-google` с `{purchaseToken, productId, packageName}`.
+- [x] E2. Клиент: `applicationUserName` на Android уходит в `obfuscatedAccountId` — сервер должен уметь его читать (E4).
+- [x] E3. Клиент: `manage_sub_screen.dart:30` — на Android ссылка на `https://play.google.com/store/account/subscriptions`; тексты «App Store» → нейтральные или по платформе.
+- [x] E4. Сервер: `purchase.service.js` — `verifyGooglePurchase()` через Google Play Developer API (`googleapis`, `purchases.subscriptionsv2.get` / `purchases.products.get`), service account с доступом в Play Console. Результат → тот же `applyTransaction()`, `Purchase.platform = 'google'`.
+- [x] E5. Сервер: Real-time Developer Notifications через Pub/Sub → роут `POST /api/webhooks/google`; маппинг типов (RENEWED, CANCELED, REVOKED, EXPIRED, GRACE_PERIOD) на те же действия, что в `webhook.service.js` для Apple.
+- [x] E6. Сервер: `User.subscriptionOriginalTransactionId` — Apple-термин; для Google хранить `purchaseToken`. Решить: переименовать в `subscriptionExternalId` + `subscriptionPlatform`, или добавить поле.
 - [ ] E7. Play Console: продукты (те же ID `club.basic.monthly`, `book.*`, `package.*`), цены, License testers для sandbox.
 - [ ] E8. Песочница: покупка, продление (ускоренное в тесте), отмена, возврат → доступ снимается. DID_RENEW-аналог проверить обязательно.
 
@@ -111,7 +111,7 @@ Google Play по первоисточникам (ссылки в разделе 
 ### F. Обязательное по политикам (1–2 дня)
 
 - [ ] F1. Кнопка «Пожаловаться на разбор» на экране ИИ-анализа + `POST /api/ai/report` (R7). Можно показать и на iOS — вреда нет, но это новый UI в одобренной сборке; решить.
-- [ ] F2. Веб-страница `server/public/legal/delete-account.html`: как удалить в приложении + форма/почта для запроса без приложения + что удаляется, что хранится и сколько (R8).
+- [x] F2. Веб-страница `server/public/legal/delete-account.html`: как удалить в приложении + форма/почта для запроса без приложения + что удаляется, что хранится и сколько (R8).
 - [ ] F3. Записать видео для декларации foreground service (R4).
 - [ ] F4. Проверить тексты листинга и приложения на «терапия / лечение / ментальное здоровье» (R10).
 
@@ -211,6 +211,11 @@ Apple проверяет сборку **36**, а не репозиторий. Н
   debug-ключом. В `codemagic.yaml` добавлен workflow `android-debug` (APK).
   **A8 не выполнен**: нужен запуск сборки и телефон. Подробности и список
   известных хвостов — `docs/AI-CONTEXT-5.md`, раздел 19.
+- 09.09.2026 (вечер) — блок E: E1–E6 написаны (проверка чеков Google,
+  вебхук RTDN, развилка в клиенте, экран подписки). E7/E8 ждут аккаунта.
+  Сделан F2 — страница `/legal/delete-account`. Серверное в `main`,
+  клиентское в ветке `android`. ⚠️ Живьём НИЧЕГО из блока E не проверено.
+  Подробности — `docs/AI-CONTEXT-5.md`, раздел 20.
 
 ---
 
