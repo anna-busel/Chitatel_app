@@ -216,6 +216,10 @@ class ApiEndpoints {
   /// DELETE /api/quotes/:id — удалить свою цитату.
   static String quoteById(String id) => '/quotes/$id';
 
+  /// POST /api/ai/report — жалоба на ИИ-разбор цитаты (задача F1
+  /// ANDROID-PLAN, требование Google: кнопка жалобы на контент, созданный ИИ).
+  static const String aiReport = '/ai/report';
+
   /// GET /api/reports/weekly/latest — последний еженедельный отчёт (4.26).
   /// Если отчётов нет — { report: null }.
   static const String reportsWeeklyLatest = '/reports/weekly/latest';
