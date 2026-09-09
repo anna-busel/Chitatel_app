@@ -54,7 +54,19 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
     subscriptionExpiresAt: Date,
+    // Идентификатор действующей подписки во внешней системе: у Apple это
+    // originalTransactionId, у Google — purchaseToken. И тот и другой не
+    // меняются при продлении. Имя историческое, переименовывать не стали
+    // (поле нигде не читается, нужно только для поддержки) — платформу
+    // говорит соседнее поле.
     subscriptionOriginalTransactionId: String,
+    // 'apple' | 'google' (задача E4 ANDROID-PLAN, 09.09.2026). У подписок,
+    // оформленных до этой даты, поля нет — они все Apple.
+    subscriptionPlatform: {
+      type: String,
+      enum: ['apple', 'google', null],
+      default: null,
+    },
     gracePeriodExpiresAt: Date,
 
     // Клубные месяцы, ОПЛАЧЕННЫЕ подпиской (ключи 'YYYY-M', month 1..12).
