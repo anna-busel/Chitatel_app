@@ -10,6 +10,11 @@ const mongoose = require('mongoose');
  * - targetType='message' — конкретное сообщение в чате
  * - targetType='user' — пользователь целиком (от блокировки переходим к жалобе
  *   если человек продолжает нарушать, чтобы Анна забанила)
+ * - targetType='ai_analysis' — разбор цитаты, сгенерированный ИИ (задача F1
+ *   ANDROID-PLAN, требование Google R7). targetId — id цитаты: разбор лежит
+ *   внутри неё (Quote.aiAnalysis), отдельного документа у него нет.
+ *   Действия модератора из списка ниже к нему не применяются — по такой
+ *   жалобе Анна правит промпт или отклоняет её ('dismiss').
  *
  * Действия по жалобе (выполняет Анна в админке, MASTER 9.4):
  * - hide_message — скрыть сообщение (ChatMessage.isHidden=true)
@@ -34,7 +39,7 @@ const reportSchema = new mongoose.Schema(
     // На что жалоба
     targetType: {
       type: String,
-      enum: ['message', 'user'],
+      enum: ['message', 'user', 'ai_analysis'],
       required: true,
     },
     targetId: {
