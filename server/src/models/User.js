@@ -1,5 +1,18 @@
 const mongoose = require('mongoose');
 
+// Устройство пользователя для push (задача C1 ANDROID-PLAN, 09.09.2026).
+// token — APNs-токен для ios, FCM-токен для android.
+// Один токен принадлежит ровно одному пользователю: при регистрации он
+// снимается у всех остальных (routes/notifications.js).
+const deviceSchema = new mongoose.Schema(
+  {
+    token: { type: String, required: true },
+    platform: { type: String, enum: ['ios', 'android'], required: true },
+    updatedAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     email: { type: String, unique: true, sparse: true },
@@ -59,7 +72,22 @@ const userSchema = new mongoose.Schema(
     purchasedPackages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Package' }],
 
     aiConsent: { type: Boolean, default: false },
+
+    // ⚠️ УСТАРЕВШЕЕ поле (до 09.09.2026): один APNs-токен на пользователя.
+    // Заменено на devices[] ради Android — у человека может быть и iPhone, и
+    // андроид, а одно поле хранит только последний токен.
+    // НЕ удалено намеренно: push.service читает его как ЗАПАСНОЙ источник
+    // iOS-токена, а routes/notifications.js продолжает его писать при
+    // регистрации с ios. Поэтому пуши на iPhone работают и до прогона
+    // миграции, и если код придётся откатить назад. Снимать поле — отдельной
+    // чисткой, когда devices приживётся.
     pushToken: String,
+
+    // Устройства для push (задача C1 ANDROID-PLAN). Заполняется при
+    // POST /api/notifications/register; существующим пользователям
+    // засевается одноразовым scripts/migrate-push-devices.js.
+    devices: { type: [deviceSchema], default: [] },
+
     // Настройки push (экран 4.31). reports — недельный + месячный отчёты (одна
     // настройка, решение проекта 24.07.2026, заменила weeklyReport). news —
     // новости/анонсы сезона. aiReady — «разбор цитаты готов».
