@@ -24,6 +24,7 @@ const purchaseRoutes = require('./routes/purchases');
 const webhookRoutes = require('./routes/webhooks');
 const adminRoutes = require('./routes/admin');
 const quoteRoutes = require('./routes/quotes');
+const aiRoutes = require('./routes/ai');
 const reportRoutes = require('./routes/reports');
 const profileRoutes = require('./routes/profile');
 const userRoutes = require('./routes/users');
@@ -102,6 +103,8 @@ app.use('/api/admin', adminRoutes);
 
 // Дневник (Фаза 5): цитаты, еженедельные ИИ-отчёты, согласие на ИИ.
 app.use('/api/quotes', quoteRoutes);
+// Жалоба на ИИ-разбор (F1 ANDROID-PLAN, требование Google R7).
+app.use('/api/ai', aiRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/profile', profileRoutes);
 
