@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -370,24 +371,47 @@ class _AuthRefresh extends ChangeNotifier {
 ///
 /// MiniPlayer сам отображается/скрывается через ref.watch(playerUiStateProvider).
 /// Когда плеер пуст — возвращает SizedBox.shrink, не занимая места.
+///
+/// ⚠️ D2 ANDROID-PLAN (09.09.2026): системная кнопка «Назад».
+/// На Android она есть на каждом экране, и на корневой вкладке ей нечего
+/// закрывать — приложение просто свернулось бы. Принятое поведение —
+/// стандартное для Android: с любой вкладки «Назад» ведёт на «Главную», с
+/// «Главной» — выходит из приложения. На iOS системной кнопки нет, и
+/// PopScope на корневом маршруте там ни на что не влияет (закрывать нечего),
+/// поэтому поведение iOS не меняется.
+///
+/// PopScope стоит на оболочке, а не на вложенных экранах: у них свои
+/// маршруты, и «Назад» на них закрывает страницу как обычно. Сюда обработка
+/// доходит, только когда закрывать больше нечего.
 class _ScaffoldWithBottomBar extends StatelessWidget {
   const _ScaffoldWithBottomBar({required this.child});
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(bottom: false, child: child),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const MiniPlayer(),
-          AppBottomBar(
-            currentIndex: _currentIndex(context),
-            onTap: (index) => _onTabTap(context, index),
-          ),
-        ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_currentIndex(context) != 0) {
+          context.go(Routes.home);
+        } else {
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(bottom: false, child: child),
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const MiniPlayer(),
+            AppBottomBar(
+              currentIndex: _currentIndex(context),
+              onTap: (index) => _onTabTap(context, index),
+            ),
+          ],
+        ),
       ),
     );
   }
