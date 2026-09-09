@@ -80,6 +80,15 @@ class DiaryService {
     await _api.dio.delete(ApiEndpoints.quoteById(id));
   }
 
+  /// POST /api/ai/report — пожаловаться на ИИ-разбор своей цитаты (F1).
+  /// Повторная жалоба на ту же цитату сервером не дублируется.
+  Future<void> reportAnalysis(String quoteId, {required String reason}) async {
+    await _api.dio.post(
+      ApiEndpoints.aiReport,
+      data: {'quoteId': quoteId, 'reason': reason},
+    );
+  }
+
   /// GET /api/reports/weekly/latest — последний недельный отчёт (или null).
   Future<WeeklyReportModel?> fetchLatestReport() async {
     final response = await _api.dio.get(ApiEndpoints.reportsWeeklyLatest);
