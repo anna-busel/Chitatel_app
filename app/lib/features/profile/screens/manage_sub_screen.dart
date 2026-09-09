@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,27 +13,44 @@ import '../../payments/providers/purchase_provider.dart';
 import '../providers/profile_provider.dart';
 import '../services/profile_service.dart';
 
+/// Магазин текущей платформы. На уровне файла, потому что нужны и экрану,
+/// и виджету _Body ниже (задача E3 ANDROID-PLAN).
+bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
+
+/// Название магазина для кнопки и подписей.
+String get _storeName => _isAndroid ? 'Google Play' : 'App Store';
+
 /// Управление подпиской (экран 4.33, задача 6.2).
 ///
 /// Показываем: текущий тариф, дату следующего списания / окончания, кнопку
 /// «Восстановить покупки» и объяснение, как отменить.
 ///
-/// ⚠️ Отмена подписки делается ТОЛЬКО в системных настройках Apple — приложение
-/// не может отменить её за пользователя. Ведём в системный экран управления
-/// подписками (itms-apps://apps.apple.com/account/subscriptions).
+/// ⚠️ Отмена подписки делается ТОЛЬКО в системных настройках магазина —
+/// приложение не может отменить её за пользователя. Ведём в системный экран
+/// управления подписками: у Apple — apps.apple.com/account/subscriptions,
+/// у Google — play.google.com/store/account/subscriptions.
 ///
-/// ⚠️ Никаких упоминаний сайта и внешней оплаты (Guideline 3.1.1) — только
-/// Apple.
+/// ⚠️ Никаких упоминаний сайта и внешней оплаты (Guideline 3.1.1 у Apple и
+/// такое же правило у Google) — только магазин своей платформы.
+///
+/// 09.09.2026 (задача E3 ANDROID-PLAN): ссылка и тексты выбираются по
+/// платформе. На iOS всё осталось дословно как было.
 class ManageSubScreen extends ConsumerWidget {
   const ManageSubScreen({super.key});
 
-  Future<void> _openAppleSubscriptions(BuildContext context) async {
-    final uri = Uri.parse('https://apps.apple.com/account/subscriptions');
+  Future<void> _openStoreSubscriptions(BuildContext context) async {
+    final uri = Uri.parse(
+      _isAndroid
+          ? 'https://play.google.com/store/account/subscriptions'
+          : 'https://apps.apple.com/account/subscriptions',
+    );
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
-          'Откройте Настройки iPhone → ваш Apple ID → Подписки',
+          _isAndroid
+              ? 'Откройте Google Play → ваш профиль → Платежи и подписки'
+              : 'Откройте Настройки iPhone → ваш Apple ID → Подписки',
         ),
         backgroundColor: AppColors.textPrimary,
       ));
@@ -97,7 +115,7 @@ class ManageSubScreen extends ConsumerWidget {
           ),
           data: (profile) => _Body(
             profile: profile,
-            onManage: () => _openAppleSubscriptions(context),
+            onManage: () => _openStoreSubscriptions(context),
             onRestore: () => ref.read(purchaseProvider.notifier).restore(),
             onSubscribe: () => context.push(Routes.paywall),
           ),
@@ -172,14 +190,14 @@ class _Body extends StatelessWidget {
 
         if (profile.hasSubscription) ...[
           AppButton(
-            text: 'Управлять подпиской в App Store',
+            text: 'Управлять подпиской в $_storeName',
             onPressed: onManage,
           ),
           const SizedBox(height: 10),
           Text(
-            'Отмена подписки делается только в настройках Apple. После отмены '
-            'доступ сохраняется до конца оплаченного периода — клуб не закроется '
-            'в тот же день.',
+            'Отмена подписки делается только в настройках $_storeName. После '
+            'отмены доступ сохраняется до конца оплаченного периода — клуб не '
+            'закроется в тот же день.',
             style: AppTypography.caption,
           ),
         ] else ...[
@@ -189,8 +207,11 @@ class _Body extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Если вы уже оформляли подписку с этим Apple ID, восстановите '
-            'покупки — доступ вернётся.',
+            _isAndroid
+                ? 'Если вы уже оформляли подписку с этим аккаунтом Google, '
+                    'восстановите покупки — доступ вернётся.'
+                : 'Если вы уже оформляли подписку с этим Apple ID, восстановите '
+                    'покупки — доступ вернётся.',
             style: AppTypography.caption,
           ),
         ],
