@@ -8,9 +8,15 @@ const User = require('../models/User');
 const Book = require('../models/Book');
 const Package = require('../models/Package');
 const Purchase = require('../models/Purchase');
+const googlePlay = require('./google-play.service');
 
 /**
- * Сервис верификации покупок Apple (задачи 3.3 + 3.4).
+ * Сервис верификации покупок (задачи 3.3 + 3.4 — Apple; E4 ANDROID-PLAN — Google).
+ *
+ * ⚠️ 09.09.2026: добавлена ветка Google Play. Ответ Google приводится к тому же
+ * виду, что и декодированная транзакция Apple (см. google-play.service), после
+ * чего идёт через ОБЩИЙ applyTransaction — правила выдачи доступа (клубные
+ * месяцы, книги, пакеты, возвраты) одни на две платформы.
  *
  * verifyPurchase — для POST /api/purchases/verify (покупка из приложения).
  * applyTransaction — общая логика (upsert Purchase + обновление прав User),
@@ -264,6 +270,8 @@ async function resolvePriceUsd(tx, mapped) {
  *                   окончательно / refund);
  *       Date      — выставить (Apple дал grace при неудачном списании).
  *     Применяется только к itemType='subscription'.
+ *   platform — 'apple' (по умолчанию, поведение не менялось) | 'google'.
+ *     Пишется в Purchase.platform и в User.subscriptionPlatform.
  * @returns {Promise<object>} обновлённый документ User
  */
 async function applyTransaction({
@@ -271,6 +279,7 @@ async function applyTransaction({
   decodedTransaction,
   statusOverride = null,
   gracePeriodExpiresAt = undefined,
+  platform = 'apple',
 }) {
   const tx = decodedTransaction;
   const productId = tx.productId;
@@ -330,13 +339,16 @@ async function applyTransaction({
         userId,
         itemType: mapped.itemType,
         itemId: mapped.itemId,
-        platform: 'apple',
-        // sandbox/production из самой транзакции Apple (поле environment в
-        // JWS-payload). Sandbox-покупки не попадают в выручку админки.
+        platform,
+        // sandbox/production из самой транзакции. У Apple — поле environment в
+        // JWS-payload, у Google — признак покупки лицензионного тестировщика
+        // (см. google-play.service). Sandbox не попадает в выручку админки.
         environment:
           String(tx.environment || '').toLowerCase() === 'sandbox'
             ? 'sandbox'
             : 'production',
+        // Имя поля осталось от Apple, но хранит productId любой платформы —
+        // идентификаторы товаров у нас общие (club.basic.monthly, book.*).
         appleProductId: productId,
         expiresAt,
         status,
@@ -379,7 +391,12 @@ async function applyTransaction({
     user.subscriptionPlan = SUBSCRIPTION_PLAN_ENUM.includes(mapped.period)
       ? mapped.period
       : null;
+    // У Apple здесь originalTransactionId, у Google — purchaseToken: и то и
+    // другое живёт всё время подписки и не меняется при продлении. Поле нигде
+    // не читается, нужно для поддержки — поэтому не переименовываем (миграция
+    // ради названия не стоит риска), а платформу пишем рядом.
     user.subscriptionOriginalTransactionId = originalTransactionId;
+    user.subscriptionPlatform = platform;
 
     // Льготный период (B3): undefined = не трогать, null = снять, Date = выставить.
     if (gracePeriodExpiresAt !== undefined) {
@@ -451,6 +468,83 @@ async function applyTransaction({
 }
 
 /**
+ * Защита от привязки чужого чека (02.08.2026, «вариант 2»). Клиент кладёт в
+ * покупку appAccountToken, детерминированно построенный из userId (на Android
+ * это obfuscatedAccountId). Если токен есть и он НАШ, но указывает на другого
+ * юзера — значит кто-то подсунул чужой чек на свой аккаунт. Отклоняем. Токена
+ * нет / не наш формат (гостевые покупки старого формата) — пропускаем как
+ * раньше, привязка идёт по залогиненному userId из JWT.
+ *
+ * M3: если токен указывает на УДАЛЁННЫЙ аккаунт (isDeleted) — человек удалил
+ * аккаунт и вошёл снова тем же Apple ID / Google-аккаунтом; разрешаем привязку
+ * к текущему userId (Purchase.userId переносится в applyTransaction).
+ *
+ * 09.09.2026: вынесено из verifyPurchase в общий хелпер, чтобы проверка
+ * владельца была ОДНА на обе платформы, а не копировалась.
+ */
+async function assertPurchaseOwnership({ userId, tx }) {
+  const tokenUserId = userIdFromAppAccountToken(tx.appAccountToken);
+  if (!tokenUserId || tokenUserId === String(userId).toLowerCase()) return;
+
+  const tokenUser = await User.findById(tokenUserId).select('isDeleted').lean();
+  if (!(tokenUser && tokenUser.isDeleted)) {
+    logger.warn('Purchase verify: appAccountToken не совпадает с юзером', {
+      userId: String(userId),
+      originalTransactionId: tx.originalTransactionId || tx.transactionId,
+    });
+    throw new AppError('PURCHASE_INVALID', 'Покупка принадлежит другому аккаунту', 403);
+  }
+  logger.info('Purchase verify: appAccountToken удалённого аккаунта, привязываем к текущему', {
+    userId: String(userId),
+    deletedUserId: tokenUserId,
+  });
+}
+
+/** Сводка прав пользователя — общий ответ обоих verify-эндпоинтов. */
+function entitlementsOf(user) {
+  return {
+    subscriptionStatus: user.subscriptionStatus,
+    subscriptionPlan: user.subscriptionPlan,
+    subscriptionExpiresAt: user.subscriptionExpiresAt,
+    hasArchiveAccess: user.hasArchiveAccess,
+    purchasedBooks: user.purchasedBooks,
+    purchasedPackages: user.purchasedPackages,
+  };
+}
+
+/**
+ * Верифицирует покупку Google Play и обновляет права юзера (E1/E4).
+ *
+ * В отличие от Apple, клиент присылает не подписанный чек, а токен покупки —
+ * подтверждение запрашивается у Google по нему. Источник истины — ответ
+ * Google, поэтому productId из ответа имеет приоритет над присланным клиентом.
+ *
+ * @param {{ userId: string, purchaseToken: string, productId: string, packageName?: string }} args
+ * @returns {Promise<object>} сводка по подписке/покупкам пользователя
+ */
+async function verifyGooglePurchase({ userId, purchaseToken, productId, packageName }) {
+  const { tx, statusOverride, gracePeriodExpiresAt } = await googlePlay.fetchPurchase({
+    packageName,
+    productId,
+    purchaseToken,
+  });
+
+  if (!tx.productId) tx.productId = productId;
+
+  await assertPurchaseOwnership({ userId, tx });
+
+  const user = await applyTransaction({
+    userId,
+    decodedTransaction: tx,
+    statusOverride,
+    gracePeriodExpiresAt,
+    platform: 'google',
+  });
+
+  return entitlementsOf(user);
+}
+
+/**
  * Верифицирует подписанную транзакцию Apple (JWS) и обновляет права юзера.
  * @param {{ userId: string, signedTransaction: string }} args
  * @returns {Promise<object>} сводка по подписке/покупкам пользователя
@@ -476,49 +570,16 @@ async function verifyPurchase({ userId, signedTransaction }) {
     throw new AppError('PURCHASE_INVALID', 'Не удалось проверить покупку', 400);
   }
 
-  // Защита от привязки чужого чека (02.08.2026, «вариант 2»). Клиент кладёт в
-  // транзакцию appAccountToken, детерминированно построенный из userId. Если
-  // токен есть и он НАШ, но указывает на другого юзера — значит кто-то подсунул
-  // чужой подписанный чек на свой аккаунт. Отклоняем. Токена нет / не наш формат
-  // (гостевые покупки старого формата) — пропускаем как раньше, привязка идёт по
-  // залогиненному userId из JWT.
-  // M3: если токен указывает на УДАЛЁННЫЙ аккаунт (isDeleted) — человек удалил
-  // аккаунт и вошёл снова тем же Apple ID; разрешаем привязку к текущему userId
-  // (Purchase.userId переносится в applyTransaction).
-  const tokenUserId = userIdFromAppAccountToken(tx.appAccountToken);
-  if (tokenUserId && tokenUserId !== String(userId).toLowerCase()) {
-    const tokenUser = await User.findById(tokenUserId).select('isDeleted').lean();
-    if (!(tokenUser && tokenUser.isDeleted)) {
-      logger.warn('Purchase verify: appAccountToken не совпадает с юзером', {
-        userId: String(userId),
-        originalTransactionId: tx.originalTransactionId || tx.transactionId,
-      });
-      throw new AppError(
-        'PURCHASE_INVALID',
-        'Покупка принадлежит другому аккаунту',
-        403
-      );
-    }
-    logger.info('Purchase verify: appAccountToken удалённого аккаунта, привязываем к текущему', {
-      userId: String(userId),
-      deletedUserId: tokenUserId,
-    });
-  }
+  await assertPurchaseOwnership({ userId, tx });
 
   const user = await applyTransaction({ userId, decodedTransaction: tx });
 
-  return {
-    subscriptionStatus: user.subscriptionStatus,
-    subscriptionPlan: user.subscriptionPlan,
-    subscriptionExpiresAt: user.subscriptionExpiresAt,
-    hasArchiveAccess: user.hasArchiveAccess,
-    purchasedBooks: user.purchasedBooks,
-    purchasedPackages: user.purchasedPackages,
-  };
+  return entitlementsOf(user);
 }
 
 module.exports = {
   verifyPurchase,
+  verifyGooglePurchase,
   applyTransaction,
   getVerifier,
   verifySignedData,
