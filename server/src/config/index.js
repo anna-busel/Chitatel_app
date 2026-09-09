@@ -63,6 +63,22 @@ const config = {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
   },
 
+  // Google Play Developer API — проверка покупок Android (задача E4
+  // ANDROID-PLAN). Сервисный аккаунт заводится в Google Cloud и получает
+  // доступ в Play Console → Users and permissions.
+  //   GOOGLE_PLAY_KEY_PATH — JSON-ключ сервисного аккаунта, лежит ВНЕ репо,
+  //     chmod 600 (как apple/apns-ключи);
+  //   GOOGLE_PLAY_PACKAGE  — applicationId приложения (app.chitatel);
+  //   GOOGLE_RTDN_SECRET   — общий секрет в URL вебхука Pub/Sub, которым Google
+  //     присылает уведомления о продлениях и возвратах (routes/webhooks.js).
+  // Пока не заданы — верификация покупок Google отвечает 503, всё остальное
+  // (включая покупки Apple) работает как прежде.
+  googlePlay: {
+    keyPath: process.env.GOOGLE_PLAY_KEY_PATH || '',
+    packageName: process.env.GOOGLE_PLAY_PACKAGE || '',
+    rtdnSecret: process.env.GOOGLE_RTDN_SECRET || '',
+  },
+
   openai: {
     apiKey: process.env.OPENAI_API_KEY || '',
   },
