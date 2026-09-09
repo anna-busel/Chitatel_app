@@ -12,6 +12,7 @@ const ClubMonth = require('../models/ClubMonth');
 const ChatMessage = require('../models/ChatMessage');
 const QAQuestion = require('../models/QAQuestion');
 const Report = require('../models/Report');
+const Quote = require('../models/Quote');
 const { runWeeklyReports } = require('../jobs/weekly-report');
 const { runMonthlyReports } = require('../jobs/monthly-report');
 const pushService = require('../services/push.service');
@@ -75,6 +76,21 @@ router.get(
             target = await User.findById(r.targetId)
               .select('name avatarUrl email isBanned mutedUntil')
               .lean();
+          } else if (r.targetType === 'ai_analysis') {
+            // F1: жалоба на ИИ-разбор. Карточка в админке показывает
+            // target.text, поэтому собираем туда цитату и сам разбор —
+            // иначе Анна не увидит, на что жалуются.
+            const quote = await Quote.findById(r.targetId)
+              .select('text aiAnalysis')
+              .lean();
+            if (quote) {
+              const insights =
+                (quote.aiAnalysis && quote.aiAnalysis.insights) || '';
+              target = {
+                _id: quote._id,
+                text: `Цитата: ${quote.text}\n\nРазбор ИИ: ${insights}`,
+              };
+            }
           }
           return { ...r, target };
         })
