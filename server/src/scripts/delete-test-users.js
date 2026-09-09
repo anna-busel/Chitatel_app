@@ -68,6 +68,7 @@ const dryRun = process.argv.includes('--dry-run');
           avatarStoragePath: null,
           passwordHash: null,
           pushToken: null,
+          devices: [],
           surveyAnswers: null,
           onboardingCompleted: false,
           country: null,
