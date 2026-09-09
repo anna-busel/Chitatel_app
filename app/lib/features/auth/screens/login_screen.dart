@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -37,6 +38,16 @@ class LoginScreen extends ConsumerStatefulWidget {
 
   /// Показывать ли кнопку Google. Пока false — см. комментарий выше.
   static const bool _googleEnabled = false;
+
+  /// Вход через Apple на Android не поддерживаем (решение ANDROID-PLAN, п.7:
+  /// «чего специально НЕ делаем в первой версии»). Правило Apple «есть Google —
+  /// должен быть Apple» действует только в App Store; в Google Play такого
+  /// требования нет, а поддержка Sign in with Apple на Android — это отдельная
+  /// возня с веб-редиректами.
+  ///
+  /// Задача B3 ANDROID-PLAN, 09.09.2026. На iOS ветка всегда false, поэтому
+  /// экран входа там не меняется.
+  static bool get _hideApple => defaultTargetPlatform == TargetPlatform.android;
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -122,20 +133,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               const SizedBox(height: 36),
 
-              // Apple Sign In — первая кнопка (Apple требует)
-              _SocialButton(
-                label: 'Sign in with Apple',
-                backgroundColor: Colors.black,
-                textColor: Colors.white,
-                icon: const Icon(Icons.apple, color: Colors.white, size: 20),
-                enabled: _gdprChecked,
-                loading: isLoading && _pending == _PendingMethod.apple,
-                onPressed: () {
-                  setState(() => _pending = _PendingMethod.apple);
-                  ref.read(authProvider.notifier).signInWithApple();
-                },
-              ),
-              const SizedBox(height: 10),
+              // Apple Sign In — первая кнопка (Apple требует). На Android
+              // не показываем вовсе (B3).
+              if (!LoginScreen._hideApple) ...[
+                _SocialButton(
+                  label: 'Sign in with Apple',
+                  backgroundColor: Colors.black,
+                  textColor: Colors.white,
+                  icon: const Icon(Icons.apple, color: Colors.white, size: 20),
+                  enabled: _gdprChecked,
+                  loading: isLoading && _pending == _PendingMethod.apple,
+                  onPressed: () {
+                    setState(() => _pending = _PendingMethod.apple);
+                    ref.read(authProvider.notifier).signInWithApple();
+                  },
+                ),
+                const SizedBox(height: 10),
+              ],
 
               // Google Sign In — СКРЫТ до настройки (см. шапку файла).
               if (LoginScreen._googleEnabled) ...[
