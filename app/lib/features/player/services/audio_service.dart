@@ -754,7 +754,10 @@ Future<ChitatelAudioHandler> initChitatelAudio({
       coverCache: coverCache,
     ),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'app.chitatel.ios.audio',
+      // 09.09.2026 (задача A6 ANDROID-PLAN): идентификатор канала был
+      // 'app.chitatel.ios.audio' — на Android он висел бы со словом ios.
+      // На iOS это поле не используется, поведение не меняется.
+      androidNotificationChannelId: 'app.chitatel.audio',
       androidNotificationChannelName: 'ЧИТАТЕЛЬ — аудио',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
