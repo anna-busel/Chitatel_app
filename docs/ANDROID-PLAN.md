@@ -18,7 +18,7 @@ Google Play по первоисточникам (ссылки в разделе 
 - В конфиге плеера уже есть Android-поля (канал уведомления и т.п.)
 
 **Отсутствует полностью:**
-- папка `app/android` (проект создан только под iOS)
+- ~~папка `app/android`~~ — создана 09.09.2026 в ветке `android` (блок A)
 - push под Android: на клиенте нативный канал `chitatel/push` реализован
   только в `AppDelegate.swift`; сервер — только `node-apn`; в `User` одно поле
   `pushToken` без платформы
@@ -59,13 +59,13 @@ Google Play по первоисточникам (ссылки в разделе 
 
 ### A. Каркас (1–2 дня) — можно делать ДО аккаунта Google
 
-- [ ] A1. `flutter create --platforms=android .` в `app/`. Проверить, что `.metadata` получил платформу android.
-- [ ] A2. `android/app/build.gradle(.kts)`: `applicationId app.chitatel.android` (или тот же `app.chitatel.ios`? — **решить**; рекомендую `app.chitatel`), `minSdk 26`, `targetSdk 36`, `compileSdk 36`. AGP ≥ 8.5.1 (R3).
-- [ ] A3. `AndroidManifest.xml`: `INTERNET`, `RECORD_AUDIO`, `CAMERA`, `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `WAKE_LOCK`, `com.android.vending.BILLING`; сервис `com.ryanheise.audioservice.AudioService` с `foregroundServiceType="mediaPlayback"` + receiver (по README audio_service); `UCropActivity` для image_cropper; `<queries>` для `url_launcher`; `MainActivity extends AudioServiceActivity`. **Убедиться, что READ_MEDIA_* и READ_EXTERNAL_STORAGE в merged manifest нет** (R5).
-- [ ] A4. Адаптивная иконка из монограммы (foreground + background слои), `mipmap-*`.
-- [ ] A5. Подпись: keystore, `key.properties`, в `.gitignore`. Keystore — в Codemagic secrets, не в репо.
-- [ ] A6. Переименовать канал уведомления плеера `app.chitatel.ios.audio` → `app.chitatel.audio` (`audio_service.dart:~745`).
-- [ ] A7. `image_cropper`: добавить `AndroidUiSettings` рядом с `IOSUiSettings` (`edit_profile_screen.dart:103-119`).
+- [x] A1. `flutter create --platforms=android .` в `app/`. Проверить, что `.metadata` получил платформу android.
+- [x] A2. `android/app/build.gradle(.kts)`: `applicationId app.chitatel.android` (или тот же `app.chitatel.ios`? — **решить**; рекомендую `app.chitatel`), `minSdk 26`, `targetSdk 36`, `compileSdk 36`. AGP ≥ 8.5.1 (R3).
+- [x] A3. `AndroidManifest.xml`: `INTERNET`, `RECORD_AUDIO`, `CAMERA`, `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `WAKE_LOCK`, `com.android.vending.BILLING`; сервис `com.ryanheise.audioservice.AudioService` с `foregroundServiceType="mediaPlayback"` + receiver (по README audio_service); `UCropActivity` для image_cropper; `<queries>` для `url_launcher`; `MainActivity extends AudioServiceActivity`. **Убедиться, что READ_MEDIA_* и READ_EXTERNAL_STORAGE в merged manifest нет** (R5).
+- [x] A4. Адаптивная иконка из монограммы (foreground + background слои), `mipmap-*`.
+- [x] A5. Подпись: keystore, `key.properties`, в `.gitignore`. Keystore — в Codemagic secrets, не в репо.
+- [x] A6. Переименовать канал уведомления плеера `app.chitatel.ios.audio` → `app.chitatel.audio` (`audio_service.dart:~745`).
+- [x] A7. `image_cropper`: добавить `AndroidUiSettings` рядом с `IOSUiSettings` (`edit_profile_screen.dart:103-119`).
 - [ ] A8. Собрать debug на эмуляторе (образ с Google APIs). **Пройти все 33 экрана, записать, что сломалось.** После этого — уточнить сроки ниже.
 
 **Проверка:** приложение запускается, главная/каталог/плеер/дневник работают, звук в фоне играет, уведомление плеера показывается.
@@ -205,6 +205,12 @@ Apple проверяет сборку **36**, а не репозиторий. Н
 ## 8. Журнал
 
 - 19.08.2026 — документ создан. Аудит кода и политик выполнен. Код не тронут.
+- 09.09.2026 — блок A: A1–A7 сделаны в ветке `android` (каркас, манифест,
+  Gradle, адаптивная иконка, канал плеера, AndroidUiSettings). applicationId
+  выбран `app.chitatel`. Keystore не создавали — release пока подписывается
+  debug-ключом. В `codemagic.yaml` добавлен workflow `android-debug` (APK).
+  **A8 не выполнен**: нужен запуск сборки и телефон. Подробности и список
+  известных хвостов — `docs/AI-CONTEXT-5.md`, раздел 19.
 
 ---
 
