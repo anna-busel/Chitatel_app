@@ -194,6 +194,11 @@ class ApiEndpoints {
   /// Возвращает обновлённую сводку прав пользователя.
   static const String purchasesVerify = '/purchases/verify';
 
+  /// POST /api/purchases/verify-google — верификация покупки Google Play
+  /// (задача E1 ANDROID-PLAN). Отдельный эндпоинт: Android присылает не
+  /// подписанный чек, а токен покупки — состояние сервер спрашивает у Google.
+  static const String purchasesVerifyGoogle = '/purchases/verify-google';
+
   /// GET /api/purchases/history — история покупок юзера (экран 4.44, задача 6.2).
   static const String purchasesHistory = '/purchases/history';
 
