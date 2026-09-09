@@ -820,3 +820,112 @@ StoreKit, поэтому подхватит само (в песочнице до
   переименование части в админке; предпросмотр «О клубе» до пейвола;
   «Ознакомительный фрагмент» в плеере; PrivacyInfo + Photos; debugNowOverride.
 - Android — по docs/ANDROID-PLAN.md, не начат.
+
+## 19. Android, неделя 1: каркас проекта (09.09.2026)
+
+Работа по `docs/ANDROID-PLAN.md`, блок A. Всё в ветке **`android`** (от `main`),
+`main` не тронут. Залит 21 файл, каждый сверен побайтово по sha256.
+
+### 19.1 Как сделан каркас без Mac и без локального Flutter
+
+`flutter create` выполнить не удалось: прокси песочницы блокирует
+`storage.googleapis.com`, без него Flutter не докачивает Dart SDK. Каркас собран
+из **подлинного шаблона Flutter 3.44.6** — той же версии, что в `codemagic.yaml`:
+SDK склонирован с GitHub, файлы взяты из
+`packages/flutter_tools/templates/app/{android.tmpl, android-kotlin.tmpl}`,
+плейсхолдеры подставлены значениями из `lib/src/android/gradle_utils.dart`
+(AGP `9.0.1`, Kotlin `2.3.20`, Gradle `9.1.0`).
+
+Важное следствие: в шаблоне Flutter 3.44.6 `gradlew`, `gradlew.bat` и
+`gradle-wrapper.jar` в проект НЕ входят — они в `android/.gitignore`, Flutter
+кладёт их при сборке. Поэтому в репозитории **нет ни одного бинарника Android**,
+вся папка `app/android` текстовая, и заливка через GitHub API безопасна (урок #27).
+
+### 19.2 Принятые решения
+
+- **`applicationId = app.chitatel`** (не `app.chitatel.ios`, не `.android`).
+  Namespace тот же, `MainActivity` в `app/android/app/src/main/kotlin/app/chitatel/`.
+- **`minSdk 26`** (Android 8.0) — по плану; заодно позволяет обойтись адаптивной
+  иконкой без PNG-набора.
+- **`compileSdk 36` и `targetSdk 36` заданы числом**, а не `flutter.compileSdkVersion`,
+  чтобы требование Google (targetSdk 36 для новых приложений с 31.08.2026) не
+  зависело от версии Flutter на машине сборки. У Flutter 3.44.6 дефолты и так
+  36/36, `minSdk 24`, ndk `28.2.13676358`.
+- AGP `9.0.1` ≥ 8.5.1 → требование 16 KB page size (R3) закрыто на уровне
+  тулчейна; в App bundle explorer всё равно проверить.
+- **Подпись:** `app/build.gradle.kts` читает `key.properties`; если файла нет,
+  release подписывается debug-ключом и сборка не падает. Keystore НЕ создан,
+  `key.properties` и `*.jks` в `android/.gitignore` из шаблона. SHA-1 для
+  Google-входа (B2) появится только после keystore.
+
+### 19.3 Что в манифесте
+
+`INTERNET`, `WAKE_LOCK`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`,
+`POST_NOTIFICATIONS`, `RECORD_AUDIO`, `CAMERA`, `com.android.vending.BILLING`.
+`uses-feature` camera/microphone с `required="false"` — иначе Play прячет
+приложение от устройств без камеры. Сервис `com.ryanheise.audioservice.AudioService`
+(`foregroundServiceType="mediaPlayback"`) + `MediaButtonReceiver` — по примеру из
+репозитория audio_service. `UCropActivity` для image_cropper. `queries`:
+`PROCESS_TEXT` из шаблона + `https`/`mailto` для url_launcher. `MainActivity`
+наследует `AudioServiceActivity` (иначе плеер не переживает сворачивание).
+
+`READ_MEDIA_*` и `READ_EXTERNAL_STORAGE` не объявлены (R5), но проверять надо в
+merged manifest после первой сборки — их может притащить плагин.
+
+### 19.4 Иконка
+
+Адаптивная, **без единого PNG**: фон — цвет `#750009` (взят из iOS-иконки),
+передний слой — монограмма BB, обведённая из `Icon-App-1024x1024@1x.png`
+(potrace, 4 контура, path 2,9 КБ). Вписана в safe zone: максимальный радиус
+чернил 33dp при холсте 108dp, поэтому ни круглая, ни скруглённо-квадратная маска
+лаунчера ничего не срезает — проверено рендером обеих масок.
+
+### 19.5 Правки общего кода (iOS не задет)
+
+- `audio_service.dart`: `androidNotificationChannelId` `'app.chitatel.ios.audio'`
+  → `'app.chitatel.audio'`. На iOS поле не используется.
+- `edit_profile_screen.dart`: рядом с `IOSUiSettings` добавлен `AndroidUiSettings`
+  (uCrop) — цвета темы, `lockAspectRatio`, `hideBottomControls`. image_cropper
+  берёт из списка настройки своей платформы, iOS-ветка не тронута.
+- `app/.metadata`: добавлена платформа android.
+- `codemagic.yaml`: второй workflow **`android-debug`** (linux_x2, flutter 3.44.6,
+  java 17, `flutter build apk --debug`, артефакт
+  `app/build/app/outputs/flutter-apk/*.apk`). Workflow `ios-testflight` не тронут.
+
+### 19.6 Что НЕ сделано и всплывёт
+
+- **A8 (первая сборка и прогон 33 экранов) — не выполнено.** Нужен запуск
+  workflow `android-debug` и живой Android-телефон (берём у соседа).
+- **Иконка уведомления плеера:** audio_service по умолчанию берёт
+  `@mipmap/ic_launcher`, а для уведомления Android нужна монохромная белая иконка
+  на прозрачном — иначе в шторке будет белый квадрат. Проверить на устройстве,
+  чинить в блоке D.
+- Сплэш (`launch_background`) остался шаблонный — белый/чёрный по теме системы,
+  а не кремовый фон приложения.
+- `image_picker` на Android 13+ использует системный Photo Picker только при
+  явном `ImagePickerAndroid.useAndroidPhotoPicker = true`. Сейчас не включено —
+  решать в блоке D вместе с проверкой merged manifest на `READ_MEDIA_*` (R5).
+- AGP 9 свежий: часть плагинов может не собраться. Узнаем на первой сборке.
+
+### 19.7 Что нашлось про Google в старых контекстах
+
+В `AI-CONTEXT.md`…`-4` **нет ни одной записи** про настройку Google Cloud Console,
+Firebase, FCM, `google-services.json`. Но в `auth_provider.dart:236` захардкожен
+iOS-клиент `29430814146-6i4kal…apps.googleusercontent.com` — значит проект в
+Google Cloud с номером **29430814146** существует и iOS OAuth-клиент в нём создан.
+Есть ли Web-клиент (нужен как `serverClientId` для Android) и Android-клиент —
+неизвестно, проверять в блоке B. `GOOGLE_CLIENT_ID` на сервере пуст.
+
+Полезное к блоку C: `POST /notifications/register` **уже принимает**
+`platform: 'android'` (zod `z.enum(['ios','android'])`) — серверных правок для
+регистрации токена не потребуется, только клиентские (C4).
+
+### 19.8 Уроки
+
+- **Урок #38.** Шаблон платформы можно взять прямо из исходников Flutter SDK
+  (`packages/flutter_tools/templates`), если `flutter create` недоступен:
+  плейсхолдеры `{{agpVersion}}` / `{{kotlinVersion}}` / `{{gradleVersion}}` лежат
+  константами в `lib/src/android/gradle_utils.dart`, дефолты SDK — в
+  `gradle/src/main/kotlin/FlutterExtension.kt`.
+- **Урок #39.** Адаптивная иконка целиком в XML (цвет фона + VectorDrawable)
+  снимает проблему заливки бинарников через GitHub API — но требует `minSdk 26`.
