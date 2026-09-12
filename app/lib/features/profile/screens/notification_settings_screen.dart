@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
@@ -23,10 +24,17 @@ final _pushStatusProvider = FutureProvider.autoDispose<String>((ref) async {
 ///
 /// В футере — действие «Запросить разрешение на этом устройстве», показываемое
 /// по статусу разрешения (задача 6.1, умная кнопка): если разрешено — прячем;
-/// отказано — ведём в Настройки iPhone; не спрашивали — показываем запрос.
+/// отказано — ведём в системные настройки телефона; не спрашивали — запрос.
 /// Нужно для тех, кто нажал «Не сейчас» на онбординге (4.8) или вошёл мимо:
 /// пока приложение ни разу не запросило разрешение, iOS даже не показывает
 /// раздел уведомлений приложения в Настройках, и пуши не приходят.
+/// 12.09.2026 (D4 ANDROID-PLAN): подсказки про системные настройки были
+/// написаны под iPhone («Настройки iPhone → Уведомления → ЧИТАТЕЛЬ»), и на
+/// Android человек искал бы несуществующий пункт. Путь теперь по платформе.
+String get _systemSettingsPath => defaultTargetPlatform == TargetPlatform.android
+    ? 'Настройки телефона → Приложения → ЧИТАТЕЛЬ → Уведомления'
+    : 'Настройки iPhone → Уведомления → ЧИТАТЕЛЬ';
+
 class NotificationSettingsScreen extends ConsumerWidget {
   const NotificationSettingsScreen({super.key});
 
@@ -90,7 +98,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
       content: Text(
         granted
             ? 'Уведомления включены на этом устройстве'
-            : 'Разрешение не выдано. Включите в Настройках iPhone → ЧИТАТЕЛЬ → Уведомления.',
+            : 'Разрешение не выдано. Включите вручную: $_systemSettingsPath.',
       ),
     ));
   }
@@ -206,8 +214,8 @@ class _Body extends StatelessWidget {
 
   /// Футер по статусу разрешения (задача 6.1, умная кнопка):
   /// - разрешено → ничего (не выпячиваем);
-  /// - отказано → подсказка вести в Настройки iPhone (кнопка-запрос бесполезна,
-  ///   iOS второй раз диалог не покажет);
+  /// - отказано → подсказка вести в системные настройки (кнопка-запрос
+  ///   бесполезна: iOS второй раз диалог не покажет, Android тоже);
   /// - не спрашивали / статус неизвестен → кнопка запроса + подсказка.
   Widget _footer() {
     if (permissionStatus == 'authorized' || permissionStatus == 'provisional') {
@@ -239,8 +247,8 @@ class _Body extends StatelessWidget {
           ),
         Text(
           denied
-              ? 'Разрешение выключено. Включите: Настройки iPhone → Уведомления → ЧИТАТЕЛЬ.'
-              : 'Либо включите вручную: Настройки iPhone → Уведомления → ЧИТАТЕЛЬ.',
+              ? 'Разрешение выключено. Включите: $_systemSettingsPath.'
+              : 'Либо включите вручную: $_systemSettingsPath.',
           style: AppTypography.caption,
         ),
       ],
