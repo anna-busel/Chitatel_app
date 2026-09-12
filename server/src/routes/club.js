@@ -898,14 +898,17 @@ router.post(
         throw new AppError('VALIDATION', 'Файл картинки не передан', 400);
       }
 
-      const ext = imageService.ALLOWED_MIME.get(req.file.mimetype);
-      if (!ext) {
+      // 12.09.2026: HEIC с айфона переводится в JPEG — Android его не
+      // декодирует и показывал бы пустое место (см. image.service).
+      const normalized = await imageService.normalizeUpload(req.file);
+      if (!normalized) {
         throw new AppError(
           'VALIDATION',
           'Недопустимый тип файла. Разрешены JPEG, PNG, WEBP, HEIC',
           400
         );
       }
+      const { buffer: imageBuffer, ext } = normalized;
 
       // Caption и reply — опциональны.
       const caption =
@@ -952,7 +955,7 @@ router.post(
       await fs.promises.mkdir(dir, { recursive: true });
       const fileName = imageService.generateImageFileName(ext);
       const fullPath = path.join(dir, fileName);
-      await fs.promises.writeFile(fullPath, req.file.buffer);
+      await fs.promises.writeFile(fullPath, imageBuffer);
 
       const relPath = imageService.relativeImagePath(
         req.club._id,
