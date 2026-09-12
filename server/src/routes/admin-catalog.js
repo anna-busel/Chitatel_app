@@ -496,14 +496,17 @@ router.post(
         throw new AppError('VALIDATION_ERROR', 'Файл обложки не получен', 400);
       }
 
-      const ext = imageService.ALLOWED_MIME.get(req.file.mimetype);
-      if (!ext) {
+      // 12.09.2026: HEIC переводится в JPEG — Android его не декодирует,
+      // обложка выглядела бы пустой (см. image.service).
+      const normalized = await imageService.normalizeUpload(req.file);
+      if (!normalized) {
         throw new AppError(
           'VALIDATION_ERROR',
           'Недопустимый формат картинки (jpg, png, webp, heic)',
           400
         );
       }
+      const { buffer: imageBuffer, ext } = normalized;
 
       const dir = path.join(
         config.audio.basePath,
@@ -514,7 +517,7 @@ router.post(
 
       const fileName = imageService.generateImageFileName(ext);
       const fullPath = path.join(dir, fileName);
-      await fs.promises.writeFile(fullPath, req.file.buffer);
+      await fs.promises.writeFile(fullPath, imageBuffer);
 
       const relPath = path.posix.join(
         'book-covers',
@@ -959,14 +962,17 @@ router.post(
       if (!req.file) {
         throw new AppError('VALIDATION_ERROR', 'Файл обложки не получен', 400);
       }
-      const ext = imageService.ALLOWED_MIME.get(req.file.mimetype);
-      if (!ext) {
+      // 12.09.2026: HEIC переводится в JPEG — Android его не декодирует,
+      // обложка выглядела бы пустой (см. image.service).
+      const normalized = await imageService.normalizeUpload(req.file);
+      if (!normalized) {
         throw new AppError(
           'VALIDATION_ERROR',
           'Недопустимый формат картинки (jpg, png, webp, heic)',
           400
         );
       }
+      const { buffer: imageBuffer, ext } = normalized;
       const dir = path.join(
         config.audio.basePath,
         'package-covers',
@@ -975,7 +981,7 @@ router.post(
       await fs.promises.mkdir(dir, { recursive: true });
       const fileName = imageService.generateImageFileName(ext);
       const fullPath = path.join(dir, fileName);
-      await fs.promises.writeFile(fullPath, req.file.buffer);
+      await fs.promises.writeFile(fullPath, imageBuffer);
       const relPath = path.posix.join(
         'package-covers',
         pkg.packageSlug,
