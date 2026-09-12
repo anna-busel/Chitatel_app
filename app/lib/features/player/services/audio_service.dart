@@ -759,6 +759,12 @@ Future<ChitatelAudioHandler> initChitatelAudio({
       // На iOS это поле не используется, поведение не меняется.
       androidNotificationChannelId: 'app.chitatel.audio',
       androidNotificationChannelName: 'ЧИТАТЕЛЬ — аудио',
+      // 12.09.2026 (D4 ANDROID-PLAN): своя монохромная иконка вместо
+      // умолчания @mipmap/ic_launcher. Android рисует иконку уведомления
+      // силуэтом, а у адаптивной иконки силуэт сплошной — в шторке был
+      // белый квадрат (проверено на устройстве). На iOS поле не
+      // используется, поведение не меняется.
+      androidNotificationIcon: 'drawable/ic_stat_chitatel',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
     ),
