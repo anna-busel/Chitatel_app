@@ -140,10 +140,17 @@ class _QuoteSheetState extends ConsumerState<_QuoteSheet> {
         top: 12,
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      // ⚠️ 12.09.2026 (D4 ANDROID-PLAN). Содержимое обёрнуто в прокрутку.
+      // Было: голая Column — когда клавиатура занимала пол-экрана, шторка
+      // не помещалась и Flutter рисовал жёлто-чёрную полосу «BOTTOM
+      // OVERFLOWED BY 26 PIXELS» (поймано на Galaxy Fold, раскрытый экран,
+      // вход с главной — там поле получает фокус сразу). Прокрутка решает
+      // это на любой высоте экрана и на обеих платформах.
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Center(
             child: Container(
               width: 40,
@@ -222,7 +229,8 @@ class _QuoteSheetState extends ConsumerState<_QuoteSheet> {
               textAlign: TextAlign.center,
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
