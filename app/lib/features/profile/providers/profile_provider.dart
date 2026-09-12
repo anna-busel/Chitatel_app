@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/profile_service.dart';
 
@@ -54,7 +55,32 @@ class ProfileNotifier extends StateNotifier<AsyncValue<UserProfile>> {
 
   /// Фото профиля. Оно же появится в чате напротив сообщений участницы.
   Future<void> uploadAvatar(String filePath) async {
+    // Ссылка на аватар намеренно постоянная (подписанный URL с фиксированным
+    // сроком) — значит после смены фото адрес НЕ меняется, и кэш картинок
+    // продолжает отдавать старый файл. Поймано 12.09.2026: фото обновлялось
+    // только со второго раза. Поэтому перед обновлением состояния выбрасываем
+    // старый адрес из кэша — и с диска, и из памяти.
+    final previousUrl = state.value?.avatarUrl;
+
     final updated = await _service.uploadAvatar(filePath);
+
+    if (previousUrl != null && previousUrl.isNotEmpty) {
+      try {
+        await CachedNetworkImage.evictFromCache(previousUrl);
+      } catch (_) {
+        // Кэш недоступен — не повод ронять загрузку фото.
+      }
+    }
+    if (updated.avatarUrl != null &&
+        updated.avatarUrl!.isNotEmpty &&
+        updated.avatarUrl != previousUrl) {
+      try {
+        await CachedNetworkImage.evictFromCache(updated.avatarUrl!);
+      } catch (_) {
+        // То же самое.
+      }
+    }
+
     if (!mounted) return;
     state = AsyncValue.data(updated);
   }
