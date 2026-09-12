@@ -1,6 +1,8 @@
 const path = require('path');
 const crypto = require('crypto');
 const config = require('../config');
+const logger = require('../config/logger');
+const { AppError } = require('../middleware/error');
 const { verifySignedUrl } = require('./audio.service');
 
 /**
@@ -28,6 +30,63 @@ const ALLOWED_MIME = new Map([
   ['image/heic', 'heic'],
   ['image/heif', 'heif'],
 ]);
+
+// HEIC/HEIF — формат, в котором айфон снимает по умолчанию. Android его НЕ
+// декодирует вообще: до 12.09.2026 такие фото сохранялись как есть, и у
+// android-участниц они выглядели пустым местом в чате (поймано на живом
+// устройстве). Поэтому при загрузке переводим их в JPEG.
+const HEIC_MIME = new Set(['image/heic', 'image/heif']);
+
+// Пакет heic-convert грузим лениво и в try/catch: если он ещё не установлен
+// (деплой без npm install), сервер не должен падать — загрузка HEIC просто
+// ответит понятной ошибкой, остальные форматы продолжат работать.
+let heicConvert = null;
+let heicConvertTried = false;
+function getHeicConvert() {
+  if (heicConvertTried) return heicConvert;
+  heicConvertTried = true;
+  try {
+    // eslint-disable-next-line global-require
+    heicConvert = require('heic-convert');
+  } catch (err) {
+    logger.warn('Пакет heic-convert не установлен — HEIC не конвертируется');
+  }
+  return heicConvert;
+}
+
+/**
+ * Приводит загруженный файл к формату, который показывают обе платформы.
+ *
+ * @param {{buffer: Buffer, mimetype: string}} file — req.file от multer
+ * @returns {Promise<{buffer: Buffer, ext: string}|null>} null — тип не разрешён
+ *   (решение о тексте ошибки остаётся за вызывающим роутом).
+ */
+async function normalizeUpload({ buffer, mimetype }) {
+  const ext = ALLOWED_MIME.get(mimetype);
+  if (!ext) return null;
+  if (!HEIC_MIME.has(mimetype)) return { buffer, ext };
+
+  const convert = getHeicConvert();
+  if (!convert) {
+    throw new AppError(
+      'VALIDATION',
+      'Формат HEIC сейчас не поддерживается. Сохраните фото как JPEG и попробуйте снова',
+      400
+    );
+  }
+
+  try {
+    const jpeg = await convert({ buffer, format: 'JPEG', quality: 0.9 });
+    return { buffer: Buffer.from(jpeg), ext: 'jpg' };
+  } catch (err) {
+    logger.warn('Не удалось конвертировать HEIC', { message: err.message });
+    throw new AppError(
+      'VALIDATION',
+      'Не удалось обработать фото. Попробуйте другое изображение',
+      400
+    );
+  }
+}
 
 // Максимальный размер файла — 8 МБ (Telegram сжимает до ~10, для книжного
 // чата 8 достаточно; экономит диск VPS).
@@ -146,6 +205,7 @@ function generateImageSignedUrl(filename) {
 }
 
 module.exports = {
+  normalizeUpload,
   ALLOWED_MIME,
   MAX_FILE_SIZE_BYTES,
   IMAGE_URL_FIXED_EXP,
