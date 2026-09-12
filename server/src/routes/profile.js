@@ -121,14 +121,17 @@ router.post('/avatar', upload.single('avatar'), async (req, res, next) => {
       throw new AppError('VALIDATION_ERROR', 'Файл не передан', 400);
     }
 
-    const ext = imageService.ALLOWED_MIME.get(req.file.mimetype);
-    if (!ext) {
+    // 12.09.2026: HEIC с айфона переводится в JPEG — Android его не
+    // декодирует и показывал бы пустое место (см. image.service).
+    const normalized = await imageService.normalizeUpload(req.file);
+    if (!normalized) {
       throw new AppError(
         'VALIDATION_ERROR',
         'Недопустимый тип файла. Разрешены JPEG, PNG, WEBP, HEIC',
         400
       );
     }
+    const { buffer: imageBuffer, ext } = normalized;
 
     const userId = req.user.userId;
 
@@ -137,7 +140,7 @@ router.post('/avatar', upload.single('avatar'), async (req, res, next) => {
 
     const fileName = imageService.generateImageFileName(ext);
     const fullPath = path.join(dir, fileName);
-    await fs.promises.writeFile(fullPath, req.file.buffer);
+    await fs.promises.writeFile(fullPath, imageBuffer);
 
     const relPath = imageService.relativeAvatarPath(userId, fileName);
     const avatarUrl = imageService.generateImageSignedUrl(relPath);
