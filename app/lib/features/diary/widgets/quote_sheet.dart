@@ -81,6 +81,41 @@ class _QuoteSheetState extends ConsumerState<_QuoteSheet> {
     _bookController = TextEditingController(text: widget.bookTitle ?? '');
   }
 
+  /// Пользователь что-то ввёл или изменил подставленное (задача D1
+  /// ANDROID-PLAN). Нужно для системной кнопки «Назад» на Android: без
+  /// вопроса набранная цитата пропадала бы в один тап. Крестик и свайп по
+  /// шторке идут через тот же PopScope, поэтому вопрос задаётся и на iOS.
+  bool get _hasUnsavedInput =>
+      _textController.text.trim() != (widget.text ?? '').trim() ||
+      _authorController.text.trim() != (widget.author ?? '').trim() ||
+      _bookController.text.trim() != (widget.bookTitle ?? '').trim();
+
+  /// Спрашивает, выходить ли без сохранения. true — выходим.
+  Future<bool> _confirmDiscard() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        title: Text('Выйти без сохранения?', style: AppTypography.sectionHeader),
+        content: Text('Цитата не сохранится.', style: AppTypography.body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Остаться', style: AppTypography.bodyMedium),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Выйти',
+              style: AppTypography.bodyMedium.copyWith(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
+  }
+
   @override
   void dispose() {
     _textController.dispose();
@@ -129,7 +164,15 @@ class _QuoteSheetState extends ConsumerState<_QuoteSheet> {
   Widget build(BuildContext context) {
     final aiEnabled = ref.watch(aiConsentProvider) == true;
 
-    return Container(
+    return PopScope(
+      canPop: !_hasUnsavedInput,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmDiscard() && mounted) {
+          Navigator.of(context).pop(false);
+        }
+      },
+      child: Container(
       decoration: const BoxDecoration(
         color: AppColors.background,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -168,7 +211,11 @@ class _QuoteSheetState extends ConsumerState<_QuoteSheet> {
                 child: Text('Новая цитата', style: AppTypography.serifSectionTitle),
               ),
               GestureDetector(
-                onTap: () => Navigator.of(context).pop(false),
+                onTap: () async {
+                  if (!_hasUnsavedInput || await _confirmDiscard()) {
+                    if (mounted) Navigator.of(context).pop(false);
+                  }
+                },
                 behavior: HitTestBehavior.opaque,
                 child: const SizedBox(
                   width: AppSpacing.minTapTarget,
@@ -231,6 +278,7 @@ class _QuoteSheetState extends ConsumerState<_QuoteSheet> {
           ),
           ],
         ),
+      ),
       ),
     );
   }
