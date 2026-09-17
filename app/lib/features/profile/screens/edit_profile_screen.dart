@@ -44,6 +44,39 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   bool _isSaving = false;
   bool _isUploadingAvatar = false;
 
+  /// Имя, каким оно пришло с сервера — с ним сравниваем при выходе (задача D1
+  /// ANDROID-PLAN). На Android есть системная кнопка «Назад», и без вопроса
+  /// исправленное имя терялось в один тап.
+  String _initialName = '';
+
+  bool get _hasUnsavedInput => _nameController.text.trim() != _initialName.trim();
+
+  /// Спрашивает, выходить ли без сохранения. true — выходим.
+  Future<bool> _confirmDiscard() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        title: Text('Выйти без сохранения?', style: AppTypography.sectionHeader),
+        content: Text('Изменения имени не сохранятся.', style: AppTypography.body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Остаться', style: AppTypography.bodyMedium),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Выйти',
+              style: AppTypography.bodyMedium.copyWith(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -191,7 +224,15 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   Widget build(BuildContext context) {
     final profileAsync = ref.watch(profileProvider);
 
-    return Scaffold(
+    return PopScope(
+      canPop: !_hasUnsavedInput,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmDiscard() && mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
@@ -215,10 +256,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         data: (profile) {
           if (!_initialized) {
             _nameController.text = profile.name;
+            _initialName = profile.name;
             _initialized = true;
           }
           return _buildForm(profile);
         },
+      ),
       ),
     );
   }
