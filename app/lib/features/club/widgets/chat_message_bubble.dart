@@ -1019,6 +1019,42 @@ class _MessageContent extends StatelessWidget {
 /// progressIndicatorBuilder ПОВЕРХ области картинки в тех же констрейнтах, а не
 /// отдельным контейнером другого размера. Поэтому блок сразу занимает место и
 /// не «прыгает» с маленького окна на большое.
+/// Заглушка «фото не открылось» (задача D4 ANDROID-PLAN, 17.09.2026).
+///
+/// Раньше здесь был светло-серый значок на светло-сером фоне — на экране его
+/// не видно, и сломанное фото выглядело просто пустым прямоугольником. На
+/// разборе одного такого бага ушло два дня: искали «пустые сообщения от
+/// несуществующего пользователя», а это были фото в формате HEIC, которые
+/// Android не показывает. Состояние ошибки должно читаться сразу.
+class _ImageFailed extends StatelessWidget {
+  const _ImageFailed();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surfaceMedium,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.image_not_supported_outlined,
+            size: 28,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Фото не открылось',
+            style: AppTypography.small.copyWith(color: AppColors.textSecondary),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ChatImage extends StatelessWidget {
   const _ChatImage({
     required this.imageUrl,
@@ -1037,15 +1073,10 @@ class _ChatImage extends StatelessWidget {
       return ClipRRect(
         borderRadius: borderRadius,
         clipBehavior: Clip.hardEdge,
-        child: Container(
+        child: const SizedBox(
           width: 220,
           height: 160,
-          alignment: Alignment.center,
-          color: AppColors.surfaceMedium,
-          child: const Icon(
-            Icons.broken_image_outlined,
-            color: AppColors.textTertiary,
-          ),
+          child: _ImageFailed(),
         ),
       );
     }
@@ -1071,14 +1102,7 @@ class _ChatImage extends StatelessWidget {
           ),
         ),
       ),
-      errorWidget: (_, __, ___) => Container(
-        color: AppColors.surfaceMedium,
-        alignment: Alignment.center,
-        child: const Icon(
-          Icons.broken_image_outlined,
-          color: AppColors.textTertiary,
-        ),
-      ),
+      errorWidget: (_, __, ___) => const _ImageFailed(),
     );
 
     return GestureDetector(
