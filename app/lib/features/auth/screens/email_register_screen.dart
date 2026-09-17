@@ -28,6 +28,41 @@ class _EmailRegisterScreenState extends ConsumerState<EmailRegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
 
+  /// Что-то уже введено (задача D1 ANDROID-PLAN). На Android системная
+  /// кнопка «Назад» закрывала форму в один тап — вместе с набранной почтой
+  /// и паролем.
+  bool get _hasUnsavedInput =>
+      _nameController.text.trim().isNotEmpty ||
+      _emailController.text.trim().isNotEmpty ||
+      _passwordController.text.isNotEmpty ||
+      _confirmController.text.isNotEmpty;
+
+  /// Спрашивает, прерывать ли регистрацию. true — выходим.
+  Future<bool> _confirmDiscard() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        title: Text('Прервать регистрацию?', style: AppTypography.sectionHeader),
+        content: Text('Введённые данные не сохранятся.', style: AppTypography.body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Остаться', style: AppTypography.bodyMedium),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Выйти',
+              style: AppTypography.bodyMedium.copyWith(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -88,7 +123,15 @@ class _EmailRegisterScreenState extends ConsumerState<EmailRegisterScreen> {
       }
     });
 
-    return Scaffold(
+    return PopScope(
+      canPop: !_hasUnsavedInput,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmDiscard() && mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
@@ -174,6 +217,7 @@ class _EmailRegisterScreenState extends ConsumerState<EmailRegisterScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }
