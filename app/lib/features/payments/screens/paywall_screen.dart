@@ -85,7 +85,23 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
       }
     });
 
-    return Scaffold(
+    // D1 ANDROID-PLAN: пока покупка обрабатывается, уходить с пейвола нельзя.
+    // На Android системная кнопка «Назад» закрывала экран прямо во время
+    // системного диалога оплаты или проверки чека на сервере — человек не
+    // понимал, прошла покупка или нет. На iOS системной кнопки нет, но
+    // крестик идёт через maybePop и теперь тоже блокируется на эти секунды.
+    final bool purchaseInFlight = state.status == PaywallStatus.purchasing ||
+        state.status == PaywallStatus.verifying;
+
+    return PopScope(
+      canPop: !purchaseInFlight,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Покупка обрабатывается, подождите несколько секунд'),
+        ));
+      },
+      child: Scaffold(
       backgroundColor: AppColors.background,
       appBar: widget.showAppBar
           ? AppBar(
@@ -103,6 +119,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
             )
           : null,
       body: SafeArea(child: _buildBody(context, state)),
+      ),
     );
   }
 
