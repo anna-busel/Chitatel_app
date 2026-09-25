@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../../../core/network/api_endpoints.dart';
@@ -104,6 +105,25 @@ class DisconnectedEvent extends ClubSocketEvent {
 /// не делает (сервер всё равно отвергнет).
 ///
 /// Подключение **одно на сервис**. При смене клуба — disconnect + connect.
+///
+/// ВОССТАНОВЛЕНИЕ СВЯЗИ (баг 25.09.2026). Соединение на телефоне рвётся само:
+/// сеть моргнула, Wi-Fi переключился, экран погас. Раньше после разрыва оно
+/// не восстанавливалось никогда — экран чата выглядел обычно, но новые
+/// сообщения переставали приходить до тех пор, пока не зайдёшь на экран
+/// заново. По логам сервера: разрыв в 17:18, ни одной попытки подключения до
+/// 17:47, когда пользователь вернулся на экран вручную.
+///
+/// Теперь: после разрыва сервис сам переподключается с нарастающими паузами
+/// (1, 2, 5, 10, 20, 30 секунд), и КАЖДЫЙ раз заново читает токен из
+/// хранилища. Последнее важно: токен доступа живёт 15 минут, а стандартное
+/// переподключение библиотеки отправило бы тот же самый, уже протухший —
+/// сервер отверг бы его молча.
+///
+/// Плюс подписка на жизненный цикл приложения: при возврате из фона
+/// соединение проверяется и восстанавливается сразу, не дожидаясь паузы.
+///
+/// Осознанный разрыв (`disconnect()` при уходе с экрана или выходе из
+/// аккаунта) переподключение НЕ запускает — за это отвечает `_manualClose`.
 class ClubSocketService {
   ClubSocketService(this._storage);
 
@@ -112,6 +132,19 @@ class ClubSocketService {
   io.Socket? _socket;
   final _eventsController = StreamController<ClubSocketEvent>.broadcast();
   String? _currentClubMonthId;
+
+  /// Паузы между попытками переподключения. Дальше последней — повтор 30 сек.
+  static const List<int> _retryDelaysSeconds = [1, 2, 5, 10, 20, 30];
+
+  Timer? _retryTimer;
+  int _retryAttempt = 0;
+
+  /// true — соединение закрыли намеренно, переподключаться не нужно.
+  bool _manualClose = false;
+
+  /// Наблюдатель за возвратом приложения из фона (создаётся при первом
+  /// подключении, снимается в [disconnect]).
+  _AppResumeWatcher? _resumeWatcher;
 
   /// Стрим событий чата. Один stream broadcast — можно слушать из нескольких мест.
   Stream<ClubSocketEvent> get events => _eventsController.stream;
@@ -130,9 +163,13 @@ class ClubSocketService {
       return; // уже там
     }
 
-    if (_socket != null) {
-      await disconnect();
-    }
+    // Намеренный разрыв отменяется: пользователь снова хочет быть на связи.
+    _manualClose = false;
+    _retryTimer?.cancel();
+
+    // Старый сокет закрываем БЕЗ disconnect() — тот пометил бы закрытие
+    // намеренным и выключил переподключение.
+    _closeSocket();
 
     final token = await _storage.getAccessToken();
     if (token == null || token.isEmpty) {
@@ -163,6 +200,10 @@ class ClubSocketService {
       if (kDebugMode) {
         debugPrint('[ClubSocketService] connected to $clubMonthId');
       }
+      // Связь есть — счётчик попыток обнуляем, чтобы следующий разрыв
+      // начинал отсчёт заново с одной секунды.
+      _retryAttempt = 0;
+      _retryTimer?.cancel();
     });
 
     _socket!.onConnectError((err) {
@@ -173,6 +214,7 @@ class ClubSocketService {
         code: 'CONNECT_ERROR',
         message: err?.toString() ?? 'Ошибка подключения',
       ));
+      _scheduleRetry();
     });
 
     _socket!.onDisconnect((reason) {
@@ -180,6 +222,7 @@ class ClubSocketService {
         debugPrint('[ClubSocketService] disconnected: $reason');
       }
       _eventsController.add(DisconnectedEvent(reason?.toString() ?? 'unknown'));
+      _scheduleRetry();
     });
 
     // — События от сервера —
@@ -291,6 +334,68 @@ class ClubSocketService {
     });
 
     _socket!.connect();
+
+    // Следим за возвратом приложения из фона (один наблюдатель на сервис).
+    _ensureResumeWatcher();
+  }
+
+  /// Запланировать попытку переподключения.
+  ///
+  /// Паузы нарастают, чтобы при долгом отсутствии сети не жечь батарею:
+  /// 1, 2, 5, 10, 20, дальше каждые 30 секунд. Если таймер уже заведён —
+  /// ничего не делаем (разрыв и ошибка подключения приходят парой).
+  void _scheduleRetry() {
+    if (_manualClose) return;
+    final clubMonthId = _currentClubMonthId;
+    if (clubMonthId == null) return;
+    if (_retryTimer?.isActive == true) return;
+
+    final index = _retryAttempt < _retryDelaysSeconds.length
+        ? _retryAttempt
+        : _retryDelaysSeconds.length - 1;
+    _retryAttempt++;
+
+    _retryTimer = Timer(Duration(seconds: _retryDelaysSeconds[index]), () {
+      if (_manualClose || isConnected) return;
+      // connect() заново читает токен из хранилища — в этом весь смысл.
+      connect(clubMonthId);
+    });
+  }
+
+  /// Приложение вернулось из фона: если связи нет — восстанавливаем сразу,
+  /// не дожидаясь очередной паузы.
+  void _onAppResumed() {
+    if (_manualClose || isConnected) return;
+    final clubMonthId = _currentClubMonthId;
+    if (clubMonthId == null) return;
+    _retryTimer?.cancel();
+    _retryAttempt = 0;
+    connect(clubMonthId);
+  }
+
+  void _ensureResumeWatcher() {
+    if (_resumeWatcher != null) return;
+    final watcher = _AppResumeWatcher(_onAppResumed);
+    _resumeWatcher = watcher;
+    WidgetsBinding.instance.addObserver(watcher);
+  }
+
+  void _removeResumeWatcher() {
+    final watcher = _resumeWatcher;
+    _resumeWatcher = null;
+    if (watcher != null) {
+      WidgetsBinding.instance.removeObserver(watcher);
+    }
+  }
+
+  /// Закрыть текущий сокет, НЕ трогая признак намеренного закрытия и
+  /// текущий клуб — используется и при переподключении.
+  void _closeSocket() {
+    final s = _socket;
+    _socket = null;
+    if (s != null) {
+      s.dispose();
+    }
   }
 
   /// Сказать серверу «я печатаю». Сервер раз-broadcast'ит остальным
@@ -303,12 +408,31 @@ class ClubSocketService {
   }
 
   /// Отключиться. Вызывать при уходе с экрана клуба или logout.
+  ///
+  /// Закрытие намеренное: переподключение выключается, таймер снимается,
+  /// наблюдатель за возвратом из фона отписывается.
   Future<void> disconnect() async {
-    final s = _socket;
-    _socket = null;
+    _manualClose = true;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _retryAttempt = 0;
+    _removeResumeWatcher();
+    _closeSocket();
     _currentClubMonthId = null;
-    if (s != null) {
-      s.dispose();
+  }
+}
+
+/// Наблюдатель за жизненным циклом приложения: дёргает колбэк, когда
+/// приложение возвращается на передний план.
+class _AppResumeWatcher extends WidgetsBindingObserver {
+  _AppResumeWatcher(this.onResumed);
+
+  final VoidCallback onResumed;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      onResumed();
     }
   }
 }
