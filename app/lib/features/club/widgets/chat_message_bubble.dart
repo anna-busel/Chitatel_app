@@ -61,20 +61,26 @@ Widget buildMentionText(
 /// главный источник «вязкого» скролла. Заменена на тонкую рамку 1px
 /// (AppColors.border) — визуально пузырь так же отделён от бумажного фона,
 /// но кадр дешевеет радикально (Telegram-подход: у него теней на пузырях нет).
-/// У сообщений Анны (автор-админ) слева терракотовая полоска 2.5px,
-/// остальные стороны — та же тонкая рамка.
+/// У сообщений Анны (автор-админ) рамка целиком терракотовая, у остальных —
+/// серая. Обе ОДНОРОДНЫЕ (одинаковый цвет и толщина со всех сторон).
+///
+/// БАГ 25.09.2026: раньше у админа рамка была неоднородной — полоска 2.5px
+/// слева, серые остальные стороны. Flutter запрещает такое вместе со
+/// скруглением углов: BoxDecoration в debug-сборке бросает исключение
+/// «A borderRadius can only be given for a uniform Border», отрисовка
+/// содержимого пузыря обрывается, и сообщения Анны показывались пустыми
+/// (фон и время есть, имя и текст нет). В релизной сборке проверка
+/// отключена, поэтому на iOS баг был не виден.
 Border? _bubbleBorder({required bool isMine, required bool adminAuthor}) {
   if (isMine) return null;
-  const side = BorderSide(color: AppColors.border, width: 1);
   if (adminAuthor) {
-    return const Border(
-      left: BorderSide(color: AppColors.terracotta, width: 2.5),
-      top: side,
-      right: side,
-      bottom: side,
+    return const Border.fromBorderSide(
+      BorderSide(color: AppColors.terracotta, width: 1),
     );
   }
-  return const Border.fromBorderSide(side);
+  return const Border.fromBorderSide(
+    BorderSide(color: AppColors.border, width: 1),
+  );
 }
 
 /// Bubble одного сообщения в чате.
@@ -163,7 +169,7 @@ class ChatMessageBubble extends StatelessWidget {
   final bool isAdmin;
 
   /// Автор ЭТОГО сообщения — админ (Анна). Тогда у чужого сообщения рисуем
-  /// бейдж «АВТОР КЛУБА» рядом с именем и терракотовую полоску слева (редизайн
+  /// бейдж «АВТОР КЛУБА» рядом с именем и терракотовую рамку пузыря (редизайн
   /// чата 28.06). Вычисляется в chat_tab по списку админов (_adminIds).
   final bool authorIsAdmin;
 
@@ -1238,7 +1244,10 @@ class _ReplyPreview extends StatelessWidget {
             isMine ? 0.15 : 1,
           ),
           borderRadius: BorderRadius.circular(8),
-          border: Border(left: BorderSide(color: accent, width: 3)),
+          // Рамка ОДНОРОДНАЯ: неоднородная (только слева) вместе со
+          // скруглением бросает исключение и обрывает отрисовку — та же
+          // ошибка, что была у рамки пузыря (см. _bubbleBorder, 25.09.2026).
+          border: Border.all(color: accent, width: 1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
