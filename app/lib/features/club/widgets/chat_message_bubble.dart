@@ -61,20 +61,26 @@ Widget buildMentionText(
 /// главный источник «вязкого» скролла. Заменена на тонкую рамку 1px
 /// (AppColors.border) — визуально пузырь так же отделён от бумажного фона,
 /// но кадр дешевеет радикально (Telegram-подход: у него теней на пузырях нет).
-/// У сообщений Анны (автор-админ) слева терракотовая полоска 2.5px,
-/// остальные стороны — та же тонкая рамка.
+/// У сообщений Анны (автор-админ) рамка целиком терракотовая, у остальных —
+/// серая. Обе ОДНОРОДНЫЕ (одинаковый цвет и толщина со всех сторон).
+///
+/// БАГ 25.09.2026: раньше у админа рамка была неоднородной — полоска 2.5px
+/// слева, серые остальные стороны. Flutter запрещает такое вместе со
+/// скруглением углов: BoxDecoration в debug-сборке бросает исключение
+/// «A borderRadius can only be given for a uniform Border», отрисовка
+/// содержимого пузыря обрывается, и сообщения Анны показывались пустыми
+/// (фон и время есть, имя и текст нет). В релизной сборке проверка
+/// отключена, поэтому на iOS баг был не виден.
 Border? _bubbleBorder({required bool isMine, required bool adminAuthor}) {
   if (isMine) return null;
-  const side = BorderSide(color: AppColors.border, width: 1);
   if (adminAuthor) {
-    return const Border(
-      left: BorderSide(color: AppColors.terracotta, width: 2.5),
-      top: side,
-      right: side,
-      bottom: side,
+    return const Border.fromBorderSide(
+      BorderSide(color: AppColors.terracotta, width: 1),
     );
   }
-  return const Border.fromBorderSide(side);
+  return const Border.fromBorderSide(
+    BorderSide(color: AppColors.border, width: 1),
+  );
 }
 
 /// Bubble одного сообщения в чате.
@@ -163,7 +169,7 @@ class ChatMessageBubble extends StatelessWidget {
   final bool isAdmin;
 
   /// Автор ЭТОГО сообщения — админ (Анна). Тогда у чужого сообщения рисуем
-  /// бейдж «АВТОР КЛУБА» рядом с именем и терракотовую полоску слева (редизайн
+  /// бейдж «АВТОР КЛУБА» рядом с именем и терракотовую рамку пузыря (редизайн
   /// чата 28.06). Вычисляется в chat_tab по списку админов (_adminIds).
   final bool authorIsAdmin;
 
@@ -449,6 +455,7 @@ class ChatMessageBubble extends StatelessWidget {
                   ? _Avatar(
                       name: message.author.name,
                       avatarUrl: message.author.avatarUrl,
+                      isAdmin: authorIsAdmin,
                     )
                   : const SizedBox(width: 32),
               const SizedBox(width: 8),
@@ -888,23 +895,30 @@ class _ReactionsRow extends StatelessWidget {
 /// Круглый аватар. Если `avatarUrl` есть — пытаемся загрузить картинку.
 /// При ошибке загрузки или если url пустой — fallback: цветной круг с инициалом.
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.name, this.avatarUrl});
+  const _Avatar({required this.name, this.avatarUrl, this.isAdmin = false});
   final String name;
   final String? avatarUrl;
 
+  /// Автор — ведущая клуба. У неё кружок всегда винный, чтобы узнавалась
+  /// мгновенно, независимо от имени.
+  final bool isAdmin;
+
   static const double _size = 32;
 
-  // Цвета аватарок-инициалов — бренд-акценты (без оранжевого/коричневого).
+  // Цвета аватарок-инициалов — ТОЛЬКО бренд (25.09.2026).
+  //
+  // Раньше здесь были фиолетовый, зелёный, золотой и чёрный. Первые три —
+  // служебные цвета статусов, к бренду отношения не имеют, а чёрный на
+  // светлом чате выглядит мрачно. Палитра сайта annabusel.org — белый,
+  // чёрный, беж, винный, холодный серый; из них под белую букву годятся
+  // только винный и его светлый вариант, остальные слишком светлые.
   static const List<Color> _palette = [
-    AppColors.terracotta,
-    AppColors.coral,
-    Color(0xFF7B61FF),
-    Color(0xFF2D9F6E),
-    AppColors.gold,
-    AppColors.brandBlack,
+    AppColors.terracotta, // винный
+    AppColors.coral, // светлее винный
   ];
 
   Color _colorForName(String n) {
+    if (isAdmin) return AppColors.terracotta;
     if (n.isEmpty) return _palette[0];
     var sum = 0;
     for (final c in n.codeUnits) {
@@ -1019,6 +1033,42 @@ class _MessageContent extends StatelessWidget {
 /// progressIndicatorBuilder ПОВЕРХ области картинки в тех же констрейнтах, а не
 /// отдельным контейнером другого размера. Поэтому блок сразу занимает место и
 /// не «прыгает» с маленького окна на большое.
+/// Заглушка «фото не открылось» (задача D4 ANDROID-PLAN, 17.09.2026).
+///
+/// Раньше здесь был светло-серый значок на светло-сером фоне — на экране его
+/// не видно, и сломанное фото выглядело просто пустым прямоугольником. На
+/// разборе одного такого бага ушло два дня: искали «пустые сообщения от
+/// несуществующего пользователя», а это были фото в формате HEIC, которые
+/// Android не показывает. Состояние ошибки должно читаться сразу.
+class _ImageFailed extends StatelessWidget {
+  const _ImageFailed();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surfaceMedium,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.image_not_supported_outlined,
+            size: 28,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Фото не открылось',
+            style: AppTypography.small.copyWith(color: AppColors.textSecondary),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ChatImage extends StatelessWidget {
   const _ChatImage({
     required this.imageUrl,
@@ -1037,15 +1087,10 @@ class _ChatImage extends StatelessWidget {
       return ClipRRect(
         borderRadius: borderRadius,
         clipBehavior: Clip.hardEdge,
-        child: Container(
+        child: const SizedBox(
           width: 220,
           height: 160,
-          alignment: Alignment.center,
-          color: AppColors.surfaceMedium,
-          child: const Icon(
-            Icons.broken_image_outlined,
-            color: AppColors.textTertiary,
-          ),
+          child: _ImageFailed(),
         ),
       );
     }
@@ -1071,14 +1116,7 @@ class _ChatImage extends StatelessWidget {
           ),
         ),
       ),
-      errorWidget: (_, __, ___) => Container(
-        color: AppColors.surfaceMedium,
-        alignment: Alignment.center,
-        child: const Icon(
-          Icons.broken_image_outlined,
-          color: AppColors.textTertiary,
-        ),
-      ),
+      errorWidget: (_, __, ___) => const _ImageFailed(),
     );
 
     return GestureDetector(
@@ -1214,7 +1252,10 @@ class _ReplyPreview extends StatelessWidget {
             isMine ? 0.15 : 1,
           ),
           borderRadius: BorderRadius.circular(8),
-          border: Border(left: BorderSide(color: accent, width: 3)),
+          // Рамка ОДНОРОДНАЯ: неоднородная (только слева) вместе со
+          // скруглением бросает исключение и обрывает отрисовку — та же
+          // ошибка, что была у рамки пузыря (см. _bubbleBorder, 25.09.2026).
+          border: Border.all(color: accent, width: 1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
