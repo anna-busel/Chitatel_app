@@ -144,6 +144,12 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
   bool _isUploadingVoice = false;
 
   ClubSocketService? _socketService;
+
+  /// Сокет уже подключался хотя бы раз за жизнь экрана. Нужен, чтобы отличить
+  /// первое подключение (историю загрузил _bootstrap) от переподключения
+  /// после обрыва — во втором случае надо догрузить пропущенное.
+  bool _socketEverConnected = false;
+
   final ImagePicker _imagePicker = ImagePicker();
   StreamSubscription<ClubSocketEvent>? _socketSub;
   final ScrollController _scrollController = ScrollController();
@@ -384,6 +390,53 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
           _pinnedMessage = null;
         }
       });
+    } else if (event is ConnectedEvent) {
+      // Первое подключение — историю уже загрузил _bootstrap.
+      // Каждое следующее — это ПЕРЕподключение после обрыва: пока связи не
+      // было, сообщения приходили мимо нас. Догружаем пропущенное.
+      if (_socketEverConnected) {
+        _syncMissedMessages();
+      }
+      _socketEverConnected = true;
+    }
+  }
+
+  /// Догрузить сообщения, пришедшие пока не было связи (25.09.2026).
+  ///
+  /// Вызывается после ПЕРЕподключения сокета. Берём свежую страницу истории и
+  /// добавляем те сообщения, которых в ленте ещё нет. Порядок сохраняется:
+  /// и лента, и ответ сервера идут от новых к старым, поэтому новые кладём
+  /// в начало списка.
+  ///
+  /// Ошибку глушим намеренно: это фоновое доведение ленты, а не действие
+  /// пользователя — ругаться плашкой не за что, при следующем открытии экрана
+  /// история подтянется целиком.
+  Future<void> _syncMissedMessages() async {
+    try {
+      final api = ref.read(clubApiServiceProvider);
+      final history = await api.fetchChatHistory(
+        clubMonthId: widget.club.id,
+        limit: 20,
+      );
+      if (!mounted) return;
+
+      final known = _messages.map((m) => m.id).toSet();
+      final missed = _visible(history.messages)
+          .where((m) => !known.contains(m.id))
+          .toList(growable: false);
+      if (missed.isEmpty) return;
+
+      setState(() {
+        _messages.insertAll(0, missed);
+        final pinned = history.pinnedMessage;
+        if (pinned != null) {
+          _pinnedMessage = pinned;
+          _pinnedMessageId = pinned.id;
+        }
+      });
+      _scheduleMarkRead();
+    } catch (_) {
+      // Молча: лента дозагрузится при следующем открытии экрана.
     }
   }
 
