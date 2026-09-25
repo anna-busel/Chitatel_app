@@ -455,6 +455,7 @@ class ChatMessageBubble extends StatelessWidget {
                   ? _Avatar(
                       name: message.author.name,
                       avatarUrl: message.author.avatarUrl,
+                      isAdmin: authorIsAdmin,
                     )
                   : const SizedBox(width: 32),
               const SizedBox(width: 8),
@@ -894,23 +895,30 @@ class _ReactionsRow extends StatelessWidget {
 /// Круглый аватар. Если `avatarUrl` есть — пытаемся загрузить картинку.
 /// При ошибке загрузки или если url пустой — fallback: цветной круг с инициалом.
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.name, this.avatarUrl});
+  const _Avatar({required this.name, this.avatarUrl, this.isAdmin = false});
   final String name;
   final String? avatarUrl;
 
+  /// Автор — ведущая клуба. У неё кружок всегда винный, чтобы узнавалась
+  /// мгновенно, независимо от имени.
+  final bool isAdmin;
+
   static const double _size = 32;
 
-  // Цвета аватарок-инициалов — бренд-акценты (без оранжевого/коричневого).
+  // Цвета аватарок-инициалов — ТОЛЬКО бренд (25.09.2026).
+  //
+  // Раньше здесь были фиолетовый, зелёный, золотой и чёрный. Первые три —
+  // служебные цвета статусов, к бренду отношения не имеют, а чёрный на
+  // светлом чате выглядит мрачно. Палитра сайта annabusel.org — белый,
+  // чёрный, беж, винный, холодный серый; из них под белую букву годятся
+  // только винный и его светлый вариант, остальные слишком светлые.
   static const List<Color> _palette = [
-    AppColors.terracotta,
-    AppColors.coral,
-    Color(0xFF7B61FF),
-    Color(0xFF2D9F6E),
-    AppColors.gold,
-    AppColors.brandBlack,
+    AppColors.terracotta, // винный
+    AppColors.coral, // светлее винный
   ];
 
   Color _colorForName(String n) {
+    if (isAdmin) return AppColors.terracotta;
     if (n.isEmpty) return _palette[0];
     var sum = 0;
     for (final c in n.codeUnits) {
