@@ -85,8 +85,8 @@ workflows:
       flutter: 3.44.6
       java: 17
       groups:
-        # Группа переменных в Codemagic (Settings → Environment variables).
-        # Нужны четыре штуки, все помечены Secure:
+        # Группа переменных в настройках приложения (Environment variables).
+        # Нужны четыре штуки, все помечены Secret:
         #   CM_KEYSTORE           — файл chitatel-upload.jks в base64
         #   CM_KEYSTORE_PASSWORD  — пароль хранилища
         #   CM_KEY_ALIAS          — chitatel
@@ -96,9 +96,32 @@ workflows:
       - name: Set up keystore and key.properties
         script: |
           set -e
-          # Ключ приходит в base64 отдельной переменной и на машине сборки
-          # разворачивается в файл. В репозитории его нет и быть не должно.
-          echo "$CM_KEYSTORE" | base64 --decode > "$CM_BUILD_DIR/app/android/app/chitatel-upload.jks"
+
+          if [ -z "$CM_KEYSTORE" ]; then
+            echo "CM_KEYSTORE пуста: переменная не подключилась к сборке."
+            echo "Проверь, что у неё группа google_play_credentials."
+            exit 1
+          fi
+
+          # Длину печатаем намеренно: по ней видно, скопирована ли строка
+          # целиком. Ожидаем около 3000 символов; заметно меньше — значит
+          # при вставке строку обрезали.
+          echo "Длина CM_KEYSTORE: ${#CM_KEYSTORE} символов"
+
+          # Переносы строк и пробелы легко попадают в переменную при
+          # копировании, а base64 на macOS на них спотыкается — чистим.
+          # openssl вместо base64: -A принимает вход одной длинной строкой
+          # и ведёт себя одинаково на любой машине.
+          printf '%s' "$CM_KEYSTORE" | tr -d '\n\r \t' | openssl base64 -d -A \
+            > "$CM_BUILD_DIR/app/android/app/chitatel-upload.jks"
+
+          SIZE=$(wc -c < "$CM_BUILD_DIR/app/android/app/chitatel-upload.jks")
+          echo "Размер keystore: $SIZE байт"
+          if [ "$SIZE" -lt 1000 ]; then
+            echo "Keystore получился слишком маленьким — строка base64 неполная."
+            exit 1
+          fi
+
           # Путь к хранилищу относительный: build.gradle.kts резолвит storeFile
           # через file() внутри модуля app, то есть от app/android/app.
           cat > "$CM_BUILD_DIR/app/android/key.properties" <<EOF
@@ -107,6 +130,8 @@ workflows:
           keyAlias=$CM_KEY_ALIAS
           keyPassword=$CM_KEY_PASSWORD
           EOF
+
+          echo "key.properties создан"
       - name: Get Flutter packages
         working_directory: app
         script: |
