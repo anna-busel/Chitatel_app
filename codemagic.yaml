@@ -75,3 +75,50 @@ workflows:
           flutter build apk --debug
     artifacts:
       - app/build/app/outputs/flutter-apk/*.apk
+
+  android-release:
+    name: Android release AAB
+    # Та же машина, что и у отладочной сборки — см. комментарий выше.
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: 3.44.6
+      java: 17
+      groups:
+        # Группа переменных в Codemagic (Settings → Environment variables).
+        # Нужны четыре штуки, все помечены Secure:
+        #   CM_KEYSTORE           — файл chitatel-upload.jks в base64
+        #   CM_KEYSTORE_PASSWORD  — пароль хранилища
+        #   CM_KEY_ALIAS          — chitatel
+        #   CM_KEY_PASSWORD       — пароль ключа (у нас совпадает с паролем хранилища)
+        - google_play_credentials
+    scripts:
+      - name: Set up keystore and key.properties
+        script: |
+          set -e
+          # Ключ приходит в base64 отдельной переменной и на машине сборки
+          # разворачивается в файл. В репозитории его нет и быть не должно.
+          echo "$CM_KEYSTORE" | base64 --decode > "$CM_BUILD_DIR/app/android/app/chitatel-upload.jks"
+          # Путь к хранилищу относительный: build.gradle.kts резолвит storeFile
+          # через file() внутри модуля app, то есть от app/android/app.
+          cat > "$CM_BUILD_DIR/app/android/key.properties" <<EOF
+          storeFile=chitatel-upload.jks
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          keyPassword=$CM_KEY_PASSWORD
+          EOF
+      - name: Get Flutter packages
+        working_directory: app
+        script: |
+          flutter pub get
+      - name: Flutter build appbundle (release)
+        working_directory: app
+        script: |
+          # Версия — из pubspec, номер сборки — счётчик Codemagic: у каждой
+          # загрузки в Play должен быть свой versionCode, иначе консоль
+          # отклонит файл.
+          flutter build appbundle --release \
+            --build-number=$PROJECT_BUILD_NUMBER
+    artifacts:
+      - app/build/app/outputs/bundle/release/*.aab
+      - app/build/app/outputs/mapping/release/mapping.txt
