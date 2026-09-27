@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -159,9 +160,13 @@ class _DeleteAccountScreenState extends ConsumerState<DeleteAccountScreen> {
             const SizedBox(height: 16),
 
             Text(
-              'Подписка не отменяется автоматически. Если она активна, отмените '
-              'её в Настройках iPhone → ваш Apple ID → Подписки, иначе списания '
-              'продолжатся.',
+              defaultTargetPlatform == TargetPlatform.android
+                  ? 'Подписка не отменяется автоматически. Если она активна, '
+                    'отмените её в Google Play → значок профиля → Платежи и '
+                    'подписки → Подписки, иначе списания продолжатся.'
+                  : 'Подписка не отменяется автоматически. Если она активна, '
+                    'отмените её в Настройках iPhone → ваш Apple ID → '
+                    'Подписки, иначе списания продолжатся.',
               style: AppTypography.caption.copyWith(color: AppColors.error),
             ),
             const SizedBox(height: 24),
