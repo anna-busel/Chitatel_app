@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_contacts.dart';
@@ -56,11 +57,14 @@ class SupportScreen extends StatelessWidget {
           children: [
             Text('Частые вопросы', style: AppTypography.sectionHeader),
             const SizedBox(height: 10),
-            const _Faq(
+            _Faq(
               question: 'Как отменить подписку?',
-              answer:
-                  'Настройки iPhone → ваш Apple ID → Подписки → ЧИТАТЕЛЬ → '
-                  'Отменить. Доступ сохранится до конца оплаченного периода.',
+              answer: defaultTargetPlatform == TargetPlatform.android
+                  ? 'Google Play → значок профиля → Платежи и подписки → '
+                    'Подписки → ЧИТАТЕЛЬ → Отменить. Доступ сохранится до '
+                    'конца оплаченного периода.'
+                  : 'Настройки iPhone → ваш Apple ID → Подписки → ЧИТАТЕЛЬ → '
+                    'Отменить. Доступ сохранится до конца оплаченного периода.',
             ),
             const _Faq(
               question: 'Оплатила, но клуб не открылся',

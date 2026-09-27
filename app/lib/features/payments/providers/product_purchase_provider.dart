@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import '../../../core/storage/secure_storage.dart';
@@ -59,9 +60,11 @@ class ProductPurchaseNotifier extends StateNotifier<ProductPurchaseState> {
     _sub = _service.purchaseStream.listen(
       _onPurchaseUpdates,
       onError: (Object _) {
-        state = const ProductPurchaseState(
+        state = ProductPurchaseState(
           status: ProductPurchaseStatus.error,
-          errorMessage: 'Ошибка App Store',
+          errorMessage: defaultTargetPlatform == TargetPlatform.android
+              ? 'Ошибка Google Play'
+              : 'Ошибка App Store',
         );
       },
     );
@@ -97,7 +100,9 @@ class ProductPurchaseNotifier extends StateNotifier<ProductPurchaseState> {
         state = ProductPurchaseState(
           status: ProductPurchaseStatus.error,
           productId: productId,
-          errorMessage: 'Товар недоступен в App Store',
+          errorMessage: defaultTargetPlatform == TargetPlatform.android
+              ? 'Товар недоступен в Google Play'
+              : 'Товар недоступен в App Store',
         );
         return;
       }
