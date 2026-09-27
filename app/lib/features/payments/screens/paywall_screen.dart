@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -252,7 +253,7 @@ class _SeasonAnnounceCard extends StatelessWidget {
 }
 
 /// Карточка одного тарифа. Заголовок/описание — по productId,
-/// цена — локализованная строка из App Store (product.price).
+/// цена — локализованная строка из магазина (product.price).
 /// Сезон: заголовок «Осенний сезон · 3 месяца» и подпись с месяцами и окном
 /// оформления — из season_window.dart. Обещаний про скидку в подписи нет.
 class _TariffCard extends StatelessWidget {
@@ -358,11 +359,23 @@ class _LegalText extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Подписка продлевается автоматически, пока вы её не отмените. Оплата '
-          'спишется с вашего Apple ID при подтверждении покупки. Управлять '
-          'подпиской и отключить автопродление можно в Настройках iPhone → '
-          'ваш Apple ID → Подписки, не позднее чем за 24 часа до конца периода. '
-          'Итоговая сумма с учётом налогов — в окне оплаты Apple.',
+          // ⚠️ 27.09.2026 (E3 ANDROID-PLAN): текст был захардкожен под Apple и
+          // на Android врал — участница читала, что платит через Apple ID и
+          // отменяет в настройках iPhone. Пути совпадают с manage_sub_screen,
+          // юридическими страницами и описанием в Play Console.
+          defaultTargetPlatform == TargetPlatform.android
+              ? 'Подписка продлевается автоматически, пока вы её не отмените. '
+                'Оплата спишется с вашего аккаунта Google при подтверждении '
+                'покупки. Управлять подпиской и отключить автопродление можно '
+                'в Google Play → значок профиля → Платежи и подписки → '
+                'Подписки, не позднее чем за 24 часа до конца периода. '
+                'Итоговая сумма с учётом налогов — в окне оплаты Google Play.'
+              : 'Подписка продлевается автоматически, пока вы её не отмените. '
+                'Оплата спишется с вашего Apple ID при подтверждении покупки. '
+                'Управлять подпиской и отключить автопродление можно в '
+                'Настройках iPhone → ваш Apple ID → Подписки, не позднее чем '
+                'за 24 часа до конца периода. Итоговая сумма с учётом налогов '
+                '— в окне оплаты Apple.',
           style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
         ),
         const SizedBox(height: 10),
