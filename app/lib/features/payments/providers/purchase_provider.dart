@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import '../../../core/storage/secure_storage.dart';
@@ -102,7 +103,9 @@ class PurchaseNotifier extends StateNotifier<PaywallState> {
       onError: (Object _) {
         state = state.copyWith(
           status: PaywallStatus.error,
-          errorMessage: 'Ошибка App Store',
+          errorMessage: defaultTargetPlatform == TargetPlatform.android
+              ? 'Ошибка Google Play'
+              : 'Ошибка App Store',
         );
       },
     );
