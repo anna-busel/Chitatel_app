@@ -325,6 +325,62 @@ router.post('/:id/revoke-book', validate(bookSchema), async (req, res, next) => 
 });
 
 /* ------------------------------------------------------------------ *
+ *                     СНЯТИЕ КЛУБНОГО МЕСЯЦА                          *
+ * ------------------------------------------------------------------ */
+
+const clubMonthSchema = z.object({
+  // Ключ месяца 'YYYY-M' БЕЗ ведущего нуля — как clubMonthKey в
+  // middleware/subscription.js и как их пишет clubMonthKeysBetween выше.
+  month: z.string().trim().regex(/^\d{4}-(1[0-2]|[1-9])$/, 'Формат месяца: 2026-10'),
+});
+
+/**
+ * POST /api/admin/users/:id/revoke-club-month
+ * Убрать у участницы доступ к одному клубному месяцу.
+ *
+ * Зачем отдельная ручка: clubMonthsEntitled намеренно живёт отдельно от
+ * подписки — оплаченный месяц остаётся доступным и после её окончания
+ * (обещано в описании и условиях). Поэтому снятие подписки (status=free)
+ * месяцы НЕ трогает, и до этой ручки забрать выданный доступ было нечем:
+ * ошибочно выданный «Год» или бесплатный доступ тестировщицам оставались
+ * навсегда.
+ *
+ * Снимаем по одному месяцу, а не списком целиком: у участницы рядом могут
+ * лежать реально оплаченные месяцы, их трогать нельзя.
+ */
+router.post(
+  '/:id/revoke-club-month',
+  validate(clubMonthSchema),
+  async (req, res, next) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        throw new AppError('NOT_FOUND', 'Неверный id пользователя', 400);
+      }
+      const user = await User.findByIdAndUpdate(
+        req.params.id,
+        { $pull: { clubMonthsEntitled: req.body.month } },
+        { new: true }
+      ).select('clubMonthsEntitled');
+      if (!user) {
+        throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
+      }
+
+      logger.info('Club month revoked', {
+        userId: req.params.id,
+        month: req.body.month,
+      });
+
+      return success(res, {
+        ok: true,
+        clubMonthsEntitled: user.clubMonthsEntitled || [],
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/* ------------------------------------------------------------------ *
  *                   ВЫДАЧА / СНЯТИЕ ДОСТУПА К ПАКЕТУ                 *
  * ------------------------------------------------------------------ */
 
@@ -398,7 +454,7 @@ router.post('/:id/revoke-package', validate(pkgSchema), async (req, res, next) =
 });
 
 /* ------------------------------------------------------------------ *
- *                          РОЛЬ / БАН                                *
+ *                          РОЛЬ / БАН                                  *
  * ------------------------------------------------------------------ */
 
 const roleSchema = z.object({ role: z.enum(['user', 'admin']) });
