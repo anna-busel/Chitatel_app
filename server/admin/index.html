@@ -447,7 +447,7 @@ function renderUser(){
     '<div class="kv"><span class="k">Подписка</span><span class="v">'+esc(u.subscriptionStatus)+(u.subscriptionExpiresAt?' до '+fmtDate(u.subscriptionExpiresAt):'')+'</span></div>'+
     '<div class="kv"><span class="k">Купленные разборы</span><span class="v">'+books+'</span></div>'+
     '<div class="kv"><span class="k">Пакеты</span><span class="v">'+packs+'</span></div>'+
-    '<div class="kv"><span class="k">Клубные месяцы</span><span class="v">'+((u.clubMonthsEntitled||[]).join(', ')||'—')+'</span></div>'+
+    '<div class="kv"><span class="k">Клубные месяцы</span><span class="v">'+clubMonthsHtml(u)+'</span></div>'+
     '<div class="divider"></div>'+
     '<div class="lbl" style="margin-top:0">Подписка на клуб</div>'+
     '<div class="fld"><div class="seg" id="grStatus">'+
@@ -475,6 +475,24 @@ function renderUser(){
       '<button class="btn '+(u.isBanned?'ghost':'danger')+' sm" onclick="setBan('+(!u.isBanned)+')">'+(u.isBanned?'Разблокировать':'Заблокировать')+'</button>'+
     '</div>'
   );
+}
+// Клубные месяцы — с крестиком у каждого. Снятие подписки их НЕ трогает
+// (оплаченный месяц остаётся доступным и после её окончания), поэтому
+// убирать выданный по ошибке или на время теста доступ можно только здесь.
+function clubMonthsHtml(u){
+  var ms=(u.clubMonthsEntitled||[]);
+  if(!ms.length) return '—';
+  return ms.map(function(m){
+    return '<span class="badge" style="margin:0 4px 4px 0;display:inline-block">'+esc(m)+
+      ' <a href="#" title="Убрать доступ к этому месяцу" style="text-decoration:none;color:var(--danger,#C0392B)" '+
+      'onclick="revokeClubMonth(\''+esc(m)+'\');return false;">×</a></span>';
+  }).join('');
+}
+async function revokeClubMonth(month){
+  if(!confirm('Убрать доступ к клубу за '+month+'?')) return;
+  try{ await api('/admin/users/'+_curUser._id+'/revoke-club-month',{method:'POST',body:JSON.stringify({month:month})});
+    toast('Месяц '+month+' снят'); await openUser(_curUser._id);
+  }catch(e){ toast(e.message); }
 }
 async function grantSub(){
   var status=segVal('grStatus'), plan=segVal('grPlan');
