@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,6 +14,30 @@ import '../../catalog/providers/packages_provider.dart';
 import '../../home/providers/home_provider.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../services/auth_service.dart';
+
+/// Клиенты OAuth проекта Google Cloud `chitatel-490014` (номер 29430814146).
+///
+/// Идентификаторы клиентов НЕ секретны (их видно в любой установленной
+/// сборке), секретом является только client secret, а он в этой схеме не
+/// участвует: приложение отдаёт серверу `idToken`, сервер проверяет подпись
+/// Google.
+///
+/// - iOS: клиент типа iOS. Используется как `clientId`.
+/// - Android: клиент типа Android (пакет `app.chitatel` + отпечаток SHA-1
+///   ключа, которым подписана сборка) в консоли ЕСТЬ, но в коде не указывается
+///   — Google находит его сам по подписи. В `GoogleSignIn` передаётся
+///   `serverClientId` — это Web-клиент, и именно он становится получателем
+///   (`aud`) выданного `idToken`. Без `serverClientId` на Android `idToken`
+///   вообще не выдаётся, приходит только `accessToken`.
+///
+/// ⚠️ Сервер обязан принимать ОБА идентификатора как допустимый `aud` (см.
+/// `server/src/services/google-auth.service.js`, переменные `GOOGLE_CLIENT_ID`
+/// и `GOOGLE_SERVER_CLIENT_ID`). Иначе токен с Android не проходит проверку и
+/// возвращается «Не удалось верифицировать Google токен».
+const String _googleIosClientId =
+    '29430814146-6i4kal1nihgo8l4685i53009dg1tjm81.apps.googleusercontent.com';
+const String _googleServerClientId =
+    '29430814146-76mb9hqgkifg4i80in19d8ug29f7oe3t.apps.googleusercontent.com';
 
 /// Состояния аутентификации.
 enum AuthStatus { initial, loading, authenticated, guest, error }
@@ -227,14 +252,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Google Sign In.
-  /// ⚠️ Кнопка Google на экране входа СКРЫТА (login_screen: _googleEnabled=false)
-  /// до настройки GOOGLE_CLIENT_ID и URL scheme. Метод оставлен рабочим.
+  ///
+  /// Кнопка показывается только на Android (задача B1, 29.09.2026); на iOS она
+  /// скрыта — там нет URL scheme в Info.plist, см. шапку `login_screen.dart`.
+  ///
+  /// Настройка клиента разная по платформам: на Android нужен
+  /// `serverClientId` (Web-клиент), иначе `idToken` не выдаётся вовсе; на iOS —
+  /// `clientId` клиента типа iOS, как было.
   Future<void> signInWithGoogle() async {
     state = state.copyWith(status: AuthStatus.loading);
     try {
-      final googleSignIn = GoogleSignIn(
-        clientId: '29430814146-6i4kal1nihgo8l4685i53009dg1tjm81.apps.googleusercontent.com',
-      );
+      final googleSignIn = defaultTargetPlatform == TargetPlatform.android
+          ? GoogleSignIn(serverClientId: _googleServerClientId)
+          : GoogleSignIn(clientId: _googleIosClientId);
       final account = await googleSignIn.signIn();
       if (account == null) {
         state = state.copyWith(status: AuthStatus.guest);

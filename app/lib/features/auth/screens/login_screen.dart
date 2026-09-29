@@ -13,10 +13,10 @@ import '../providers/auth_provider.dart';
 
 /// Экран входа (MASTER 4.2).
 ///
-/// Кнопки: Apple (чёрная, первая), [Google — СКРЫТА, см. ниже], Email.
+/// Кнопки: Apple (чёрная, первая, только iOS), Google (только Android), Email.
 /// Чекбокс GDPR. Кнопка «Продолжить без регистрации» (гостевой режим, 1.8).
 ///
-/// 🔴 12.07.2026 — GOOGLE ВРЕМЕННО СКРЫТ (`_googleEnabled = false`).
+/// 🔴 12.07.2026 — GOOGLE БЫЛ СКРЫТ НА ОБЕИХ ПЛАТФОРМАХ.
 /// Кнопка была нерабочей СРАЗУ В ТРЁХ местах:
 ///   1. на сервере `GOOGLE_CLIENT_ID` пуст → верификация токена падает;
 ///   2. в Info.plist нет URL scheme (reversed client ID) → на iOS окно входа
@@ -25,9 +25,19 @@ import '../providers/auth_provider.dart';
 /// Нажатие ревьюером Apple = гарантированная ошибка = отклонение сборки.
 /// Вход через Apple и почту закрывает iOS полностью.
 ///
-/// ЧТОБЫ ВЕРНУТЬ (понадобится для Android): поставить `_googleEnabled = true`
-/// + выдать `GOOGLE_CLIENT_ID` в server/.env + добавить URL scheme в Info.plist.
-/// Сам код кнопки и вызов `signInWithGoogle()` НЕ удалены — только скрыты.
+/// 🟢 29.09.2026, задача B1 — GOOGLE ВКЛЮЧЁН ТОЛЬКО НА ANDROID.
+/// На iOS остаётся скрытым: там URL scheme в Info.plist по-прежнему нет, а
+/// трогать одобренную сборку незачем — Apple и почта закрывают iOS полностью.
+/// На Android это единственный быстрый вход: Apple там не поддерживаем (B3),
+/// и без Google остаётся только регистрация по почте.
+///
+/// ⚠️ Зачем это важнее, чем кажется: аккаунт, созданный через Apple, на
+/// Android НЕ ИМЕЛ входа вообще — пароля у такого аккаунта в базе нет, а
+/// восстановления пароля в проекте нет совсем. Кнопка Google закрывает дыру:
+/// сервер (`google-auth.service.js`) при входе ищет пользователя ПО ПОЧТЕ и
+/// привязывает Google к существующему аккаунту, вместе с покупками и клубом.
+/// Не сработает только для тех, кто регистрировался через Apple со «Скрыть
+/// e-mail» — у них в базе relay-адрес, совпадения по почте не будет.
 ///
 /// ⚠️ 12.07.2026 — ФИКС КРАША ПОСЛЕ РЕГИСТРАЦИИ: новый юзер отправлялся на
 /// `Routes.survey`, а этого маршрута в роутере НЕТ (опрос — волна 6Б, задача
@@ -36,8 +46,10 @@ import '../providers/auth_provider.dart';
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
-  /// Показывать ли кнопку Google. Пока false — см. комментарий выше.
-  static const bool _googleEnabled = false;
+  /// Показывать ли кнопку Google. Только Android (задача B1, 29.09.2026) —
+  /// на iOS по-прежнему скрыта, см. комментарий выше.
+  static bool get _googleEnabled =>
+      defaultTargetPlatform == TargetPlatform.android;
 
   /// Вход через Apple на Android не поддерживаем (решение ANDROID-PLAN, п.7:
   /// «чего специально НЕ делаем в первой версии»). Правило Apple «есть Google —
@@ -151,7 +163,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const SizedBox(height: 10),
               ],
 
-              // Google Sign In — СКРЫТ до настройки (см. шапку файла).
+              // Google Sign In — только Android (B1), на iOS скрыт: см. шапку.
               if (LoginScreen._googleEnabled) ...[
                 _SocialButton(
                   label: 'Google',
