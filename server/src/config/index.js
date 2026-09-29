@@ -59,8 +59,22 @@ const config = {
     production: process.env.APNS_PRODUCTION === 'true',
   },
 
+  // Вход через Google (MASTER 7.4). Клиентов OAuth ДВА, по одному на платформу,
+  // и оба должны приниматься как допустимый получатель (`aud`) idToken:
+  //   GOOGLE_CLIENT_ID        — клиент типа iOS (зашит в приложении как
+  //     clientId; кнопка на iOS пока скрыта, но токен от неё должен проходить);
+  //   GOOGLE_SERVER_CLIENT_ID — клиент типа Web. На Android он передаётся в
+  //     GoogleSignIn как serverClientId и становится `aud` выданного токена
+  //     (задача B1 ANDROID-PLAN, 29.09.2026).
+  // Пустые значения просто не попадают в список; если список пуст — вход через
+  // Google отвечает 401, всё остальное работает как прежде.
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
+    serverClientId: process.env.GOOGLE_SERVER_CLIENT_ID || '',
+    clientIds: [
+      process.env.GOOGLE_CLIENT_ID || '',
+      process.env.GOOGLE_SERVER_CLIENT_ID || '',
+    ].filter(Boolean),
   },
 
   // Google Play Developer API — проверка покупок Android (задача E4

@@ -5,6 +5,9 @@ const User = require('../models/User');
 const config = require('../config');
 const { AppError } = require('../middleware/error');
 
+// Аудитория (`aud`) проверяется отдельно на каждый вызов verifyIdToken, потому
+// что допустимых клиентов два — iOS и Web (см. config.google.clientIds).
+// Аргумент конструктора остаётся первым клиентом только для совместимости.
 const client = new OAuth2Client(config.google.clientId);
 
 /**
@@ -55,12 +58,21 @@ const generateReferralCode = () => {
  * 4. Выдать JWT tokens
  */
 const authenticateWithGoogle = async ({ idToken }) => {
+  // Допустимые получатели токена: клиент iOS и Web-клиент (он же
+  // serverClientId на Android). Задача B1 ANDROID-PLAN, 29.09.2026: до этого
+  // проверялся РОВНО один клиент, поэтому токен с Android не проходил проверку.
+  const audience = config.google.clientIds;
+  if (audience.length === 0) {
+    throw new AppError(
+      'AUTH_GOOGLE_FAILED',
+      'Вход через Google не настроен на сервере',
+      401
+    );
+  }
+
   let ticket;
   try {
-    ticket = await client.verifyIdToken({
-      idToken,
-      audience: config.google.clientId,
-    });
+    ticket = await client.verifyIdToken({ idToken, audience });
   } catch (_err) {
     throw new AppError('AUTH_GOOGLE_FAILED', 'Не удалось верифицировать Google токен', 401);
   }
