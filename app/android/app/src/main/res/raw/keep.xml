@@ -11,8 +11,18 @@
   приложения не появляется. В отладочной сборке ресурсы не вырезаются, поэтому
   при проверках на телефоне 12.09 всё работало, а в сборке из Play — нет.
 
+  02.10.2026 (вторая правка). То же самое и с иконками кнопок плеера. Плагин
+  audio_service держит их в своих ресурсах (audio_service_play_arrow,
+  audio_service_pause, audio_service_fast_rewind, audio_service_fast_forward,
+  audio_service_skip_next, audio_service_skip_previous, audio_service_stop),
+  а ссылается на них строками из Dart: MediaControl.pause.androidIcon =
+  'drawable/audio_service_pause' и т.д. Сборщик их тоже вырезал, поэтому в
+  релизе карточка плеера появлялась без кнопок: название и перемотка есть
+  (это MediaSession), а кнопок управления нет (это уже уведомление, и без
+  иконки действие не создаётся). Проверено на телефоне тестировщицы 02.10.
+
   ⚠️ Любой новый ресурс, на который ссылаются ТОЛЬКО по имени из Dart или
   через getIdentifier, нужно дописывать сюда же, иначе он исчезнет в релизе.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@drawable/ic_stat_chitatel" />
+    tools:keep="@drawable/ic_stat_chitatel,@drawable/audio_service_*" />
