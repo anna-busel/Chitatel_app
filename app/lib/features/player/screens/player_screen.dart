@@ -203,16 +203,33 @@ class _PlayerBody extends ConsumerWidget {
         child: Column(
           children: [
             const _TopBar(),
+            // 02.10.2026. Раньше здесь был SingleChildScrollView с
+            // NeverScrollableScrollPhysics: прокрутка запрещена, и если
+            // содержимое выше экрана, низ просто обрезался — на телефоне с
+            // невысоким экраном пропадал ряд «скорость / сон» (поймано на
+            // устройстве тестировщицы). В релизной сборке Flutter обрезает
+            // молча, без жёлтых полос, поэтому раньше это не замечали.
+            //
+            // Теперь обложка лежит в Flexible с FittedBox(scaleDown): пока
+            // места хватает, она остаётся ровно 180×270 и экран выглядит как
+            // прежде — на iPhone не меняется ни один пиксель. Если места мало,
+            // обложка пропорционально уменьшается и освобождает его нижнему
+            // ряду. Прокрутку намеренно НЕ включаем: она перехватывала бы
+            // жест «смахнуть вниз, чтобы закрыть плеер».
             Expanded(
-              child: SingleChildScrollView(
-                physics: const NeverScrollableScrollPhysics(),
+              child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.screenPadding,
                 ),
                 child: Column(
                   children: [
                     const SizedBox(height: 20),
-                    _CoverSection(book: book),
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: _CoverSection(book: book),
+                      ),
+                    ),
                     const SizedBox(height: 24),
                     _TitleSection(book: book),
                     const SizedBox(height: 22),
