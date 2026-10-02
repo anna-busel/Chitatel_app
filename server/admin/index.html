@@ -153,7 +153,19 @@
       </div>
 
       <div class="page" data-page="people">
-        <input id="userSearch" placeholder="Поиск по имени или email…" oninput="debouncedUsers()">
+        <input id="userSearch" placeholder="Имя, почта, код участницы…" oninput="debouncedUsers()">
+        <div class="seg" id="uStatus">
+          <div class="opt on" data-v="all" onclick="pickUStatus(this)">Все</div>
+          <div class="opt" data-v="active" onclick="pickUStatus(this)">С подпиской</div>
+          <div class="opt" data-v="expired" onclick="pickUStatus(this)">Истёкшие</div>
+          <div class="opt" data-v="free" onclick="pickUStatus(this)">Без подписки</div>
+          <div class="opt" data-v="banned" onclick="pickUStatus(this)">Заблокированные</div>
+        </div>
+        <div class="seg" id="uSort">
+          <div class="opt on" data-v="new" onclick="pickUSort(this)">Свежие</div>
+          <div class="opt" data-v="name" onclick="pickUSort(this)">По имени</div>
+          <div class="opt" data-v="expires" onclick="pickUSort(this)">По сроку</div>
+        </div>
         <div class="banner">Доступ выдаётся тем, кто уже зарегистрировался в приложении. Найдите участницу и откройте карточку.</div>
         <div id="userList"><div class="empty">Загрузка…</div></div>
       </div>
@@ -434,17 +446,30 @@ function renderDash(a){
 
 var _uTimer=null;
 function debouncedUsers(){ clearTimeout(_uTimer); _uTimer=setTimeout(loadUsers,300); }
+var _uStatus='all', _uSort='new', _uLimit=40;
+function pickUStatus(el){ pick(el); _uStatus=el.dataset.v; _uLimit=40; loadUsers(); }
+function pickUSort(el){ pick(el); _uSort=el.dataset.v; _uLimit=40; loadUsers(); }
+function usersMore(){ _uLimit+=40; loadUsers(); }
 async function loadUsers(){
   var q = (document.getElementById('userSearch').value||'').trim();
   var el = document.getElementById('userList');
   try{
-    var d = await api('/admin/users?limit=40&q='+encodeURIComponent(q));
+    var d = await api('/admin/users?limit='+_uLimit+'&q='+encodeURIComponent(q)+'&sort='+_uSort+'&status='+_uStatus);
     if(!d.users.length){ el.innerHTML='<div class="empty">Никого не найдено</div>'; return; }
-    el.innerHTML = '<div class="card" style="padding:4px 12px">'+d.users.map(function(u){
+    var rows = d.users.map(function(u){
+      // Почта может быть пустой — у вошедших через Apple со «Скрыть e-mail».
+      // Тогда показываем хвост идентификатора: по нему участницу можно найти
+      // поиском и открыть карточку.
+      var sub = u.email ? esc(u.email) : ('без почты · '+esc(String(u._id).slice(-6)));
       return '<div class="row" onclick="openUser(\''+u._id+'\')"><div class="av">'+esc((u.name||u.email||'?')[0].toUpperCase())+'</div>'+
-        '<div class="meta"><div class="nm">'+esc(u.name||'Без имени')+'</div><div class="em">'+esc(u.email||u._id)+'</div></div>'+
+        '<div class="meta"><div class="nm">'+esc(u.name||'Без имени')+'</div><div class="em">'+sub+'</div></div>'+
         subBadge(u)+'<span class="chev">›</span></div>';
-    }).join('')+'</div><div class="muted" style="text-align:center;padding:8px">Найдено: '+d.total+'</div>';
+    }).join('');
+    var more = (d.users.length < (d.total||0))
+      ? '<div style="text-align:center;padding:10px"><button class="btn ghost sm" onclick="usersMore()">Показать ещё</button></div>'
+      : '';
+    el.innerHTML = '<div class="card" style="padding:4px 12px">'+rows+'</div>'+more+
+      '<div class="muted" style="text-align:center;padding:8px">Показано '+d.users.length+' из '+d.total+'</div>';
   }catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
 }
 

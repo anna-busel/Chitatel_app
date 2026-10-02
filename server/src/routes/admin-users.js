@@ -50,18 +50,64 @@ function manualTxId(prefix, userId, tail) {
 
 const listSchema = z.object({
   q: z.string().trim().max(120).optional().default(''),
-  limit: z.coerce.number().int().min(1).max(50).default(30),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
   offset: z.coerce.number().int().min(0).default(0),
+  // 02.10.2026: сортировка и фильтры. До этого список отдавал жёстко свежих
+  // и без отбора — при 167 участницах остальных можно было найти только
+  // поиском, а с переводом людей из телеграма это стало неудобно совсем.
+  sort: z.enum(['new', 'name', 'expires']).optional().default('new'),
+  status: z
+    .enum(['all', 'active', 'expired', 'free', 'banned'])
+    .optional()
+    .default('all'),
+  platform: z.enum(['all', 'ios', 'android']).optional().default('all'),
 });
 
+const SORTS = {
+  new: { createdAt: -1 },
+  name: { name: 1 },
+  // Сначала те, у кого срок ближе к концу — за ними следить важнее всего.
+  expires: { subscriptionExpiresAt: 1 },
+};
+
 /**
- * GET /api/admin/users?q=&limit=&offset=
- * Список/поиск участниц (по имени, email, почте рассылки). Свежие сверху.
+ * GET /api/admin/users?q=&limit=&offset=&sort=&status=&platform=
+ * Список/поиск участниц. Ищет по имени, почте, почте рассылки, коду и id.
  */
 router.get('/', validate(listSchema, 'query'), async (req, res, next) => {
   try {
-    const { q, limit, offset } = req.query;
+    const { q, limit, offset, sort, status, platform } = req.query;
     const filter = { isDeleted: { $ne: true } };
+
+    const nowDate = new Date();
+    if (status === 'active') {
+      filter.subscriptionStatus = { $in: ['basic', 'premium'] };
+      filter.subscriptionExpiresAt = { $gt: nowDate };
+    } else if (status === 'expired') {
+      filter.$and = [
+        {
+          $or: [
+            { subscriptionStatus: 'expired' },
+            {
+              subscriptionStatus: { $in: ['basic', 'premium'] },
+              subscriptionExpiresAt: { $lte: nowDate },
+            },
+          ],
+        },
+      ];
+    } else if (status === 'free') {
+      filter.subscriptionStatus = 'free';
+    } else if (status === 'banned') {
+      filter.isBanned = true;
+    }
+
+    // Платформа — по зарегистрированным устройствам (User.devices).
+    // ⚠️ Токены пишутся при регистрации push, а на Android пушей пока нет
+    // (блок C ANDROID-PLAN), поэтому фильтр «Android» сейчас почти пуст.
+    // Заработает сам, как только появятся токены.
+    if (platform === 'ios' || platform === 'android') {
+      filter['devices.platform'] = platform;
+    }
     if (q) {
       const rx = new RegExp(escapeRegex(q), 'i');
       filter.$or = [{ name: rx }, { email: rx }, { marketingEmail: rx }];
@@ -80,7 +126,7 @@ router.get('/', validate(listSchema, 'query'), async (req, res, next) => {
         .select(
           'name email role subscriptionStatus subscriptionExpiresAt isBanned avatarUrl createdAt'
         )
-        .sort({ createdAt: -1 })
+        .sort(SORTS[sort] || SORTS.new)
         .skip(offset)
         .limit(limit)
         .lean(),
