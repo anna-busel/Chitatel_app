@@ -226,9 +226,20 @@
         <div class="seg" id="payFilter">
           <div class="opt on" data-v="all" onclick="pickPay(this)">Все</div>
           <div class="opt" data-v="apple" onclick="pickPay(this)">Apple</div>
+          <div class="opt" data-v="google" onclick="pickPay(this)">Google</div>
           <div class="opt" data-v="manual" onclick="pickPay(this)">Вручную</div>
         </div>
-        <div class="hint">Все платежи: реальные списания Apple и доступ, выданный вручную из админки. Суммы Apple — реальная выручка; «вручную» — без суммы (доступ выдан без оплаты).</div>
+        <div class="seg" id="payType">
+          <div class="opt on" data-v="all" onclick="pickPayType(this)">Всё</div>
+          <div class="opt" data-v="subscription" onclick="pickPayType(this)">Подписки</div>
+          <div class="opt" data-v="book" onclick="pickPayType(this)">Разборы</div>
+          <div class="opt" data-v="package" onclick="pickPayType(this)">Пакеты</div>
+        </div>
+        <div class="seg" id="paySandbox">
+          <div class="opt on" data-v="hide" onclick="pickPaySandbox(this)">Без тестовых</div>
+          <div class="opt" data-v="show" onclick="pickPaySandbox(this)">С тестовыми</div>
+        </div>
+        <div class="hint">Все платежи: реальные списания Apple и Google и доступ, выданный вручную из админки. Суммы — только по магазинам; «вручную» без суммы, доступ выдан без оплаты. Тестовые покупки (TestFlight, проверка ревьюером, лицензионные тестировщицы Google) в выручку не входят никогда.</div>
         <div id="payList"><div class="empty">Загрузка…</div></div>
       </div>
 
@@ -441,10 +452,12 @@ function renderUser(){
   var packs=(u.purchasedPackages||[]).map(function(p){return esc(p.title);}).join(', ')||'—';
   openModal(
     '<div style="display:flex;gap:12px;align-items:center"><div class="av" style="width:50px;height:50px">'+esc((u.name||u.email||'?')[0].toUpperCase())+'</div>'+
-    '<div><h2 style="margin:0">'+esc(u.name||'Без имени')+'</h2><div class="muted">'+esc(u.email||'')+'</div></div></div>'+
+    '<div><h2 style="margin:0">'+esc(u.name||'Без имени')+'</h2><div class="muted">'+(u.email?esc(u.email):'почта скрыта провайдером входа')+'</div></div></div>'+
     '<div style="margin:12px 0">'+subBadge(u)+' '+(u.role==='admin'?'<span class="badge b-admin">админ/модер</span>':'')+'</div>'+
     '<div class="kv"><span class="k">Регистрация</span><span class="v">'+esc(u.authProvider||'—')+' · '+fmtDate(u.createdAt)+'</span></div>'+
-    '<div class="kv"><span class="k">Подписка</span><span class="v">'+esc(u.subscriptionStatus)+(u.subscriptionExpiresAt?' до '+fmtDate(u.subscriptionExpiresAt):'')+'</span></div>'+
+    '<div class="kv"><span class="k">Подписка</span><span class="v">'+esc(u.subscriptionStatus)+(u.subscriptionExpiresAt?' до '+fmtDate(u.subscriptionExpiresAt):'')+(u.subscriptionPlatform?' · '+esc(u.subscriptionPlatform):'')+'</span></div>'+
+    '<div class="kv"><span class="k">Устройства</span><span class="v">'+devicesHtml(u)+'</span></div>'+
+    '<div class="kv"><span class="k">Код участницы</span><span class="v" style="font-family:monospace;font-size:12px">'+esc(u.referralCode||'—')+'</span></div>'+
     '<div class="kv"><span class="k">Купленные разборы</span><span class="v">'+books+'</span></div>'+
     '<div class="kv"><span class="k">Пакеты</span><span class="v">'+packs+'</span></div>'+
     '<div class="kv"><span class="k">Клубные месяцы</span><span class="v">'+clubMonthsHtml(u)+'</span></div>'+
@@ -469,12 +482,57 @@ function renderUser(){
       '<select id="grPkg">'+_accessPkgs.map(function(p){return '<option value="'+esc(p.packageSlug)+'">'+esc(p.title)+'</option>';}).join('')+'</select>'+
       '<button class="btn ghost" style="margin-top:6px" onclick="grantPkg()">Открыть пакет</button></div>'+
     '<div class="divider"></div>'+
+    '<div class="lbl" style="margin-top:0">Вход в приложение</div>'+
+    '<div class="fld"><label>Почта аккаунта</label>'+
+      '<input id="edEmail" type="email" placeholder="name@example.com" value="'+esc(u.email||'')+'">'+
+      '<button class="btn ghost" style="margin-top:6px" onclick="setEmail()">Сохранить почту</button>'+
+      '<div class="hint">Та почта, которой участница входит. У вошедших через Apple со «Скрыть e-mail» здесь служебный адрес вида …@privaterelay.appleid.com, а иногда пусто — тогда её не найти по списку и не привязать к Google. Вписав настоящий адрес, вы это чините: цитаты и покупки остаются на месте.</div></div>'+
+    '<div class="fld" style="margin-top:10px"><label>Новый пароль</label>'+
+      '<input id="edPass" type="text" placeholder="не короче 8 символов" autocomplete="off">'+
+      '<button class="btn ghost" style="margin-top:6px" onclick="setPassword()">Задать пароль</button>'+
+      '<div class="hint">Нужен, когда человек не может войти: пароля у аккаунтов через Apple и Google нет, а восстановления по письму в приложении пока не существует. Задайте пароль и передайте его участнице — войдёт по почте. Вход через Apple и Google при этом продолжит работать.</div></div>'+
+    '<div class="divider"></div>'+
     '<div class="btnrow">'+
       '<button class="btn ghost sm" onclick="setRole()">'+(u.role==='admin'?'Снять админа':'Сделать админом')+'</button>'+
       '<button class="btn ghost sm" onclick="setSub(\'free\')">Снять подписку</button>'+
       '<button class="btn '+(u.isBanned?'ghost':'danger')+' sm" onclick="setBan('+(!u.isBanned)+')">'+(u.isBanned?'Разблокировать':'Заблокировать')+'</button>'+
     '</div>'
   );
+}
+// С каких платформ участница заходила. Берётся из devices[] — список
+// пополняется при регистрации push-токена (02.10.2026: на Android токенов
+// пока нет, блок C не сделан, поэтому у чисто-андроидных аккаунтов здесь
+// будет прочерк — это не ошибка).
+function devicesHtml(u){
+  var ds=(u.devices||[]);
+  if(!ds.length) return '—';
+  var set={};
+  ds.forEach(function(d){ if(d && d.platform) set[d.platform]=1; });
+  var names=Object.keys(set).map(function(p){ return p==='ios'?'iPhone':(p==='android'?'Android':p); });
+  return names.length?esc(names.join(' · ')):'—';
+}
+// Сменить аккаунтную почту. Сервер проверит, что адрес не занят другим.
+async function setEmail(){
+  var el=document.getElementById('edEmail');
+  var email=(el&&el.value||'').trim();
+  if(!email){ toast('Укажите почту'); return; }
+  if(!confirm('Сменить почту аккаунта на '+email+'?')) return;
+  try{
+    await api('/admin/users/'+_curUser._id+'/email',{method:'POST',body:JSON.stringify({email:email})});
+    toast('Почта изменена'); await openUser(_curUser._id); loadUsers();
+  }catch(e){ toast(e.message); }
+}
+// Задать пароль. Сервер заодно переключает способ входа на «почта» —
+// иначе логин по паролю аккаунт не пустит.
+async function setPassword(){
+  var el=document.getElementById('edPass');
+  var pass=(el&&el.value||'').trim();
+  if(pass.length<8){ toast('Пароль не короче 8 символов'); return; }
+  if(!confirm('Задать участнице новый пароль? Передайте его ей лично.')) return;
+  try{
+    await api('/admin/users/'+_curUser._id+'/password',{method:'POST',body:JSON.stringify({password:pass})});
+    toast('Пароль задан'); await openUser(_curUser._id);
+  }catch(e){ toast(e.message); }
 }
 // Клубные месяцы — с крестиком у каждого. Снятие подписки их НЕ трогает
 // (оплаченный месяц остаётся доступным и после её окончания), поэтому
@@ -924,24 +982,47 @@ function saveReminder(){
 /* ==================================================================
  *                            ОПЛАТЫ
  * ================================================================== */
-var _payPlatform='all';
-function pickPay(el){ pick(el); _payPlatform=el.dataset.v; loadPayments(); }
+var _payPlatform='all', _payType='all', _paySandbox='hide', _payLimit=100;
+function pickPay(el){ pick(el); _payPlatform=el.dataset.v; _payLimit=100; loadPayments(); }
+function pickPayType(el){ pick(el); _payType=el.dataset.v; _payLimit=100; loadPayments(); }
+function pickPaySandbox(el){ pick(el); _paySandbox=el.dataset.v; _payLimit=100; loadPayments(); }
+function payMore(){ _payLimit+=100; loadPayments(); }
+// Статус записи словами. В модели он нужен для доступа, а в списке отвечает
+// на вопрос «деньги ещё у нас или вернулись».
+var PAY_STATUS={active:'активна',expired:'истекла',refunded:'возврат',cancelled:'отменена'};
 async function loadPayments(){
   var el=document.getElementById('payList');
   try{
-    var d=await api('/admin/payments?limit=100&platform='+_payPlatform);
-    var head='<div class="card"><div class="kv"><span class="k">Выручка Apple (по фильтру)</span><span class="v">'+money(d.revenueApple)+'</span></div>'+
-      '<div class="kv"><span class="k">Всего записей</span><span class="v">'+(d.total||0)+'</span></div></div>';
+    var d=await api('/admin/payments?limit='+_payLimit+'&platform='+_payPlatform+'&type='+_payType+'&sandbox='+_paySandbox);
+    var rev=d.revenue||{apple:0,google:0,total:0};
+    var head='<div class="card">'+
+      '<div class="kv"><span class="k">Выручка Apple</span><span class="v">'+money(rev.apple)+'</span></div>'+
+      '<div class="kv"><span class="k">Выручка Google</span><span class="v">'+money(rev.google)+'</span></div>'+
+      '<div class="kv"><span class="k">Итого по магазинам</span><span class="v">'+money(rev.total)+'</span></div>'+
+      '<div class="kv"><span class="k">Выдано вручную</span><span class="v">'+(d.manualCount||0)+' записей</span></div>'+
+      '<div class="kv"><span class="k">Всего записей по фильтру</span><span class="v">'+(d.total||0)+'</span></div></div>';
     if(!d.items.length){ el.innerHTML=head+'<div class="empty">Оплат нет</div>'; return; }
-    el.innerHTML=head+'<div class="card" style="padding:4px 12px">'+d.items.map(function(p){
-      var who=esc(p.userName||p.userEmail||'—');
-      if(p.userId){ who='<a href="#" style="color:inherit;text-decoration:underline" onclick="tab(\'people\');openUser(\''+p.userId+'\');return false">'+who+'</a>'; }
-      var badge=p.isApple?(p.environment==='sandbox'?'<span class="badge b-exp">sandbox</span>':'<span class="badge b-basic">Apple</span>'):'<span class="badge b-exp">вручную</span>';
-      var sum=p.isApple?money(p.priceUsd):'—';
+    var rows=d.items.map(function(p){
+      // Имя → почта → «аккаунт удалён». Раньше в последнем случае стоял
+      // прочерк, и запись выглядела ничейной; теперь хотя бы виден id.
+      var who;
+      if(p.userName||p.userEmail){ who=esc(p.userName||p.userEmail); }
+      else if(p.userMissing){ who='<span class="muted">аккаунт удалён · '+esc(String(p.userId).slice(-6))+'</span>'; }
+      else { who='—'; }
+      if(p.userId && !p.userMissing){ who='<a href="#" style="color:inherit;text-decoration:underline" onclick="tab(\'people\');openUser(\''+p.userId+'\');return false">'+who+'</a>'; }
+      var badge;
+      if(p.environment==='sandbox'){ badge='<span class="badge b-exp">тест · '+esc(p.platformLabel)+'</span>'; }
+      else if(p.platform==='apple'){ badge='<span class="badge b-basic">Apple</span>'; }
+      else if(p.platform==='google'){ badge='<span class="badge b-basic">Google</span>'; }
+      else { badge='<span class="badge b-exp">вручную</span>'; }
+      var sum=(p.isStore && p.environment!=='sandbox')?money(p.priceUsd):'—';
       var item=esc(p.itemLabel)+(p.itemId?(' · '+esc(p.itemId)):'');
-      return '<div class="trow"><span class="tn">'+who+' · '+item+'</span>'+
+      var st=PAY_STATUS[p.status]||p.status||'';
+      return '<div class="trow"><span class="tn">'+who+' · '+item+(st?' · <span class="muted">'+esc(st)+'</span>':'')+'</span>'+
         '<span class="tv">'+badge+' '+sum+'<span class="muted" style="font-weight:400;margin-left:6px">'+fmtDate(p.purchasedAt)+'</span></span></div>';
-    }).join('')+'</div>';
+    }).join('');
+    var more=(d.items.length<(d.total||0))?'<div style="text-align:center;padding:10px"><button class="btn ghost sm" onclick="payMore()">Показать ещё</button></div>':'';
+    el.innerHTML=head+'<div class="card" style="padding:4px 12px">'+rows+'</div>'+more;
   }catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
 }
 
