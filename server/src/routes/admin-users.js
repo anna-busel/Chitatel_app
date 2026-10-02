@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { z } = require('zod');
+const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const { validate } = require('../middleware/validate');
 const { requireAuth } = require('../middleware/auth');
@@ -64,6 +65,14 @@ router.get('/', validate(listSchema, 'query'), async (req, res, next) => {
     if (q) {
       const rx = new RegExp(escapeRegex(q), 'i');
       filter.$or = [{ name: rx }, { email: rx }, { marketingEmail: rx }];
+      // 02.10.2026: поиск по идентификатору и реферальному коду. Нужен для
+      // участниц, которых не найти по почте — у вошедших через Apple со
+      // «Скрыть e-mail» в базе relay-адрес, а у части почты нет вовсе.
+      // Идентификатор виден в строке списка, код — в карточке.
+      if (mongoose.Types.ObjectId.isValid(q)) {
+        filter.$or.push({ _id: new mongoose.Types.ObjectId(q) });
+      }
+      filter.$or.push({ referralCode: rx });
     }
 
     const [users, total] = await Promise.all([
@@ -102,7 +111,12 @@ router.get('/:id', async (req, res, next) => {
         'name email marketingEmail role authProvider subscriptionStatus ' +
           'subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt ' +
           'clubMonthsEntitled hasArchiveAccess purchasedBooks purchasedPackages ' +
-          'isBanned mutedUntil onboardingCompleted country city avatarUrl createdAt'
+          'isBanned mutedUntil onboardingCompleted country city avatarUrl createdAt ' +
+          // 02.10.2026: subscriptionPlatform — видно, откуда подписка (Apple,
+          // Google или выдана вручную); devices — с каких платформ заходили;
+          // referralCode — по нему можно найти участницу, у которой почта
+          // скрыта провайдером входа.
+          'subscriptionPlatform devices referralCode'
       )
       .populate('purchasedBooks', 'title bookSlug')
       .populate('purchasedPackages', 'title packageSlug')
@@ -518,6 +532,120 @@ router.post('/:id/ban', validate(banSchema), async (req, res, next) => {
     }
     await User.findByIdAndUpdate(req.params.id, update);
     return success(res, { ok: true, isBanned: req.body.banned });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ *                      ВХОД: ПОЧТА И ПАРОЛЬ                           *
+ * ------------------------------------------------------------------ *
+ * 02.10.2026. Обе ручки появились из одной дыры: у аккаунта, созданного
+ * через Apple или Google, пароля в базе НЕТ, а восстановления пароля в
+ * проекте нет совсем — ни роута, ни экрана, ни отправки писем. Человек,
+ * потерявший вход, упирается в стену, и помочь ему было нечем.
+ *
+ * Отдельная беда — вход через Apple со «Скрыть e-mail»: в базе оказывается
+ * relay-адрес вида ...@privaterelay.appleid.com, а у части аккаунтов почты
+ * нет вовсе (apple-auth.service намеренно не пишет пустое поле). Такую
+ * участницу невозможно ни найти по её настоящему адресу, ни связать с
+ * оплатой из списка, ни привязать к Google. На 01.10.2026 таких аккаунтов
+ * 53 из 167.
+ */
+
+const passwordSchema = z.object({
+  password: z
+    .string()
+    .min(8, 'Пароль не короче 8 символов')
+    .max(72, 'Пароль не длиннее 72 символов'),
+});
+
+/**
+ * POST /api/admin/users/:id/password
+ * Задать участнице пароль — чтобы она могла войти по почте.
+ *
+ * ⚠️ Вместе с паролем переключаем authProvider на 'email': логин по почте
+ * пускает ТОЛЬКО аккаунты с authProvider === 'email' и непустым passwordHash
+ * (auth.service.login). Входу через Apple и Google это не мешает — они ищут
+ * человека по appleUserId / googleUserId, а не по authProvider.
+ *
+ * Пароль не возвращаем: его знает тот, кто его назначил.
+ */
+router.post('/:id/password', validate(passwordSchema), async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      throw new AppError('NOT_FOUND', 'Неверный id пользователя', 400);
+    }
+    const user = await User.findById(req.params.id).select('email').lean();
+    if (!user) {
+      throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
+    }
+    // Без почты входить будет нечем: логин — это пара «почта + пароль».
+    if (!user.email) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'У аккаунта нет почты — сначала задайте её, иначе входить будет нечем',
+        400
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(req.body.password, 12);
+    await User.findByIdAndUpdate(req.params.id, {
+      $set: { passwordHash, authProvider: 'email' },
+    });
+
+    logger.info('Admin set password', { userId: String(req.params.id) });
+    return success(res, { ok: true });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+const emailSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Некорректный адрес почты'),
+});
+
+/**
+ * POST /api/admin/users/:id/email
+ * Сменить аккаунтную почту участницы.
+ *
+ * ⚠️ Поле уникальное (sparse unique index), поэтому перед сохранением
+ * проверяем, что адрес не занят другим живым аккаунтом — иначе mongo вернёт
+ * невнятную ошибку дубликата.
+ *
+ * Вход через Apple и Google после смены не ломается: они опознают человека по
+ * appleUserId / googleUserId. Наоборот, правильная почта делает возможной
+ * привязку Google к существующему аккаунту (google-auth.service ищет по почте).
+ */
+router.post('/:id/email', validate(emailSchema), async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      throw new AppError('NOT_FOUND', 'Неверный id пользователя', 400);
+    }
+    const email = req.body.email;
+
+    const taken = await User.findOne({ email, isDeleted: { $ne: true } })
+      .select('_id')
+      .lean();
+    if (taken && String(taken._id) !== String(req.params.id)) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Эта почта уже занята другим аккаунтом',
+        409
+      );
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { $set: { email } },
+      { new: true }
+    ).select('email');
+    if (!user) {
+      throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
+    }
+
+    logger.info('Admin changed email', { userId: String(req.params.id) });
+    return success(res, { ok: true, email: user.email });
   } catch (err) {
     return next(err);
   }
