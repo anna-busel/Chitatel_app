@@ -205,6 +205,14 @@ Apple проверяет сборку **36**, а не репозиторий. Н
 ## 8. Журнал
 
 - 19.08.2026 — документ создан. Аудит кода и политик выполнен. Код не тронут.
+- 02.10.2026 — разобрана пропажа карточки плеера в сборке из Play. Причина:
+  релиз Flutter вырезает ресурсы, на которые ссылаются строкой из Dart, —
+  сначала `ic_stat_chitatel`, затем иконки кнопок плагина `audio_service`.
+  Доказано логом с устройства (`IllegalArgumentException: You must specify
+  an icon resource id to build a CustomAction`, 742 раза за сеанс).
+  Исправлено `res/raw/keep.xml` (коммиты `369d621`, `0c93fb0`) и
+  `isShrinkResources = false` для `release` в `build.gradle.kts`.
+  Подробный разбор — AI-CONTEXT-6, раздел 42.
 
 ---
 
