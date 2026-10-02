@@ -60,8 +60,8 @@ function lastNMonthKeys(n) {
 }
 
 /**
- * Ровный ряд по bucketKeys с разбивкой Apple / вручную.
- * rows: [{_id, apple, manual, count}].
+ * Ровный ряд по bucketKeys с разбивкой Apple / Google / вручную.
+ * rows: [{_id, apple, google, manual, count}].
  */
 function fillSplitSeries(bucketKeys, rows) {
   const byKey = new Map(
@@ -69,14 +69,21 @@ function fillSplitSeries(bucketKeys, rows) {
       r._id,
       {
         apple: Math.round(r.apple || 0),
+        google: Math.round(r.google || 0),
         manual: Math.round(r.manual || 0),
         count: r.count || 0,
       },
     ])
   );
   return bucketKeys.map((key) => {
-    const v = byKey.get(key) || { apple: 0, manual: 0, count: 0 };
-    return { key, apple: v.apple, manual: v.manual, count: v.count };
+    const v = byKey.get(key) || { apple: 0, google: 0, manual: 0, count: 0 };
+    return {
+      key,
+      apple: v.apple,
+      google: v.google,
+      manual: v.manual,
+      count: v.count,
+    };
   });
 }
 
@@ -88,21 +95,32 @@ function fillCountSeries(dayKeys, rows) {
   return dayKeys.map((day) => ({ day, count: byDay.get(day) || 0 }));
 }
 
-// $cond: Apple-платёж (реальное списание) — platform === 'apple'.
+/*
+ * 02.10.2026. Раньше здесь было деление надвое: Apple против всего остального.
+ * С выходом на Android это стало неверным — покупки Google попадали бы в
+ * «выдано вручную», то есть настоящие деньги не считались бы выручкой ни в
+ * итогах, ни на графике, ни в топе разборов. Теперь источников три:
+ * Apple, Google и ручная выдача из админки (platform 'web' или пусто).
+ */
 const IS_APPLE = { $eq: ['$platform', 'apple'] };
+const IS_GOOGLE = { $eq: ['$platform', 'google'] };
+const IS_MANUAL = { $not: { $in: ['$platform', ['apple', 'google']] } };
 
-// Сумма по условию Apple / не-Apple.
-function condSum(isApple, field) {
-  return {
-    $sum: { $cond: [isApple ? IS_APPLE : { $not: IS_APPLE }, field, 0] },
-  };
+// Платёж через магазин — настоящие деньги, Apple или Google.
+const STORE_PLATFORMS = ['apple', 'google'];
+
+/** Сумма по одному источнику: kind — 'apple' | 'google' | 'manual'. */
+function condSum(kind, field) {
+  const cond =
+    kind === 'apple' ? IS_APPLE : kind === 'google' ? IS_GOOGLE : IS_MANUAL;
+  return { $sum: { $cond: [cond, field, 0] } };
 }
 
 /* ------------------------------------------------------------------ *
  *                   GET /api/admin/analytics?days=30                 *
  * ------------------------------------------------------------------ *
  * Сводка для дашборда. Ключевой принцип: РЕАЛЬНАЯ выручка (списания через
- * Apple, platform:'apple') и ручные выдачи из админки (platform:'web' —
+ * магазины — Apple и Google) и ручные выдачи из админки (platform:'web' —
  * доступ, выданный без оплаты) считаются и показываются ОТДЕЛЬНО, чтобы
  * ручные выдачи не раздували выручку. Диапазон выбирается (?days=7|30|90|365);
  * ряд по дням для коротких диапазонов и по месяцам для года. Дополнительно —
@@ -148,6 +166,7 @@ router.get('/', async (req, res, next) => {
       activeSubs,
       expiredSubs,
       newSubsAppleWeek,
+      newSubsGoogleWeek,
       newSubsManualWeek,
       messagesWeek,
       listenerIds,
@@ -158,8 +177,9 @@ router.get('/', async (req, res, next) => {
         {
           $group: {
             _id: bucketExpr,
-            apple: condSum(true, '$priceUsd'),
-            manual: condSum(false, '$priceUsd'),
+            apple: condSum('apple', '$priceUsd'),
+            google: condSum('google', '$priceUsd'),
+            manual: condSum('manual', '$priceUsd'),
             count: { $sum: 1 },
           },
         },
@@ -170,10 +190,12 @@ router.get('/', async (req, res, next) => {
         {
           $group: {
             _id: null,
-            revApple: condSum(true, '$priceUsd'),
-            revManual: condSum(false, '$priceUsd'),
-            cntApple: condSum(true, 1),
-            cntManual: condSum(false, 1),
+            revApple: condSum('apple', '$priceUsd'),
+            revGoogle: condSum('google', '$priceUsd'),
+            revManual: condSum('manual', '$priceUsd'),
+            cntApple: condSum('apple', 1),
+            cntGoogle: condSum('google', 1),
+            cntManual: condSum('manual', 1),
           },
         },
       ]),
@@ -183,16 +205,19 @@ router.get('/', async (req, res, next) => {
         {
           $group: {
             _id: '$itemType',
-            revApple: condSum(true, '$priceUsd'),
-            revManual: condSum(false, '$priceUsd'),
-            cntApple: condSum(true, 1),
-            cntManual: condSum(false, 1),
+            revApple: condSum('apple', '$priceUsd'),
+            revGoogle: condSum('google', '$priceUsd'),
+            revManual: condSum('manual', '$priceUsd'),
+            cntApple: condSum('apple', 1),
+            cntGoogle: condSum('google', 1),
+            cntManual: condSum('manual', 1),
           },
         },
       ]),
-      // Быстрые итоги выручки (только Apple) за 7/30/90/365 дней и за всё время.
+      // Быстрые итоги выручки по магазинам (Apple + Google) за 7/30/90/365
+      // дней и за всё время.
       Purchase.aggregate([
-        { $match: { platform: 'apple', environment: { $ne: 'sandbox' } } },
+        { $match: { platform: { $in: STORE_PLATFORMS }, environment: { $ne: 'sandbox' } } },
         {
           $group: {
             _id: null,
@@ -220,20 +245,20 @@ router.get('/', async (req, res, next) => {
           },
         },
       ]),
-      // Топ-5 разборов по РЕАЛЬНЫМ продажам (только Apple). Ручные выдачи из
+      // Топ-5 разборов по РЕАЛЬНЫМ продажам (Apple + Google). Ручные выдачи из
       // админки — это не покупки, поэтому в топ не попадают. Группируем по
       // itemId: это bookSlug (см. purchase.service и grant-book), одинаковый
       // для всех покупок одного разбора, — поэтому дублей одной книги не будет.
       Purchase.aggregate([
-        { $match: { itemType: 'book', platform: 'apple', itemId: { $ne: null }, environment: { $ne: 'sandbox' } } },
+        { $match: { itemType: 'book', platform: { $in: STORE_PLATFORMS }, itemId: { $ne: null }, environment: { $ne: 'sandbox' } } },
         {
           $group: {
             _id: '$itemId',
-            cntApple: { $sum: 1 },
-            revApple: { $sum: '$priceUsd' },
+            cnt: { $sum: 1 },
+            rev: { $sum: '$priceUsd' },
           },
         },
-        { $sort: { cntApple: -1 } },
+        { $sort: { cnt: -1 } },
         { $limit: 5 },
       ]),
       // Сообщения клуба по дням (7д).
@@ -277,7 +302,13 @@ router.get('/', async (req, res, next) => {
       }),
       Purchase.countDocuments({
         itemType: 'subscription',
-        platform: { $ne: 'apple' },
+        platform: 'google',
+        environment: { $ne: 'sandbox' },
+        purchasedAt: { $gte: since7 },
+      }),
+      Purchase.countDocuments({
+        itemType: 'subscription',
+        platform: { $nin: STORE_PLATFORMS },
         purchasedAt: { $gte: since7 },
       }),
       ChatMessage.countDocuments({
@@ -292,10 +323,13 @@ router.get('/', async (req, res, next) => {
     const rt = rangeTotals[0] || {};
     const revenue = {
       apple: Math.round(rt.revApple || 0),
+      google: Math.round(rt.revGoogle || 0),
       manual: Math.round(rt.revManual || 0),
     };
+    revenue.store = revenue.apple + revenue.google;
     const purchases = {
       apple: rt.cntApple || 0,
+      google: rt.cntGoogle || 0,
       manual: rt.cntManual || 0,
     };
 
@@ -305,8 +339,10 @@ router.get('/', async (req, res, next) => {
     TYPES.forEach((t) => {
       byType[t] = {
         revApple: 0,
+        revGoogle: 0,
         revManual: 0,
         cntApple: 0,
+        cntGoogle: 0,
         cntManual: 0,
       };
     });
@@ -314,8 +350,10 @@ router.get('/', async (req, res, next) => {
       if (t._id && byType[t._id]) {
         byType[t._id] = {
           revApple: Math.round(t.revApple || 0),
+          revGoogle: Math.round(t.revGoogle || 0),
           revManual: Math.round(t.revManual || 0),
           cntApple: t.cntApple || 0,
+          cntGoogle: t.cntGoogle || 0,
           cntManual: t.cntManual || 0,
         };
       }
@@ -346,9 +384,10 @@ router.get('/', async (req, res, next) => {
     const topBooks = topBooksRaw.map((b) => ({
       id: String(b._id),
       title: titleBySlug.get(b._id) || b._id,
-      cntApple: b.cntApple || 0,
-      cntManual: 0,
-      revApple: Math.round(b.revApple || 0),
+      // cnt/rev — по обоим магазинам вместе: для топа важна популярность
+      // разбора, а не то, через какой магазин за него заплатили.
+      cnt: b.cnt || 0,
+      rev: Math.round(b.rev || 0),
     }));
 
     const messageSeries = fillCountSeries(days7, msgDaily);
@@ -356,15 +395,16 @@ router.get('/', async (req, res, next) => {
     return success(res, {
       range: days,
       granularity, // 'day' | 'month'
-      series, // [{key, apple, manual, count}]
-      revenue, // {apple, manual} за диапазон
-      purchases, // {apple, manual} за диапазон
-      byType, // {book|package|subscription|archive: {revApple,revManual,cntApple,cntManual}}
-      windows, // {d7,d30,d90,d365,all} — выручка Apple
+      series, // [{key, apple, google, manual, count}]
+      revenue, // {apple, google, manual, store} за диапазон
+      purchases, // {apple, google, manual} за диапазон
+      byType, // {book|package|subscription|archive: {rev*, cnt*}}
+      windows, // {d7,d30,d90,d365,all} — выручка магазинов (Apple + Google)
       subscribers: {
         active: activeSubs,
         expired: expiredSubs,
         newAppleWeek: newSubsAppleWeek,
+        newGoogleWeek: newSubsGoogleWeek,
         newManualWeek: newSubsManualWeek,
       },
       users: { total: totalUsers, newWeek: newUsersWeek },
