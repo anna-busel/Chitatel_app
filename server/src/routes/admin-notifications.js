@@ -45,7 +45,11 @@ router.get('/reminder', async (_req, res, next) => {
 // PUT /api/admin/notifications/reminder
 const reminderSchema = z.object({
   title: z.string().trim().max(120).optional(),
-  body: z.string().trim().min(1, 'Текст обязателен').max(300),
+  // 03.10.2026: текст напоминания переехал в список ReminderText и правится
+  // отдельной вкладкой. Здесь остаётся только расписание, поэтому body стал
+  // необязательным — админка его больше не присылает, а сохранённое значение
+  // остаётся в БД тихой страховкой (уходит, если список пуст).
+  body: z.string().trim().min(1).max(300).optional(),
   hour: z.coerce.number().int().min(0).max(23),
   minute: z.coerce.number().int().min(0).max(59),
   // Дни недели в нотации cron: 0=Вс, 1=Пн, ... 6=Сб. Хотя бы один день.
@@ -57,7 +61,10 @@ router.put('/reminder', validate(reminderSchema), async (req, res, next) => {
   try {
     const s = await getReminderSetting();
     s.title = req.body.title || 'ЧИТАТЕЛЬ';
-    s.body = req.body.body;
+    // body присылают только старые клиенты; пустое — не затираем сохранённое.
+    if (typeof req.body.body === 'string' && req.body.body) {
+      s.body = req.body.body;
+    }
     s.hour = req.body.hour;
     s.minute = req.body.minute;
     // Уникализируем и сортируем дни.
