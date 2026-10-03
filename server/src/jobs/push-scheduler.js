@@ -3,15 +3,19 @@ const logger = require('../config/logger');
 const pushService = require('../services/push.service');
 const { thoughtForDate } = require('../services/thought.service');
 const { getReminderSetting, reminderCron } = require('../services/reminder.service');
+const { takeNextText } = require('../services/reminder-text.service');
 const { getNotif } = require('../services/notification-setting.service');
 
 /**
  * Планировщик push по расписанию (MASTER 7.9).
  * Вызывается один раз при старте сервера (server.js).
  *
- * Задача 1: напоминание записать цитату. Текст, время и дни берутся из БД
+ * Задача 1: напоминание записать цитату. Время и дни берутся из БД
  * (ReminderSetting) и редактируются в админке (раздел «Уведомления»). При
  * сохранении в админке cron перепланируется на лету (reloadReminder).
+ * Текст с 03.10.2026 — следующий по очереди из списка ReminderText
+ * (services/reminder-text.service), список правится в админке. Пока список
+ * пуст, уходит одиночный ReminderSetting.body — прежнее поведение.
  * Задача 2: мысль дня — ежедневно 10:00. Текст из общего источника
  * thoughtForDate (services/thought.service), поэтому пуш всегда совпадает с
  * карточкой «Мысль дня» на главной.
@@ -46,13 +50,17 @@ async function scheduleReminder() {
     expr,
     () => {
       getReminderSetting()
-        .then((cur) => {
+        .then(async (cur) => {
           if (!cur.enabled) return null;
+          // Следующий текст по очереди; список пуст — старый одиночный body.
+          // takeNextText сдвигает курсор, поэтому зовём его ПОСЛЕ проверки
+          // enabled: у выключенного напоминания очередь стоять не должна.
+          const next = await takeNextText();
           return pushService.broadcast(
             { audience: 'all' },
             {
               title: cur.title || 'ЧИТАТЕЛЬ',
-              body: cur.body,
+              body: next || cur.body,
               data: { type: 'reminder_quote' },
             },
             'reminders'

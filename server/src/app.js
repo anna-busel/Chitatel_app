@@ -35,6 +35,7 @@ const adminCatalogRoutes = require('./routes/admin-catalog');
 const adminClubRoutes = require('./routes/admin-club');
 const adminThoughtsRoutes = require('./routes/admin-thoughts');
 const adminNotificationsRoutes = require('./routes/admin-notifications');
+const adminReminderTextsRoutes = require('./routes/admin-reminder-texts');
 const adminAnalyticsRoutes = require('./routes/admin-analytics');
 const adminPaymentsRoutes = require('./routes/admin-payments');
 
@@ -141,6 +142,11 @@ app.use('/api/admin/thoughts', adminThoughtsRoutes);
 // Уведомления из админки (6.6): настройка напоминания «Запишите цитату»
 // (текст, время, дни, вкл/выкл). Отдельный роут-файл; requireAdmin внутри.
 app.use('/api/admin/notifications', adminNotificationsRoutes);
+
+// Тексты напоминания «Запишите цитату» (03.10.2026): список формулировок в БД
+// (ReminderText), CRUD, показ следующей в очереди. Ротация по курсору —
+// services/reminder-text.service. Отдельный роут-файл; requireAdmin внутри.
+app.use('/api/admin/reminder-texts', adminReminderTextsRoutes);
 
 // Аналитика для дашборда (6.6): выручка, покупки по дням, подписчики, топ
 // разборов, активность. Отдельный роут-файл; requireAdmin внутри.
