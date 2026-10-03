@@ -216,9 +216,9 @@
       </div>
 
       <div class="page" data-page="push">
-        <div class="lbl">Напоминание «Запишите цитату»</div>
+        <div class="lbl">Напоминание «Запишите цитату» — расписание</div>
         <div id="reminderBox" class="card"><div class="muted">Загрузка…</div></div>
-        <div class="lbl">Тексты напоминания — по очереди</div>
+        <div class="lbl">Напоминание «Запишите цитату» — тексты по очереди</div>
         <div class="card" id="remNextBox"><div class="muted">Загрузка…</div></div>
         <div class="btnrow" style="margin:4px 0 12px">
           <button class="btn primary sm" onclick="newRemText()">+ Добавить текст</button>
@@ -1000,7 +1000,9 @@ function renderReminder(r){
     '<div class="fld"><label>Статус</label><div class="seg" id="remEnabled">'+
       '<div class="opt'+(r.enabled?' on':'')+'" data-v="on" onclick="pick(this)">Включено</div>'+
       '<div class="opt'+(r.enabled?'':' on')+'" data-v="off" onclick="pick(this)">Выключено</div></div></div>'+
-    '<div class="fld"><label>Запасной текст</label><textarea id="remBody" maxlength="300">'+esc(r.body||'')+'</textarea><div class="hint">Уходит, только если список текстов ниже пуст или все выключены.</div></div>'+
+    // Поля текста здесь нет: текст берётся по очереди из списка ниже.
+    // ReminderSetting.body остался в БД как тихая страховка на случай, когда
+    // список пуст или все тексты выключены (03.10.2026).
     '<div class="fld"><label>Время (МСК)</label>'+
       '<div class="btnrow" style="align-items:center"><input id="remHour" type="number" min="0" max="23" value="'+hh+'" style="max-width:80px;margin:0"> : '+
       '<input id="remMin" type="number" min="0" max="59" value="'+mm+'" style="max-width:80px;margin:0"></div></div>'+
@@ -1009,16 +1011,16 @@ function renderReminder(r){
     '<div class="hint">Применяется сразу — перезапуск сервера не нужен. Время по Москве.</div>';
 }
 function saveReminder(){
+  // Только расписание: текст живёт в списке ниже (ReminderText), поле body
+  // сюда не шлём — на сервере оно необязательное и сохранённое не затирается.
   var enabled=segVal('remEnabled')==='on';
-  var body=val('remBody');
   var hour=parseInt(document.getElementById('remHour').value,10);
   var minute=parseInt(document.getElementById('remMin').value,10);
   var days=Array.prototype.slice.call(document.querySelectorAll('#remDays .opt.on')).map(function(o){return parseInt(o.dataset.v,10);});
-  if(!body){ toast('Введите текст'); return; }
   if(!days.length){ toast('Выберите хотя бы один день'); return; }
   if(isNaN(hour)||isNaN(minute)){ toast('Укажите время'); return; }
-  api('/admin/notifications/reminder',{method:'PUT',body:JSON.stringify({body:body,hour:hour,minute:minute,weekdays:days,enabled:enabled})})
-    .then(function(){ toast('Напоминание сохранено'); })
+  api('/admin/notifications/reminder',{method:'PUT',body:JSON.stringify({hour:hour,minute:minute,weekdays:days,enabled:enabled})})
+    .then(function(){ toast('Расписание сохранено'); })
     .catch(function(e){ toast(e.message); });
 }
 
