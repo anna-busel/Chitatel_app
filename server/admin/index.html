@@ -218,6 +218,13 @@
       <div class="page" data-page="push">
         <div class="lbl">Напоминание «Запишите цитату»</div>
         <div id="reminderBox" class="card"><div class="muted">Загрузка…</div></div>
+        <div class="lbl">Тексты напоминания — по очереди</div>
+        <div class="card" id="remNextBox"><div class="muted">Загрузка…</div></div>
+        <div class="btnrow" style="margin:4px 0 12px">
+          <button class="btn primary sm" onclick="newRemText()">+ Добавить текст</button>
+        </div>
+        <div class="hint">Напоминание берёт следующий текст по кругу: отправили — очередь сдвинулась на один. Повторов не будет, пока не пройдёт весь список. Отключённые тексты в очереди не участвуют. Изменения применяются сразу — без пересборки приложения и перезапуска сервера. Пока список пуст, уходит запасной текст из блока выше.</div>
+        <div id="remTextList"><div class="empty">Загрузка…</div></div>
         <div class="lbl">Новость / анонс</div>
         <div class="card">
           <div class="fld"><label>Кому</label>
@@ -332,7 +339,7 @@ function tab(name){
   if(name==='catalog' && !_loaded.catalog){ _loaded.catalog=true; loadCatalog(); }
   if(name==='club' && !_loaded.club){ _loaded.club=true; loadClubs(); }
   if(name==='thoughts' && !_loaded.thoughts){ _loaded.thoughts=true; loadThoughts(); }
-  if(name==='push' && !_loaded.push){ _loaded.push=true; loadReminder(); loadNotifTpls(); }
+  if(name==='push' && !_loaded.push){ _loaded.push=true; loadReminder(); loadRemTexts(); loadNotifTpls(); }
   if(name==='payments' && !_loaded.payments){ _loaded.payments=true; loadPayments(); }
 }
 function pick(el){ el.parentElement.querySelectorAll('.opt').forEach(function(o){o.classList.remove('on');}); el.classList.add('on'); }
@@ -993,7 +1000,7 @@ function renderReminder(r){
     '<div class="fld"><label>Статус</label><div class="seg" id="remEnabled">'+
       '<div class="opt'+(r.enabled?' on':'')+'" data-v="on" onclick="pick(this)">Включено</div>'+
       '<div class="opt'+(r.enabled?'':' on')+'" data-v="off" onclick="pick(this)">Выключено</div></div></div>'+
-    '<div class="fld"><label>Текст пуша</label><textarea id="remBody" maxlength="300">'+esc(r.body||'')+'</textarea></div>'+
+    '<div class="fld"><label>Запасной текст</label><textarea id="remBody" maxlength="300">'+esc(r.body||'')+'</textarea><div class="hint">Уходит, только если список текстов ниже пуст или все выключены.</div></div>'+
     '<div class="fld"><label>Время (МСК)</label>'+
       '<div class="btnrow" style="align-items:center"><input id="remHour" type="number" min="0" max="23" value="'+hh+'" style="max-width:80px;margin:0"> : '+
       '<input id="remMin" type="number" min="0" max="59" value="'+mm+'" style="max-width:80px;margin:0"></div></div>'+
@@ -1014,6 +1021,49 @@ function saveReminder(){
     .then(function(){ toast('Напоминание сохранено'); })
     .catch(function(e){ toast(e.message); });
 }
+
+/* ==================================================================
+ *            УВЕДОМЛЕНИЯ: ТЕКСТЫ НАПОМИНАНИЯ (ОЧЕРЕДЬ)
+ * ================================================================== */
+var _remTexts=[];
+async function loadRemTexts(){
+  try{
+    var d=await api('/admin/reminder-texts'); _remTexts=d.items||[];
+    document.getElementById('remNextBox').innerHTML = d.next
+      ? ('<div class="lbl" style="margin:0 0 4px">Следующим уйдёт</div>«'+esc(d.next)+'»<div class="muted" style="margin-top:6px">Активных текстов: '+(d.activeTotal||0)+' из '+(d.total||0)+'</div>')
+      : '<div class="muted">Список пуст — уйдёт запасной текст</div>';
+    renderRemTexts();
+  }catch(e){ document.getElementById('remTextList').innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+function renderRemTexts(){
+  var el=document.getElementById('remTextList');
+  if(!_remTexts.length){ el.innerHTML='<div class="empty">Текстов нет</div>'; return; }
+  el.innerHTML=_remTexts.map(function(t,i){
+    return '<div class="card"'+(t.isActive?'':' style="opacity:.55"')+'><div style="font-size:14px">'+(i+1)+'. '+esc(t.text)+'</div>'+
+      (t.isActive?'':'<div class="muted" style="margin:4px 0 0">отключён</div>')+
+      '<div class="btnrow" style="margin-top:8px"><button class="btn ghost sm" onclick="editRemText(\''+t.id+'\')">Изменить</button>'+
+      '<button class="btn ghost sm" onclick="toggleRemText(\''+t.id+'\','+(!t.isActive)+')">'+(t.isActive?'Отключить':'Включить')+'</button>'+
+      '<button class="btn danger sm" onclick="delRemText(\''+t.id+'\')">Удалить</button></div></div>';
+  }).join('');
+}
+function newRemText(){ editRemTextModal({id:null,text:''}); }
+function editRemText(id){ var t=_remTexts.filter(function(x){return x.id===id;})[0]; if(t) editRemTextModal(t); }
+function editRemTextModal(t){
+  openModal('<h2>'+(t.id?'Изменить текст':'Новый текст')+'</h2>'+
+    '<div class="fld"><label>Текст пуша</label><textarea id="rtText" maxlength="300">'+esc(t.text)+'</textarea></div>'+
+    '<button class="btn primary" onclick="saveRemText(\''+(t.id||'')+'\')">Сохранить</button>');
+}
+async function saveRemText(id){
+  var text=val('rtText');
+  if(!text){ toast('Введите текст'); return; }
+  try{
+    if(id) await api('/admin/reminder-texts/'+id,{method:'PATCH',body:JSON.stringify({text:text})});
+    else await api('/admin/reminder-texts',{method:'POST',body:JSON.stringify({text:text})});
+    toast('Сохранено'); closeModal(); loadRemTexts();
+  }catch(e){ toast(e.message); }
+}
+async function toggleRemText(id,active){ try{ await api('/admin/reminder-texts/'+id,{method:'PATCH',body:JSON.stringify({isActive:active})}); loadRemTexts(); }catch(e){ toast(e.message); } }
+async function delRemText(id){ try{ await api('/admin/reminder-texts/'+id,{method:'DELETE'}); toast('Удалён'); loadRemTexts(); }catch(e){ toast(e.message); } }
 
 /* ==================================================================
  *                            ОПЛАТЫ
