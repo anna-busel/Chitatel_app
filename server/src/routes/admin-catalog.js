@@ -58,7 +58,10 @@ const CATEGORY_VALUES = CATEGORIES.map((c) => c.value);
  * ------------------------------------------------------------------ *
  * bookSlug — идентификатор для ссылок и ИМЯ ПАПКИ с аудио/обложкой на диске
  * (<AUDIO_BASE_PATH>/<slug>/part-N.mp3, book-covers/<slug>/...). Поэтому:
- *  - только латиница/цифры/дефис (безопасно для файловой системы и URL);
+ *  - только латиница/цифры/подчёркивание (безопасно для файловой системы и URL);
+ *  - БЕЗ ДЕФИСОВ: slug входит в ID товара Apple (book.<slug>), а Apple
+ *    принимает там только буквы, цифры, «_» и «.» (13.10.2026: четыре разбора
+ *    со слагом через дефис не создались в App Store Connect);
  *  - генерируется ОДИН раз при создании книги из title, дальше НЕ меняется
  *    (иначе осиротеют уже загруженные файлы). */
 const TRANSLIT = {
@@ -78,12 +81,12 @@ function slugify(input) {
     } else if (/[a-z0-9]/.test(ch)) {
       out += ch;
     } else if (/[\s\-_.]/.test(ch)) {
-      out += '-';
+      out += '_';
     }
     // прочие символы (знаки препинания, эмодзи) отбрасываем
   }
   // схлопываем повторяющиеся дефисы, убираем по краям
-  out = out.replace(/-+/g, '-').replace(/^-|-$/g, '');
+  out = out.replace(/_+/g, '_').replace(/^_|_$/g, '');
   return out || 'book';
 }
 
@@ -97,7 +100,7 @@ async function uniqueSlug(base) {
   let n = 2;
   // eslint-disable-next-line no-await-in-loop
   while (await Book.exists({ bookSlug: candidate })) {
-    candidate = `${clean}-${n}`;
+    candidate = `${clean}_${n}`;
     n += 1;
   }
   return candidate;
@@ -767,7 +770,7 @@ router.delete('/:id', async (req, res, next) => {
  * Пакет = набор разборов из каталога, продаётся как отдельный Non-Consumable
  * IAP (package.<slug>, продукт заводится в App Store Connect вручную — как у
  * платных разборов). Тип (пакет/факультатив) определяется префиксом slug
- * 'facultativ-' — так же его читает клиент (package_model.isFacultativ).
+ * 'facultativ' (startsWith) — так же его читает клиент (package_model.isFacultativ).
  * Обложка — как у разборов, отдельным запросом после создания. */
 
 function serializePackage(p) {
@@ -787,15 +790,15 @@ function serializePackage(p) {
   };
 }
 
-// Уникальный slug пакета. Факультатив — с префиксом 'facultativ-' (по нему
+// Уникальный slug пакета. Факультатив — с префиксом 'facultativ_' (по нему
 // клиент отличает тип). Занятость проверяем по Package.
 async function uniquePackageSlug(base, facultativ) {
-  const clean = (facultativ ? 'facultativ-' : '') + slugify(base);
+  const clean = (facultativ ? 'facultativ_' : '') + slugify(base);
   let candidate = clean || (facultativ ? 'facultativ' : 'package');
   let n = 2;
   // eslint-disable-next-line no-await-in-loop
   while (await Package.exists({ packageSlug: candidate })) {
-    candidate = `${clean}-${n}`;
+    candidate = `${clean}_${n}`;
     n += 1;
   }
   return candidate;
