@@ -38,6 +38,12 @@
  *   node src/scripts/create-appstore-products.js --dry-run      # что будет создано, без записи
  *   node src/scripts/create-appstore-products.js                # создать/досоздать продукты
  *   node src/scripts/create-appstore-products.js --force-price   # + перезаписать цену у существующих
+ *   node src/scripts/create-appstore-products.js --force-price --only book.idiot   # один товар
+ *
+ * --force-price меняет ТОЛЬКО расписание цены (базовая цена USA, остальные
+ * регионы Apple пересчитывает сам). Доступность по регионам
+ * (inAppPurchaseAvailabilities) скрипт не читает и не пишет — ручные галочки
+ * стран остаются как есть. Смена цены одобренного товара проверки не требует.
  */
 
 const fs = require('fs');
@@ -52,6 +58,12 @@ const ARGS = new Set(process.argv.slice(2));
 const DRY_RUN = ARGS.has('--dry-run');
 const AUDIT = ARGS.has('--audit');
 const FORCE_PRICE = ARGS.has('--force-price');
+// --only <productId> — обработать ровно один товар (проба перед массовым прогоном).
+const ONLY = (() => {
+  const argv = process.argv.slice(2);
+  const i = argv.indexOf('--only');
+  return i >= 0 ? (argv[i + 1] || '').trim() : '';
+})();
 
 // ── Настройки ──
 const BASE_URL = 'https://api.appstoreconnect.apple.com';
@@ -274,7 +286,9 @@ async function processItem(appId, item) {
   const iapId = iap.id;
 
   // Локализации (добавляем недостающие). Каждая — устойчиво, не роняет прогон.
-  if (!DRY_RUN) {
+  // При смене цены (--force-price) у уже существующего товара карточку не
+  // трогаем вовсе — меняется только цена.
+  if (!DRY_RUN && (wasCreated || !FORCE_PRICE)) {
     const have = await existingLocales(iapId);
     for (const loc of LOCALES) {
       if (!have.has(loc)) {
@@ -378,6 +392,16 @@ async function main() {
   })
     .select('title description priceUsd appleProductId packageSlug')
     .lean();
+
+  if (ONLY) {
+    const keep = (x) => x.appleProductId === ONLY;
+    books.splice(0, books.length, ...books.filter(keep));
+    packages.splice(0, packages.length, ...packages.filter(keep));
+    if (books.length + packages.length === 0) {
+      throw new Error(`--only ${ONLY}: такого опубликованного платного товара в БД нет`);
+    }
+    console.log(`Только один товар: ${ONLY}`);
+  }
 
   console.log(`\nРазборы: ${books.length}, пакеты: ${packages.length}\n`);
 
