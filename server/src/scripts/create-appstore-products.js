@@ -374,7 +374,8 @@ async function main() {
   }
 
   await mongoose.connect(config.mongoUri);
-  console.log(`Mongo: ${config.mongoUri}`);
+  // Без логина/пароля — вывод скрипта пересылают в чаты.
+  console.log(`Mongo: ${String(config.mongoUri).replace(/\/\/[^@/]*@/, '//***@')}`);
 
   const books = await Book.find({
     isPublished: true,
