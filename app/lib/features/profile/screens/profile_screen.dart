@@ -6,6 +6,7 @@ import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../../shared/widgets/ai_consent_modal.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -324,7 +325,10 @@ class _SubscriptionCard extends StatelessWidget {
       return 'Действует до $dd.$mm.${until.year}';
     }
     if (profile.subscriptionStatus == 'expired') {
-      return 'Вернуться в клуб — одно касание';
+      // Android бесплатный — без призыва вернуться за оплату.
+      return kPurchasesEnabled
+          ? 'Вернуться в клуб — одно касание'
+          : 'Клуб открыт участницам';
     }
     return 'Разборы, чат с Анной и участницами';
   }
