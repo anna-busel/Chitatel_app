@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/error_view.dart';
@@ -109,7 +110,8 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
       children: [
         _ClubHeaderSwitcher(
           monthLabel: current != null ? clubMonthLabel(current.month) : 'Клуб месяца',
-          title: current?.title ?? 'Подписка на клуб',
+          title: current?.title ??
+              (kPurchasesEnabled ? 'Подписка на клуб' : 'Клуб ЧИТАТЕЛЬ'),
           onTap: _openSwitcher,
         ),
         const Expanded(
@@ -190,7 +192,9 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
     // админу и тем, у кого сезон уже оформлен (plan=='season', 12.07) —
     // предлагать сезон сезоннице бессмысленно, её продление автоматическое.
     final seasonText = SeasonWindow.clubBannerText();
-    final showSeasonBanner = seasonText != null &&
+    // 16.10.2026: на Android подписку не продаём — плашки сезона нет.
+    final showSeasonBanner = kPurchasesEnabled &&
+        seasonText != null &&
         access.kind != ClubAccessKind.admin &&
         !access.hasSeasonPlan;
 
@@ -454,9 +458,11 @@ class _ExpiredArchiveBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final archiveText = 'Это архив ${clubMonthGenitive(archiveMonth)}. ';
+    // 16.10.2026: на Android без призыва оформить подписку (store_policy.dart).
+    final tail = kPurchasesEnabled ? 'оформить подписку' : 'для участниц клуба';
     final currentText = current != null
-        ? '${clubMonthLabel(current!.month)} «${current!.title}» — оформить подписку'
-        : 'Новый клуб месяца — оформить подписку';
+        ? '${clubMonthLabel(current!.month)} «${current!.title}» — $tail'
+        : 'Новый клуб месяца — $tail';
 
     return Material(
       color: Colors.transparent,
