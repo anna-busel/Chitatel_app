@@ -80,10 +80,10 @@ Google Play по первоисточникам (ссылки в разделе 
 ### C. Push (3–4 дня)
 
 - [x] C1. Сервер, схема: `User.pushToken: String` → `User.devices: [{token, platform: 'ios'|'android', updatedAt}]`. Скрипт миграции существующих токенов в `{platform:'ios'}`. Роут `notifications.js` — сохранять `platform`. **Код в `main`, на сервер НЕ выкачен** — деплой вместе с C2. Старое поле `pushToken` намеренно оставлено как запасной источник, чтобы iOS-пуши не могли сломаться ни при каком порядке действий (см. AI-CONTEXT-5, раздел 20).
-- [ ] C2. Сервер: `push.service.js` — вторая ветка отправки через FCM (пакет `firebase-admin`), чанки по 100 как у APNs, мёртвые токены FCM → удалять из `devices`. Service account JSON — в `.env`-путь, не в репо.
-- [ ] C3. Клиент: Firebase в проекте (`firebase_core`, `firebase_messaging`), `google-services.json` (в `.gitignore`? — нет, он не секрет, но решить).
-- [ ] C4. Клиент: Kotlin-сторона канала `chitatel/push` — те же методы `requestPermissionAndRegister` / `getToken` / `getNotificationStatus`, обратные `onToken` / `onTap`. `push_service.dart:~95` — `platform: 'android'` вместо захардкоженного `'ios'`.
-- [ ] C5. Тап по пушу из закрытого приложения → нужный экран → есть выход назад (то же, что проверяли для iOS).
+- [x] C2. Сервер: `push.service.js` — вторая ветка отправки через FCM, мёртвые токены FCM → удалять из `devices`. Service account JSON — в `.env`-путь, не в репо. **Код 16.10.2026, `main`.** Без `firebase-admin`: FCM HTTP v1 через уже установленный `google-auth-library` (`services/fcm.service.js`), по 10 запросов параллельно. Переменная `FCM_SERVICE_ACCOUNT_PATH`; пока не задана — Android-пуши тихо пропускаются. Проверено на заглушках (доставка, гейт настроек, снятие мёртвого токена). ⚠️ Нужен ключ из Firebase и деплой.
+- [x] C3. Клиент: Firebase в проекте (`firebase_core`, `firebase_messaging`). **Код 16.10.2026, ветка `android`.** `google-services.json` и gradle-плагин НЕ используются: Firebase запускается опциями из `core/services/firebase_android_options.dart`, сборка от файла не зависит. ⚠️ Опции пока пустые — их надо заполнить из проекта Firebase (4 строки), иначе пуши на Android выключены.
+- [x] C4. Клиент: `push_service.dart` — Android-ветка на `firebase_messaging` вместо Kotlin-канала (разрешение Android 13+, токен, обновление токена, `platform: 'android'`). После входа в аккаунт токен привязывается сразу (`main.dart`). iOS-ветка не тронута. **Код 16.10.2026, ветка `android`.**
+- [ ] C5. Тап по пушу из закрытого приложения → нужный экран → есть выход назад (то же, что проверяли для iOS). Код есть (`onMessageOpenedApp`, `getInitialMessage` → тот же `_handleTap`), **проверить на устройстве** после заполнения опций Firebase. Пока приложение открыто, FCM на Android пуш не показывает — в ленте уведомлений он есть.
 
 **Проверка:** пуш из админки приходит на эмулятор и на реальный Android; iOS-пуши не сломались.
 
@@ -103,7 +103,7 @@ Google Play по первоисточникам (ссылки в разделе 
 - [x] E4. Сервер: `purchase.service.js` — `verifyGooglePurchase()` через Google Play Developer API (`googleapis`, `purchases.subscriptionsv2.get` / `purchases.products.get`), service account с доступом в Play Console. Результат → тот же `applyTransaction()`, `Purchase.platform = 'google'`.
 - [x] E5. Сервер: Real-time Developer Notifications через Pub/Sub → роут `POST /api/webhooks/google`; маппинг типов (RENEWED, CANCELED, REVOKED, EXPIRED, GRACE_PERIOD) на те же действия, что в `webhook.service.js` для Apple.
 - [x] E6. Сервер: `User.subscriptionOriginalTransactionId` — Apple-термин; для Google хранить `purchaseToken`. Решить: переименовать в `subscriptionExternalId` + `subscriptionPlatform`, или добавить поле.
-- [ ] E7. Play Console: продукты (те же ID `club.basic.monthly`, `book.*`, `package.*`), цены, License testers для sandbox. **Объём уточнён 28.09.2026: 55 разборов + 9 пакетов + 2 подписки, полностью, без сокращения** — продажи идут по всему миру, а оплата через сайт существует только для России и Беларуси, где платежи Google Play недоступны. Разовые товары — пачкой через CSV-импорт, подписки руками (одна группа, сезон рангом выше месячной). Нужен ещё сервисный аккаунт с доступом в консоль и переменные `GOOGLE_PLAY_KEY_PATH` / `GOOGLE_PLAY_PACKAGE` — без них верификация отдаёт 503. Раздел 35.
+- [ ] E7. **Снято 16.10.2026: Android выходит бесплатным** (продавцом Google Play на грузинское ИП стать нельзя, AI-CONTEXT-7, раздел 2.5; оплата в приложении выключена флагом `kPurchasesEnabled`, раздел 3). Вернуться, если появится профиль продавца. Исходная задача: Play Console: продукты (те же ID `club.basic.monthly`, `book.*`, `package.*`), цены, License testers для sandbox. **Объём уточнён 28.09.2026: 55 разборов + 9 пакетов + 2 подписки, полностью, без сокращения** — продажи идут по всему миру, а оплата через сайт существует только для России и Беларуси, где платежи Google Play недоступны. Разовые товары — пачкой через CSV-импорт, подписки руками (одна группа, сезон рангом выше месячной). Нужен ещё сервисный аккаунт с доступом в консоль и переменные `GOOGLE_PLAY_KEY_PATH` / `GOOGLE_PLAY_PACKAGE` — без них верификация отдаёт 503. Раздел 35.
 - [ ] E8. Песочница: покупка, продление (ускоренное в тесте), отмена, возврат → доступ снимается. DID_RENEW-аналог проверить обязательно.
 
 **Проверка:** покупка на Android даёт доступ к клубу; возврат снимает; iOS-путь не задет.
@@ -309,6 +309,15 @@ Apple проверяет сборку **36**, а не репозиторий. Н
   карточке участницы. Было видно, как выдать клубный месяц, но не как его
   снять. Коммиты `fc10d58`, `a74483b` в `main`, работает после деплоя.
   Раздел 36.
+- 16.10.2026 — **Android выходит бесплатным.** Продавцом Google Play на
+  грузинское ИП стать нельзя (AI-CONTEXT-7, раздел 2.5), поэтому в ветке
+  `android` убраны цены, кнопки покупки, тарифы клуба, плашки сезона и
+  тексты про оплату через Google Play. Платное показывается «Для
+  участниц», купленное — «Доступно»; доступ открывается тем, что куплено на
+  iPhone или выдано в админке. Один флаг `kPurchasesEnabled`
+  (`core/constants/store_policy.dart`), iOS не меняется. Блок E остаётся в
+  коде, но на Android не вызывается. Там же код пушей C2–C4. AI-CONTEXT-7,
+  раздел 3.
 
 ---
 
