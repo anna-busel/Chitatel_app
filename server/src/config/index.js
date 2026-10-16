@@ -93,6 +93,16 @@ const config = {
     rtdnSecret: process.env.GOOGLE_RTDN_SECRET || '',
   },
 
+  // FCM — пуши на Android (задача C2 ANDROID-PLAN). Отправка через HTTP v1
+  // API (google-auth-library уже в проекте, firebase-admin не нужен).
+  //   FCM_SERVICE_ACCOUNT_PATH — JSON-ключ сервисного аккаунта проекта
+  //     Firebase (Project settings → Service accounts → Generate new private
+  //     key). Лежит ВНЕ репо, chmod 600. project_id берётся из самого файла.
+  // Пока не задан — Android-пуши тихо пропускаются, iOS работает как прежде.
+  fcm: {
+    serviceAccountPath: process.env.FCM_SERVICE_ACCOUNT_PATH || '',
+  },
+
   openai: {
     apiKey: process.env.OPENAI_API_KEY || '',
   },

@@ -2,11 +2,13 @@ const config = require('../config');
 const logger = require('../config/logger');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
+const fcm = require('./fcm.service');
 
 /**
- * Отправка push через APNs (MASTER 7.9), token-based (.p8).
- *
- * Пока только iOS. Ветка FCM для Android — задача C2 ANDROID-PLAN.
+ * Отправка push: iOS — APNs (MASTER 7.9), token-based (.p8); Android — FCM
+ * HTTP v1 (fcm.service.js, задача C2 ANDROID-PLAN, 16.10.2026). Каждое
+ * устройство из User.devices получает пуш через свою платформу; у кого
+ * iPhone и андроид — получит на оба.
  *
  * ⚠️ 09.09.2026 (задача C1): токены переехали из одного поля User.pushToken в
  * список User.devices [{token, platform, updatedAt}]. Устаревшее поле
@@ -48,10 +50,11 @@ const PERSIST_TYPES = new Set([
 // источник токена, см. комментарий в шапке.
 const PUSH_FIELDS = 'devices pushToken pushSettings isDeleted';
 
-// Условие «есть куда слать iOS-пуш»: новое поле devices ИЛИ устаревшее.
-const HAS_IOS_DEVICE = {
+// Условие «есть куда слать пуш»: любое устройство в devices (iOS или
+// Android) ИЛИ устаревшее iOS-поле pushToken.
+const HAS_DEVICE = {
   $or: [
-    { devices: { $elemMatch: { platform: 'ios' } } },
+    { 'devices.0': { $exists: true } },
     { pushToken: { $exists: true, $nin: [null, ''] } },
   ],
 };
@@ -107,7 +110,7 @@ const buildNotification = ({ title, body, data }) => {
 /**
  * APNs-токены пользователя: устройства с platform === 'ios' плюс устаревшее
  * поле pushToken, если оно ещё не попало в devices. Дубли снимаются.
- * Android-токены сюда НЕ попадают — их шлёт FCM (задача C2).
+ * Android-токены сюда НЕ попадают — их шлёт FCM (androidTokensOf ниже).
  */
 const iosTokensOf = (user) => {
   const tokens = [];
@@ -124,13 +127,28 @@ const iosTokensOf = (user) => {
   return tokens;
 };
 
+/** FCM-токены пользователя: устройства с platform === 'android'. */
+const androidTokensOf = (user) => {
+  const tokens = [];
+  if (user && Array.isArray(user.devices)) {
+    for (const device of user.devices) {
+      if (device && device.platform === 'android' && device.token) {
+        if (!tokens.includes(device.token)) tokens.push(device.token);
+      }
+    }
+  }
+  return tokens;
+};
+
 /**
  * Можно ли слать этому пользователю данный тип.
  * settingKey — ключ user.pushSettings; null → не гейтить.
  */
 const isAllowed = (user, settingKey) => {
   if (!user || user.isDeleted) return false;
-  if (iosTokensOf(user).length === 0) return false;
+  if (iosTokensOf(user).length === 0 && androidTokensOf(user).length === 0) {
+    return false;
+  }
   if (
     settingKey &&
     user.pushSettings &&
@@ -141,7 +159,8 @@ const isAllowed = (user, settingKey) => {
   return true;
 };
 
-// Мёртвые токены APNs — стираем у юзера, чтобы не долбить APNs впустую.
+// Мёртвые токены APNs (и FCM, см. deliverAndroid) — стираем у юзера,
+// чтобы не слать впустую.
 const DEAD_REASONS = ['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic'];
 
 /** Забыть мёртвые токены: и в devices, и в устаревшем поле. */
@@ -157,8 +176,31 @@ const forgetTokens = async (tokens) => {
   );
 };
 
-/** Низкоуровневая доставка на все iOS-токены юзера + очистка мёртвых. */
+/** Android: доставка через FCM + очистка мёртвых токенов. */
+const deliverAndroid = async (tokens, payload) => {
+  if (tokens.length === 0) return 0;
+  const { sent, dead } = await fcm.sendToTokens(tokens, payload);
+  if (dead.length > 0) await forgetTokens(dead);
+  return sent;
+};
+
+/** Доставка на все устройства юзера: iOS (APNs) и Android (FCM). */
 const deliver = async (user, payload) => {
+  const [ios, android] = await Promise.all([
+    deliverIos(user, payload),
+    deliverAndroid(androidTokensOf(user), payload).catch((err) => {
+      logger.error('FCM send исключение', {
+        userId: String(user._id),
+        message: err.message,
+      });
+      return 0;
+    }),
+  ]);
+  return ios || android > 0;
+};
+
+/** Низкоуровневая доставка на все iOS-токены юзера + очистка мёртвых. */
+const deliverIos = async (user, payload) => {
   const p = getProvider();
   if (!p) return false;
 
@@ -206,6 +248,27 @@ const deliver = async (user, payload) => {
  * @returns {Promise<number>} число успешно доставленных
  */
 const deliverMany = async (users, payload) => {
+  if (users.length === 0) return 0;
+
+  // Android — FCM, отдельным списком токенов.
+  const androidTokens = [];
+  for (const user of users) {
+    for (const token of androidTokensOf(user)) {
+      if (!androidTokens.includes(token)) androidTokens.push(token);
+    }
+  }
+  let androidSent = 0;
+  try {
+    androidSent = await deliverAndroid(androidTokens, payload);
+  } catch (err) {
+    logger.error('FCM send (пачка) исключение', { message: err.message });
+  }
+
+  return androidSent + (await deliverManyIos(users, payload));
+};
+
+/** iOS-часть массовой доставки (APNs). */
+const deliverManyIos = async (users, payload) => {
   const p = getProvider();
   if (!p || users.length === 0) return 0;
 
@@ -292,7 +355,7 @@ const sendToUser = async (userId, payload, settingKey = null) => {
  */
 const broadcast = async ({ audience = 'all' } = {}, payload, settingKey = null) => {
   const filter = {
-    ...HAS_IOS_DEVICE,
+    ...HAS_DEVICE,
     isDeleted: { $ne: true },
   };
   if (audience === 'subscribers') {
@@ -372,7 +435,7 @@ const sendNews = async ({ audience = 'all', title, body, data = {} } = {}) => {
  */
 const countBroadcastRecipients = async ({ audience = 'all' } = {}) => {
   const filter = {
-    ...HAS_IOS_DEVICE,
+    ...HAS_DEVICE,
     isDeleted: { $ne: true },
   };
   if (audience === 'subscribers') {
