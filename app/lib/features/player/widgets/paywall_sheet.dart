@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
@@ -42,34 +43,43 @@ class PaywallSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final productId = book.appleProductId;
     // 1.0.1: живая цена StoreKit, БД — запасной вариант.
-    ref.read(storePricesProvider.notifier).ensure([productId]);
-    final price =
-        ref.watch(storePricesProvider)[productId] ?? book.displayPriceUsd;
+    // 16.10.2026: на Android цен и покупки нет (store_policy.dart) — шторка
+    // только сообщает, что отрывок кончился, и закрывает плеер.
+    String? price;
+    if (kPurchasesEnabled) {
+      ref.read(storePricesProvider.notifier).ensure([productId]);
+      price =
+          ref.watch(storePricesProvider)[productId] ?? book.displayPriceUsd;
+    }
     final pkg = book.package;
 
     // Реакция на результат покупки ИМЕННО этого разбора.
-    ref.listen<ProductPurchaseState>(productPurchaseProvider, (prev, next) {
-      if (productId == null || next.productId != productId) return;
-      if (next.status == ProductPurchaseStatus.success ||
-          next.status == ProductPurchaseStatus.restored) {
-        // restored — разбор уже куплен (Sandbox повторная покупка / restore).
-        // Доступ у сервера уже есть → продолжаем воспроизведение как после покупки.
-        ref.read(productPurchaseProvider.notifier).reset();
-        onPurchased();
-      } else if (next.status == ProductPurchaseStatus.error) {
-        final message = next.errorMessage ?? 'Покупка не завершена';
-        ref.read(productPurchaseProvider.notifier).reset();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    });
+    // На Android покупок нет — провайдер покупок не создаём (store_policy.dart).
+    if (kPurchasesEnabled) {
+      ref.listen<ProductPurchaseState>(productPurchaseProvider, (prev, next) {
+        if (productId == null || next.productId != productId) return;
+        if (next.status == ProductPurchaseStatus.success ||
+            next.status == ProductPurchaseStatus.restored) {
+          // restored — разбор уже куплен (Sandbox повторная покупка / restore).
+          // Доступ у сервера уже есть → продолжаем воспроизведение как после покупки.
+          ref.read(productPurchaseProvider.notifier).reset();
+          onPurchased();
+        } else if (next.status == ProductPurchaseStatus.error) {
+          final message = next.errorMessage ?? 'Покупка не завершена';
+          ref.read(productPurchaseProvider.notifier).reset();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      });
+    }
 
-    final purchase = ref.watch(productPurchaseProvider);
-    final isBuying = productId != null &&
+    final purchase = kPurchasesEnabled ? ref.watch(productPurchaseProvider) : null;
+    final isBuying = purchase != null &&
+        productId != null &&
         purchase.productId == productId &&
         (purchase.status == ProductPurchaseStatus.purchasing ||
             purchase.status == ProductPurchaseStatus.verifying);
@@ -118,7 +128,9 @@ class PaywallSheet extends ConsumerWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Дальше — полный разбор «${book.title}»',
+              kPurchasesEnabled
+                  ? 'Дальше — полный разбор «${book.title}»'
+                  : 'Полный разбор «${book.title}» доступен участницам',
               style: AppTypography.caption.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -127,38 +139,44 @@ class PaywallSheet extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 18),
-            AppButton(
-              text: buyText,
-              onPressed: (productId == null || isBuying)
-                  ? null
-                  : () {
-                      if (ref.read(authProvider).status !=
-                          AuthStatus.authenticated) {
-                        context.push(Routes.login);
-                        return;
-                      }
-                      ref.read(productPurchaseProvider.notifier).buy(productId);
-                    },
-              isLoading: isBuying,
-            ),
-            if (pkg != null && onOpenPackage != null) ...[
-              const SizedBox(height: 10),
+            if (!kPurchasesEnabled)
+              AppButton(text: 'Понятно', onPressed: onLater)
+            else ...[
               AppButton(
-                text: 'Взять весь пакет',
-                onPressed: onOpenPackage,
-                variant: AppButtonVariant.outline,
+                text: buyText,
+                onPressed: (productId == null || isBuying)
+                    ? null
+                    : () {
+                        if (ref.read(authProvider).status !=
+                            AuthStatus.authenticated) {
+                          context.push(Routes.login);
+                          return;
+                        }
+                        ref
+                            .read(productPurchaseProvider.notifier)
+                            .buy(productId);
+                      },
+                isLoading: isBuying,
               ),
-            ],
-            const SizedBox(height: 4),
-            TextButton(
-              onPressed: onLater,
-              child: Text(
-                'Позже',
-                style: AppTypography.button.copyWith(
-                  color: AppColors.textSecondary,
+              if (pkg != null && onOpenPackage != null) ...[
+                const SizedBox(height: 10),
+                AppButton(
+                  text: 'Взять весь пакет',
+                  onPressed: onOpenPackage,
+                  variant: AppButtonVariant.outline,
+                ),
+              ],
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: onLater,
+                child: Text(
+                  'Позже',
+                  style: AppTypography.button.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),

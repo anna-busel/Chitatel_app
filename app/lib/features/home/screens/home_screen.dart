@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
@@ -58,7 +59,10 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final homeAsync = ref.watch(homeProvider);
-    final seasonText = SeasonWindow.clubBannerText();
+    // 16.10.2026: на Android подписку не продаём — плашку сезона
+    // (анонс и окно покупки) не показываем (store_policy.dart).
+    final seasonText =
+        kPurchasesEnabled ? SeasonWindow.clubBannerText() : null;
 
     return Container(
       color: AppColors.background,
