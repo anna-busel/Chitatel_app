@@ -7,7 +7,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../../core/router/routes.dart';
+import '../../../shared/widgets/app_button.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../club/providers/club_provider.dart';
 import '../providers/purchase_provider.dart';
@@ -64,6 +66,16 @@ class PaywallScreen extends ConsumerStatefulWidget {
 class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   @override
   Widget build(BuildContext context) {
+    // 16.10.2026: Android бесплатный (store_policy.dart). Ни тарифов, ни цен,
+    // ни кнопок оплаты — и purchaseProvider не трогаем, чтобы не будить
+    // Google Play Billing. Вместо пейвола — пояснение для участниц.
+    if (!kPurchasesEnabled) {
+      return _MembersOnlyClubView(
+        showClose: widget.showClose,
+        showAppBar: widget.showAppBar,
+      );
+    }
+
     final state = ref.watch(purchaseProvider);
 
     ref.listen<PaywallState>(purchaseProvider, (prev, next) {
@@ -394,6 +406,108 @@ class _LegalText extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Android (16.10.2026): вместо пейвола — клуб «для участниц».
+///
+/// Подписку в приложении на Android не продаём (store_policy.dart). Доступ
+/// у тех, кто уже в клубе, открывается сам после входа в свой аккаунт —
+/// сервер отдаёт клуб по подписке или ручной выдаче. Ни цен, ни магазинов,
+/// ни ссылок на оплату.
+class _MembersOnlyClubView extends ConsumerWidget {
+  const _MembersOnlyClubView({
+    required this.showClose,
+    required this.showAppBar,
+  });
+
+  final bool showClose;
+  final bool showAppBar;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isGuest =
+        ref.watch(authProvider).status != AuthStatus.authenticated;
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: showAppBar
+          ? AppBar(
+              backgroundColor: AppColors.background,
+              elevation: 0,
+              leading: showClose
+                  ? IconButton(
+                      icon: const Icon(Icons.close,
+                          color: AppColors.textPrimary),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    )
+                  : null,
+              automaticallyImplyLeading: false,
+              centerTitle: true,
+              title: Text('Клуб ЧИТАТЕЛЬ', style: AppTypography.screenTitle),
+            )
+          : null,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.screenPadding),
+          children: [
+            const SizedBox(height: 24),
+            Center(
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: AppColors.terracotta.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(32),
+                ),
+                child: const Icon(Icons.groups_outlined,
+                    size: 30, color: AppColors.terracotta),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Клуб для участниц',
+              textAlign: TextAlign.center,
+              style: AppTypography.serifSectionTitle,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Книга месяца, разбор Анны по частям, общий чат и вопросы '
+              'Анне. Клуб открыт участницам.',
+              textAlign: TextAlign.center,
+              style: AppTypography.body.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Если вы уже участница — войдите в тот же аккаунт, с которым '
+              'вступали в клуб, и доступ откроется сам.',
+              textAlign: TextAlign.center,
+              style: AppTypography.caption,
+            ),
+            const SizedBox(height: 28),
+            if (isGuest)
+              AppButton(
+                text: 'Войти',
+                onPressed: () => context.push(Routes.login),
+              )
+            else
+              AppButton(
+                text: 'Проверить доступ',
+                variant: AppButtonVariant.outline,
+                onPressed: () {
+                  // Доступ могли выдать вручную только что — перечитываем
+                  // клуб; во вкладке «Клуб» экран сам сменится на клуб.
+                  ref.invalidate(currentClubProvider);
+                  ref.invalidate(clubListProvider);
+                  if (Navigator.of(context).canPop()) context.go('/club');
+                },
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
