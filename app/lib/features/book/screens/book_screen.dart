@@ -5,11 +5,13 @@ import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/listen_button.dart';
+import '../../../shared/widgets/members_only_note.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../catalog/providers/catalog_provider.dart';
@@ -401,40 +403,44 @@ class _ActionSection extends ConsumerWidget {
 
     // Реакция на результат покупки ИМЕННО этого разбора. Провайдер общий на все
     // товары, поэтому сверяем productId, чтобы не среагировать на чужую покупку.
-    ref.listen<ProductPurchaseState>(productPurchaseProvider, (prev, next) {
-      if (productId == null || next.productId != productId) return;
-      if (next.status == ProductPurchaseStatus.success ||
-          next.status == ProductPurchaseStatus.restored) {
-        // restored — товар уже был куплен (Sandbox повторная покупка / restore).
-        // Доступ у сервера уже есть; обновляем UI так же, как после покупки.
-        final restored = next.status == ProductPurchaseStatus.restored;
-        ref.read(productPurchaseProvider.notifier).reset();
-        // Доступ пересчитывает сервер — перезапрашиваем книгу (hasAccess → true,
-        // экран переключится на «Слушать») и историю покупок («Мои покупки»).
-        ref.invalidate(bookProvider(book.id));
-        ref.invalidate(purchaseHistoryProvider);
-        // Каталог держит книги в StateNotifier и сам не перезагружается —
-        // просим его перечитать (isOwned → «Куплено» на карточке сразу) и
-        // обновляем список пакетов на случай, если разбор входит в пакет.
-        ref.read(catalogProvider.notifier).load();
-        ref.invalidate(packagesProvider);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(restored ? 'Покупка восстановлена' : 'Разбор открыт'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      } else if (next.status == ProductPurchaseStatus.error) {
-        final message = next.errorMessage ?? 'Покупка не завершена';
-        ref.read(productPurchaseProvider.notifier).reset();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    });
+    // 16.10.2026: на Android покупок нет — провайдер покупок не создаём
+    // (он подписывается на Google Play Billing), см. store_policy.dart.
+    if (kPurchasesEnabled) {
+      ref.listen<ProductPurchaseState>(productPurchaseProvider, (prev, next) {
+        if (productId == null || next.productId != productId) return;
+        if (next.status == ProductPurchaseStatus.success ||
+            next.status == ProductPurchaseStatus.restored) {
+          // restored — товар уже был куплен (Sandbox повторная покупка / restore).
+          // Доступ у сервера уже есть; обновляем UI так же, как после покупки.
+          final restored = next.status == ProductPurchaseStatus.restored;
+          ref.read(productPurchaseProvider.notifier).reset();
+          // Доступ пересчитывает сервер — перезапрашиваем книгу (hasAccess → true,
+          // экран переключится на «Слушать») и историю покупок («Мои покупки»).
+          ref.invalidate(bookProvider(book.id));
+          ref.invalidate(purchaseHistoryProvider);
+          // Каталог держит книги в StateNotifier и сам не перезагружается —
+          // просим его перечитать (isOwned → «Куплено» на карточке сразу) и
+          // обновляем список пакетов на случай, если разбор входит в пакет.
+          ref.read(catalogProvider.notifier).load();
+          ref.invalidate(packagesProvider);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(restored ? 'Покупка восстановлена' : 'Разбор открыт'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        } else if (next.status == ProductPurchaseStatus.error) {
+          final message = next.errorMessage ?? 'Покупка не завершена';
+          ref.read(productPurchaseProvider.notifier).reset();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      });
+    }
 
     // Вариант 4.12: бесплатная
     if (book.isFree) {
@@ -472,8 +478,9 @@ class _ActionSection extends ConsumerWidget {
     }
 
     // Вариант 4.13: платная без доступа
-    final purchase = ref.watch(productPurchaseProvider);
-    final isBuying = productId != null &&
+    final purchase = kPurchasesEnabled ? ref.watch(productPurchaseProvider) : null;
+    final isBuying = purchase != null &&
+        productId != null &&
         purchase.productId == productId &&
         (purchase.status == ProductPurchaseStatus.purchasing ||
             purchase.status == ProductPurchaseStatus.verifying);
@@ -565,6 +572,30 @@ class _PaidActions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 16.10.2026: Android бесплатный (store_policy.dart) — ни цены, ни кнопки
+    // покупки, ни строки про оплату. Плашка «для участниц» + превью.
+    if (!kPurchasesEnabled) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const MembersOnlyNote(
+            text: 'Полный разбор доступен участницам. $kMembersAccessHint',
+          ),
+          if (hasPreview) ...[
+            const SizedBox(height: 10),
+            AppButton(
+              text: 'Слушать превью (5 мин)',
+              onPressed: onPreview,
+              variant: AppButtonVariant.outline,
+            ),
+          ] else if (!hasAudio) ...[
+            const SizedBox(height: 10),
+            _DisabledAudioHint(),
+          ],
+        ],
+      );
+    }
+
     // 1.0.1: живая цена StoreKit (валюта сторфронта покупателя), БД — запасной
     // вариант, пока StoreKit не ответил.
     ref.read(storePricesProvider.notifier).ensure([book.appleProductId]);
@@ -620,6 +651,14 @@ class _ClubOnlyActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 16.10.2026: на Android подписку не продаём — только пояснение, без
+    // кнопки (store_policy.dart).
+    if (!kPurchasesEnabled) {
+      return const MembersOnlyNote(
+        text: 'Разбор книжного клуба — открыт участницам клуба. '
+            '$kMembersAccessHint',
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -837,8 +876,11 @@ class _PackageUpsellCard extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 2),
-                      Text('Вместе выгоднее', style: AppTypography.caption),
+                      // Android бесплатный — без продающей строки.
+                      if (kPurchasesEnabled) ...[
+                        const SizedBox(height: 2),
+                        Text('Вместе выгоднее', style: AppTypography.caption),
+                      ],
                     ],
                   ),
                 ),
