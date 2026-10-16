@@ -47,6 +47,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Пуши FCM (C3 ANDROID-PLAN): монохромная иконка уведомления по
+             умолчанию — та же, что у плеера. Сервер шлёт её и в самом пуше. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_chitatel"/>
+
         <!-- Кроп фото профиля: uCrop из image_cropper. -->
         <activity
             android:name="com.yalantis.ucrop.UCropActivity"

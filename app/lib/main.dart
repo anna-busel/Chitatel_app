@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,6 +86,19 @@ class _ChitatelAppState extends ConsumerState<ChitatelApp>
   @override
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
+
+    // C4 ANDROID-PLAN (16.10.2026): после входа в аккаунт сразу привязываем
+    // FCM-токен к новому пользователю, а не ждём следующего запуска. Если
+    // разрешения на уведомления нет — refreshToken ничего не делает. На iOS
+    // не трогаем: там токен приходит из AppDelegate, как и раньше.
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      ref.listen<AuthState>(authProvider, (prev, next) {
+        if (next.status == AuthStatus.authenticated &&
+            prev?.status != AuthStatus.authenticated) {
+          ref.read(pushServiceProvider).refreshToken();
+        }
+      });
+    }
 
     // D3 ANDROID-PLAN: системные панели под тему приложения. AppBarTheme уже
     // задаёт стиль для экранов с шапкой, но табы её не имеют — на Android там
