@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
@@ -9,6 +10,7 @@ import '../../../features/payments/providers/store_prices_provider.dart';
 import '../../../features/profile/providers/profile_provider.dart';
 import '../../../shared/models/package_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
+import '../../../shared/widgets/members_only_note.dart';
 
 /// Карточка пакета в сетке каталога (фильтр «Пакеты»).
 /// Тап → экран пакета (Routes.package).
@@ -29,9 +31,13 @@ class PackageCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final coverHeight = coverWidth * 1.5; // соотношение 2:3
     // 1.0.1: живая цена StoreKit, БД — запасной вариант.
-    ref.read(storePricesProvider.notifier).ensure([package.appleProductId]);
-    final price = ref.watch(storePricesProvider)[package.appleProductId] ??
-        package.displayPriceUsd;
+    // 16.10.2026: на Android цен нет (store_policy.dart).
+    String? price;
+    if (kPurchasesEnabled) {
+      ref.read(storePricesProvider.notifier).ensure([package.appleProductId]);
+      price = ref.watch(storePricesProvider)[package.appleProductId] ??
+          package.displayPriceUsd;
+    }
     // 1.0.2: админу — «Доступ админа» вместо «Куплено» (см. isAdminProvider).
     final isAdmin = package.hasAccess && ref.watch(isAdminProvider);
 
@@ -78,11 +84,13 @@ class PackageCard extends ConsumerWidget {
           // Иначе — цена. Доступ считает сервер (package.hasAccess в списке).
           if (package.hasAccess)
             Text(
-              isAdmin ? 'Доступ админа' : 'Куплено',
+              isAdmin ? 'Доступ админа' : kOwnedLabel,
               style: AppTypography.bodyBold.copyWith(
                 color: AppColors.freeBadge,
               ),
             )
+          else if (!kPurchasesEnabled)
+            const MembersOnlyLabel()
           else if (price != null)
             Text(
               price,

@@ -5,10 +5,12 @@ import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../../features/payments/providers/store_prices_provider.dart';
 import '../../../features/profile/providers/profile_provider.dart';
 import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
+import '../../../shared/widgets/members_only_note.dart';
 
 /// Карточка книги в сетке каталога.
 /// Тап → экран книги (Routes.book).
@@ -31,9 +33,14 @@ class BookGridCard extends ConsumerWidget {
     final coverHeight = coverWidth * 1.5; // соотношение 2:3
     // 1.0.1: цена — живая из StoreKit (валюта сторфронта покупателя),
     // приценка из БД остаётся запасной, пока StoreKit не ответил.
-    ref.read(storePricesProvider.notifier).ensure([book.appleProductId]);
-    final price = ref.watch(storePricesProvider)[book.appleProductId] ??
-        book.displayPriceUsd;
+    // 16.10.2026: на Android цен нет вовсе (store_policy.dart) — StoreKit/Play
+    // не спрашиваем, вместо цены «Для участниц».
+    String? price;
+    if (kPurchasesEnabled) {
+      ref.read(storePricesProvider.notifier).ensure([book.appleProductId]);
+      price = ref.watch(storePricesProvider)[book.appleProductId] ??
+          book.displayPriceUsd;
+    }
     // «Куплено» показываем только для платных купленных (у бесплатных свой бейдж).
     final showBought = !book.isFree && book.isOwned;
     // 1.0.2: админу сервер отдаёт доступ ко всему — подписываем честно.
@@ -104,11 +111,13 @@ class BookGridCard extends ConsumerWidget {
             )
           else if (showBought)
             Text(
-              isAdmin ? 'Доступ админа' : 'Куплено',
+              isAdmin ? 'Доступ админа' : kOwnedLabel,
               style: AppTypography.bodyBold.copyWith(
                 color: AppColors.freeBadge,
               ),
             )
+          else if (!kPurchasesEnabled)
+            const MembersOnlyLabel()
           else if (price != null)
             Text(
               price,

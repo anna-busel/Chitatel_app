@@ -5,9 +5,11 @@ import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../payments/providers/store_prices_provider.dart';
 import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
+import '../../../shared/widgets/members_only_note.dart';
 
 /// Секция «Популярные» — горизонтальный скролл платных книг с ценами.
 /// Показывается только если список непустой (для гостя бэкенд вернёт []).
@@ -56,9 +58,15 @@ class _PopularBookCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // 1.0.1: живая цена StoreKit, БД — запасной вариант.
-    ref.read(storePricesProvider.notifier).ensure([book.appleProductId]);
-    final price = ref.watch(storePricesProvider)[book.appleProductId] ??
-        book.displayPriceUsd;
+    // 16.10.2026: на Android цен нет (store_policy.dart) — у платного
+    // без доступа «Для участниц», у остальных строка пустая.
+    String? price;
+    if (kPurchasesEnabled) {
+      ref.read(storePricesProvider.notifier).ensure([book.appleProductId]);
+      price = ref.watch(storePricesProvider)[book.appleProductId] ??
+          book.displayPriceUsd;
+    }
+    final membersOnly = !kPurchasesEnabled && !book.isFree && !book.isOwned;
 
     return SizedBox(
       width: 140,
@@ -90,7 +98,9 @@ class _PopularBookCard extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 6),
-            if (price != null)
+            if (membersOnly)
+              const MembersOnlyLabel()
+            else if (price != null)
               Text(
                 price,
                 style: AppTypography.bodyBold.copyWith(

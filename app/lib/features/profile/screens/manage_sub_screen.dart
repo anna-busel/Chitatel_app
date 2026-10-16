@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/error_view.dart';
+import '../../../shared/widgets/members_only_note.dart';
 import '../../payments/providers/purchase_provider.dart';
 import '../providers/profile_provider.dart';
 import '../services/profile_service.dart';
@@ -62,33 +64,36 @@ class ManageSubScreen extends ConsumerWidget {
     final profileAsync = ref.watch(profileProvider);
 
     // P3: обратная связь по «Восстановить покупки» (раньше кнопка молчала).
-    ref.listen<PaywallState>(purchaseProvider, (prev, next) {
-      // Если сверху открыт paywall — тосты показывает он, не дублируем.
-      if (ModalRoute.of(context)?.isCurrent == false) return;
-      if (prev?.status == next.status &&
-          next.infoMessage == null &&
-          next.errorMessage == null) {
-        return;
-      }
-      String? text;
-      if (next.infoMessage != null) {
-        text = next.infoMessage;
-      } else if (next.status == PaywallStatus.error &&
-          prev?.status != PaywallStatus.error) {
-        text = next.errorMessage ?? 'Не удалось восстановить покупки';
-      } else if (next.status == PaywallStatus.restored &&
-          prev?.status != PaywallStatus.restored) {
-        text = 'Покупки восстановлены';
-        // Подписка вернулась — перечитываем профиль, чтобы экран обновился.
-        ref.read(profileProvider.notifier).load();
-      }
-      if (text != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(text),
-          backgroundColor: AppColors.textPrimary,
-        ));
-      }
-    });
+    // 16.10.2026: на Android покупок нет — purchaseProvider не создаём.
+    if (kPurchasesEnabled) {
+      ref.listen<PaywallState>(purchaseProvider, (prev, next) {
+        // Если сверху открыт paywall — тосты показывает он, не дублируем.
+        if (ModalRoute.of(context)?.isCurrent == false) return;
+        if (prev?.status == next.status &&
+            next.infoMessage == null &&
+            next.errorMessage == null) {
+          return;
+        }
+        String? text;
+        if (next.infoMessage != null) {
+          text = next.infoMessage;
+        } else if (next.status == PaywallStatus.error &&
+            prev?.status != PaywallStatus.error) {
+          text = next.errorMessage ?? 'Не удалось восстановить покупки';
+        } else if (next.status == PaywallStatus.restored &&
+            prev?.status != PaywallStatus.restored) {
+          text = 'Покупки восстановлены';
+          // Подписка вернулась — перечитываем профиль, чтобы экран обновился.
+          ref.read(profileProvider.notifier).load();
+        }
+        if (text != null) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(text),
+            backgroundColor: AppColors.textPrimary,
+          ));
+        }
+      });
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -155,9 +160,9 @@ class _Body extends StatelessWidget {
     final dd = until.day.toString().padLeft(2, '0');
     final mm = until.month.toString().padLeft(2, '0');
     final date = '$dd.$mm.${until.year}';
-    return profile.hasSubscription
-        ? 'Следующее списание — $date'
-        : 'Действовала до $date';
+    if (!profile.hasSubscription) return 'Действовала до $date';
+    // Android: подписка оформлена не здесь — про списания не говорим.
+    return kPurchasesEnabled ? 'Следующее списание — $date' : 'Действует до $date';
   }
 
   @override
@@ -180,7 +185,9 @@ class _Body extends StatelessWidget {
               Text(
                 profile.hasSubscription || profile.subscriptionExpiresAt != null
                     ? _dateLine
-                    : 'Клуб открывается по подписке',
+                    : kPurchasesEnabled
+                        ? 'Клуб открывается по подписке'
+                        : 'Клуб открыт участницам',
                 style: AppTypography.caption,
               ),
             ],
@@ -188,7 +195,19 @@ class _Body extends StatelessWidget {
         ),
         const SizedBox(height: 20),
 
-        if (profile.hasSubscription) ...[
+        // 16.10.2026: Android бесплатный (store_policy.dart) — ни магазина,
+        // ни «Вступить», ни восстановления покупок.
+        if (!kPurchasesEnabled) ...[
+          if (profile.hasSubscription)
+            Text(
+              'Изменить или отменить подписку можно там, где вы её '
+              'оформляли. После отмены доступ сохраняется до конца '
+              'оплаченного периода.',
+              style: AppTypography.caption,
+            )
+          else
+            const MembersOnlyNote(text: kMembersAccessHint),
+        ] else if (profile.hasSubscription) ...[
           AppButton(
             text: 'Управлять подпиской в $_storeName',
             onPressed: onManage,
@@ -216,18 +235,20 @@ class _Body extends StatelessWidget {
           ),
         ],
 
-        const SizedBox(height: 20),
-        Center(
-          child: TextButton(
-            onPressed: onRestore,
-            child: Text(
-              'Восстановить покупки',
-              style: AppTypography.bodyMedium.copyWith(
-                color: AppColors.terracotta,
+        if (kPurchasesEnabled) ...[
+          const SizedBox(height: 20),
+          Center(
+            child: TextButton(
+              onPressed: onRestore,
+              child: Text(
+                'Восстановить покупки',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: AppColors.terracotta,
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
