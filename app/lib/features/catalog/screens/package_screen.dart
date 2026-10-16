@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
@@ -11,6 +12,7 @@ import '../../payments/providers/store_prices_provider.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
+import '../../../shared/widgets/members_only_note.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../book/providers/book_provider.dart';
 import '../../payments/providers/product_purchase_provider.dart';
@@ -67,57 +69,65 @@ class _PackageBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final productId = package.appleProductId;
     // 1.0.1: живая цена StoreKit, БД — запасной вариант.
-    ref.read(storePricesProvider.notifier).ensure([productId]);
-    final price =
-        ref.watch(storePricesProvider)[productId] ?? package.displayPriceUsd;
+    // 16.10.2026: на Android цен и покупки нет (store_policy.dart).
+    String? price;
+    if (kPurchasesEnabled) {
+      ref.read(storePricesProvider.notifier).ensure([productId]);
+      price =
+          ref.watch(storePricesProvider)[productId] ?? package.displayPriceUsd;
+    }
     final buyText = price != null ? 'Купить пакет за $price' : 'Купить пакет';
 
     // Реакция на результат покупки ИМЕННО этого пакета (провайдер общий на все
     // товары, поэтому сверяем productId).
-    ref.listen<ProductPurchaseState>(productPurchaseProvider, (prev, next) {
-      if (productId == null || next.productId != productId) return;
-      if (next.status == ProductPurchaseStatus.success ||
-          next.status == ProductPurchaseStatus.restored) {
-        // restored — пакет уже был куплен (Sandbox повторная покупка / restore).
-        // Доступ у сервера уже есть; обновляем UI так же, как после покупки.
-        final restored = next.status == ProductPurchaseStatus.restored;
-        ref.read(productPurchaseProvider.notifier).reset();
-        // Пакет открывает входящие разборы (сервер: purchasedPackages →
-        // userHasBookAccess). Обновляем детали пакета (package.hasAccess → true,
-        // кнопка сменится подписью), историю покупок и провайдеры входящих
-        // разборов, чтобы доступ подхватился сразу.
-        ref.invalidate(packageDetailProvider(package.id));
-        ref.invalidate(purchaseHistoryProvider);
-        for (final book in package.books) {
-          ref.invalidate(bookProvider(book.id));
-        }
-        // Каталог держит книги/пакеты отдельно и сам не перезагружается —
-        // просим перечитать: карточки входящих разборов и самого пакета
-        // сменятся на «Куплено» сразу после возврата в каталог.
-        ref.read(catalogProvider.notifier).load();
-        ref.invalidate(packagesProvider);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              restored ? 'Покупка восстановлена' : 'Пакет открыт — разборы доступны',
+    // На Android покупок нет — провайдер покупок не создаём (store_policy.dart).
+    if (kPurchasesEnabled) {
+      ref.listen<ProductPurchaseState>(productPurchaseProvider, (prev, next) {
+        if (productId == null || next.productId != productId) return;
+        if (next.status == ProductPurchaseStatus.success ||
+            next.status == ProductPurchaseStatus.restored) {
+          // restored — пакет уже был куплен (Sandbox повторная покупка / restore).
+          // Доступ у сервера уже есть; обновляем UI так же, как после покупки.
+          final restored = next.status == ProductPurchaseStatus.restored;
+          ref.read(productPurchaseProvider.notifier).reset();
+          // Пакет открывает входящие разборы (сервер: purchasedPackages →
+          // userHasBookAccess). Обновляем детали пакета (package.hasAccess → true,
+          // кнопка сменится подписью), историю покупок и провайдеры входящих
+          // разборов, чтобы доступ подхватился сразу.
+          ref.invalidate(packageDetailProvider(package.id));
+          ref.invalidate(purchaseHistoryProvider);
+          for (final book in package.books) {
+            ref.invalidate(bookProvider(book.id));
+          }
+          // Каталог держит книги/пакеты отдельно и сам не перезагружается —
+          // просим перечитать: карточки входящих разборов и самого пакета
+          // сменятся на «Куплено» сразу после возврата в каталог.
+          ref.read(catalogProvider.notifier).load();
+          ref.invalidate(packagesProvider);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                restored ? 'Покупка восстановлена' : 'Пакет открыт — разборы доступны',
+              ),
+              duration: const Duration(seconds: 2),
             ),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      } else if (next.status == ProductPurchaseStatus.error) {
-        final message = next.errorMessage ?? 'Покупка не завершена';
-        ref.read(productPurchaseProvider.notifier).reset();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    });
+          );
+        } else if (next.status == ProductPurchaseStatus.error) {
+          final message = next.errorMessage ?? 'Покупка не завершена';
+          ref.read(productPurchaseProvider.notifier).reset();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      });
+    }
 
-    final purchase = ref.watch(productPurchaseProvider);
-    final isBuying = productId != null &&
+    final purchase = kPurchasesEnabled ? ref.watch(productPurchaseProvider) : null;
+    final isBuying = purchase != null &&
+        productId != null &&
         purchase.productId == productId &&
         (purchase.status == ProductPurchaseStatus.purchasing ||
             purchase.status == ProductPurchaseStatus.verifying);
@@ -159,7 +169,11 @@ class _PackageBody extends ConsumerWidget {
           _BoughtButton(
             label: ref.watch(isAdminProvider)
                 ? 'Доступ администратора'
-                : 'Куплено',
+                : kOwnedLabel,
+          )
+        else if (!kPurchasesEnabled)
+          const MembersOnlyNote(
+            text: 'Разборы пакета доступны участницам. $kMembersAccessHint',
           )
         else
           AppButton(
