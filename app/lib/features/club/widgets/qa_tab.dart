@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../../core/storage/secure_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
@@ -339,7 +340,9 @@ class _QATabState extends ConsumerState<QATab> {
                       child: Text(
                         widget.access.kind == ClubAccessKind.archive
                             ? 'В архивном режиме нельзя задавать вопросы'
-                            : 'Задавать вопросы можно только с подпиской',
+                            : kPurchasesEnabled
+                                ? 'Задавать вопросы можно только с подпиской'
+                                : 'Задавать вопросы могут участницы клуба',
                         style: AppTypography.caption,
                       ),
                     ),
