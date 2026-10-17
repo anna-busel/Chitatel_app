@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -43,12 +45,23 @@ void main() async {
   // Push-сервис (задача 6.1): создание провайдера ставит обработчик нативного
   // канала APNs (приём токена и тапов). Если юзер уже авторизован и
   // разрешение выдано — тихо переустанавливаем токен на бэкенде.
-  await container.read(pushServiceProvider).refreshToken();
+  //
+  // iOS — как раньше, до runApp. Android — ПОСЛЕ runApp и без await:
+  // Firebase не должен держать первый кадр (17.10.2026 сборка 68 висела
+  // на чёрном экране, пока FCM поднимался до runApp).
+  final pushService = container.read(pushServiceProvider);
+  if (defaultTargetPlatform != TargetPlatform.android) {
+    await pushService.refreshToken();
+  }
 
   runApp(UncontrolledProviderScope(
     container: container,
     child: const ChitatelApp(),
   ));
+
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    unawaited(pushService.refreshToken());
+  }
 }
 
 class ChitatelApp extends ConsumerStatefulWidget {

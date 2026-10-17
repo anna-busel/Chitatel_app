@@ -42,29 +42,50 @@ class PushService {
 
   bool _fcmReady = false;
 
+  /// Идущий запуск Firebase: параллельные вызовы (старт + экран настроек)
+  /// ждут один и тот же, иначе второй initializeApp падает с duplicate-app.
+  Future<bool>? _fcmInit;
+
+  /// Подписки на токен и тапы ставим один раз, даже если запуск повторяли.
+  bool _fcmListening = false;
+
+  /// Предел ожидания шагов Firebase: зависший FCM не должен вешать экран
+  /// настроек уведомлений. По таймауту — как будто пушей нет.
+  static const _fcmTimeout = Duration(seconds: 10);
+
   /// Однократный запуск Firebase и подписок FCM. false — Android-пуши
   /// недоступны (опции не заполнены / Firebase не поднялся); вызывающий
   /// тогда ведёт себя как без пушей.
-  Future<bool> _ensureFcm() async {
-    if (_fcmReady) return true;
-    if (!_isAndroid || !kFirebaseAndroidConfigured) return false;
+  Future<bool> _ensureFcm() {
+    if (_fcmReady) return Future.value(true);
+    if (!_isAndroid || !kFirebaseAndroidConfigured) return Future.value(false);
+    return _fcmInit ??= _startFcm().whenComplete(() => _fcmInit = null);
+  }
+
+  Future<bool> _startFcm() async {
     try {
       if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp(options: firebaseAndroidOptions);
+        await Firebase.initializeApp(options: firebaseAndroidOptions)
+            .timeout(_fcmTimeout);
       }
       final messaging = FirebaseMessaging.instance;
-      // Токен FCM может смениться (переустановка, очистка данных) —
-      // сразу сообщаем серверу.
-      messaging.onTokenRefresh.listen(_registerToken);
-      // Тап по уведомлению, когда приложение было в фоне.
-      FirebaseMessaging.onMessageOpenedApp
-          .listen((message) => _handleTap(message.data));
-      // Тап, которым приложение запустили из закрытого состояния. Роутер
-      // ещё не смонтирован (main до runApp) — переходим после первого кадра.
-      final initial = await messaging.getInitialMessage();
+      if (!_fcmListening) {
+        _fcmListening = true;
+        // Токен FCM может смениться (переустановка, очистка данных) —
+        // сразу сообщаем серверу.
+        messaging.onTokenRefresh.listen(_registerToken);
+        // Тап по уведомлению, когда приложение было в фоне.
+        FirebaseMessaging.onMessageOpenedApp
+            .listen((message) => _handleTap(message.data));
+      }
+      // Тап, которым приложение запустили из закрытого состояния. Запуск идёт
+      // после runApp — переходим на следующем кадре и сами его заказываем.
+      final initial =
+          await messaging.getInitialMessage().timeout(_fcmTimeout);
       if (initial != null) {
         final data = initial.data;
         WidgetsBinding.instance.addPostFrameCallback((_) => _handleTap(data));
+        WidgetsBinding.instance.ensureVisualUpdate();
       }
       _fcmReady = true;
       return true;
@@ -86,7 +107,7 @@ class PushService {
       final settings = await messaging.requestPermission();
       final granted = _isGranted(settings.authorizationStatus);
       if (granted) {
-        final token = await messaging.getToken();
+        final token = await messaging.getToken().timeout(_fcmTimeout);
         if (token != null && token.isNotEmpty) await _registerToken(token);
       }
       return granted;
@@ -157,7 +178,7 @@ class PushService {
         // Без разрешения токен не регистрируем — его попросят на экране 4.8
         // или в настройках уведомлений.
         if (!_isGranted(settings.authorizationStatus)) return;
-        final token = await messaging.getToken();
+        final token = await messaging.getToken().timeout(_fcmTimeout);
         if (token != null && token.isNotEmpty) await _registerToken(token);
       } catch (_) {
         // Не критично — повторим при следующем запуске.
