@@ -14,11 +14,12 @@ import 'package:firebase_core/firebase_core.dart';
 /// google-services не подключаем — Firebase запускается этими опциями из
 /// Dart, поэтому сборка не зависит от файла.
 ///
-/// Пока поля пустые — пуши на Android тихо выключены, приложение работает.
-const String _apiKey = '';
-const String _appId = '';
-const String _messagingSenderId = '';
-const String _projectId = '';
+/// Проект Firebase: chitatel-49c96 (заведён 17.10.2026, только Android-приложение).
+/// Если поля очистить — пуши на Android тихо выключатся, приложение работает.
+const String _apiKey = 'AIzaSyA_y5qE5NjZhMbUwHTEu4ngbh_APcKdndU';
+const String _appId = '1:216777806066:android:581ee2310f84214c71406b';
+const String _messagingSenderId = '216777806066';
+const String _projectId = 'chitatel-49c96';
 
 /// Заполнены ли опции. false — PushService не трогает Firebase вовсе.
 bool get kFirebaseAndroidConfigured =>
