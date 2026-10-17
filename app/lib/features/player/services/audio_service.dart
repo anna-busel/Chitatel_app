@@ -378,12 +378,12 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
     await _flushProgress();
   }
 
+  /// Стоп от системы — в том числе кнопка «✕» в шторке (17.10.2026).
+  /// Ведёт себя как закрытие плеера: позиция сохраняется, книга забывается,
+  /// уведомление уходит. Раньше stop() глушил звук, но плеер оставался.
   @override
   Future<void> stop() async {
-    await _flushProgress();
-    _stopProgressTimer();
-    _stopSleepTimer();
-    await _player.stop();
+    await closePlayer();
     await super.stop();
   }
 
@@ -584,6 +584,11 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
         MediaControl.rewind,
         if (playing) MediaControl.pause else MediaControl.play,
         MediaControl.fastForward,
+        // 17.10.2026: «✕» в развёрнутой шторке Android. Уведомление на паузе
+        // остаётся служебным (androidStopForegroundOnPause: false) и
+        // смахнуть его нельзя — без этой кнопки плеер в шторке висел
+        // до перезагрузки. Компактный вид (0, 1, 2) не меняется.
+        MediaControl.stop,
       ],
       systemActions: const {
         MediaAction.seek,
@@ -718,9 +723,16 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // ─────────────────────────── CLEANUP ───────────────────────────
 
+  /// Приложение смахнули из недавних (17.10.2026). Если разбор играет —
+  /// пусть играет дальше, управление остаётся в шторке. Если стоит на паузе —
+  /// закрываем плеер: иначе служебное уведомление висит, и убрать его нельзя.
   @override
   Future<void> onTaskRemoved() async {
-    await _flushProgress();
+    if (_player.playing) {
+      await _flushProgress();
+    } else {
+      await closePlayer();
+    }
     await super.onTaskRemoved();
   }
 
@@ -772,8 +784,10 @@ Future<ChitatelAudioHandler> initChitatelAudio({
       // 02.10.2026: уведомление больше не исчезает на паузе. Было true —
       // сервис уходил из переднего плана, плеер пропадал из шторки, и
       // продолжить прослушивание можно было только вернувшись в приложение.
-      // При false уведомление остаётся с кнопкой «продолжить» и становится
-      // смахиваемым — так ведут себя все аудиоприложения.
+      // При false уведомление остаётся с кнопкой «продолжить».
+      // ⚠️ Смахнуть его на паузе нельзя (сервис остаётся служебным) —
+      // поэтому в шторке есть «✕» (MediaControl.stop), а при закрытии
+      // приложения на паузе плеер закрывается сам (onTaskRemoved), 17.10.2026.
       androidNotificationOngoing: false,
       androidStopForegroundOnPause: false,
     ),

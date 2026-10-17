@@ -1,16 +1,30 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../network/api_client.dart';
 import '../router/app_router.dart';
 import '../router/routes.dart';
 import '../../features/auth/providers/auth_provider.dart';
+import 'firebase_android_options.dart';
 
-/// APNs push (задача 6.1). Только iOS, без Firebase.
+/// Push (задача 6.1; Android — C3–C5 ANDROID-PLAN, 16.10.2026).
 ///
-/// Нативный токен приходит из AppDelegate.swift через MethodChannel
-/// 'chitatel/push'. Здесь регистрируем токен на бэкенде и обрабатываем тап
-/// по уведомлению (навигация). Настройки типов уважаются на сервере.
+/// iOS — APNs без Firebase: нативный токен приходит из AppDelegate.swift
+/// через MethodChannel 'chitatel/push'. Поведение iOS не менялось.
+///
+/// Android — FCM через firebase_messaging (Kotlin-сторона не нужна): токен,
+/// разрешение (Android 13+) и тапы берутся из плагина, Firebase запускается
+/// опциями из firebase_android_options.dart. Пока опции не заполнены, пуши
+/// на Android тихо выключены.
+///
+/// Общее: токен регистрируется на бэкенде с платформой, тап ведёт на экран.
+/// Настройки типов уважаются на сервере.
 final pushServiceProvider = Provider<PushService>((ref) => PushService(ref));
+
+bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
 
 class PushService {
   PushService(this._ref) {
@@ -24,10 +38,90 @@ class PushService {
   // общий api_endpoints.dart (baseUrl уже содержит /api).
   static const String _registerPath = '/notifications/register';
 
+  // ── Android: FCM ──
+
+  bool _fcmReady = false;
+
+  /// Идущий запуск Firebase: параллельные вызовы (старт + экран настроек)
+  /// ждут один и тот же, иначе второй initializeApp падает с duplicate-app.
+  Future<bool>? _fcmInit;
+
+  /// Подписки на токен и тапы ставим один раз, даже если запуск повторяли.
+  bool _fcmListening = false;
+
+  /// Предел ожидания шагов Firebase: зависший FCM не должен вешать экран
+  /// настроек уведомлений. По таймауту — как будто пушей нет.
+  static const _fcmTimeout = Duration(seconds: 10);
+
+  /// Однократный запуск Firebase и подписок FCM. false — Android-пуши
+  /// недоступны (опции не заполнены / Firebase не поднялся); вызывающий
+  /// тогда ведёт себя как без пушей.
+  Future<bool> _ensureFcm() {
+    if (_fcmReady) return Future.value(true);
+    if (!_isAndroid || !kFirebaseAndroidConfigured) return Future.value(false);
+    return _fcmInit ??= _startFcm().whenComplete(() => _fcmInit = null);
+  }
+
+  Future<bool> _startFcm() async {
+    try {
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(options: firebaseAndroidOptions)
+            .timeout(_fcmTimeout);
+      }
+      final messaging = FirebaseMessaging.instance;
+      if (!_fcmListening) {
+        _fcmListening = true;
+        // Токен FCM может смениться (переустановка, очистка данных) —
+        // сразу сообщаем серверу.
+        messaging.onTokenRefresh.listen(_registerToken);
+        // Тап по уведомлению, когда приложение было в фоне.
+        FirebaseMessaging.onMessageOpenedApp
+            .listen((message) => _handleTap(message.data));
+      }
+      // Тап, которым приложение запустили из закрытого состояния. Запуск идёт
+      // после runApp — переходим на следующем кадре и сами его заказываем.
+      final initial =
+          await messaging.getInitialMessage().timeout(_fcmTimeout);
+      if (initial != null) {
+        final data = initial.data;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _handleTap(data));
+        WidgetsBinding.instance.ensureVisualUpdate();
+      }
+      _fcmReady = true;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _isGranted(AuthorizationStatus status) =>
+      status == AuthorizationStatus.authorized ||
+      status == AuthorizationStatus.provisional;
+
+  /// Android: разрешение (системный диалог на Android 13+, на старых
+  /// разрешено сразу) + регистрация токена FCM на бэкенде.
+  Future<bool> _requestAndroid() async {
+    if (!await _ensureFcm()) return false;
+    try {
+      final messaging = FirebaseMessaging.instance;
+      final settings = await messaging.requestPermission();
+      final granted = _isGranted(settings.authorizationStatus);
+      if (granted) {
+        final token = await messaging.getToken().timeout(_fcmTimeout);
+        if (token != null && token.isNotEmpty) await _registerToken(token);
+      }
+      return granted;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Запрашивает разрешение и регистрирует устройство в APNs (экран 4.8).
   /// Возвращает true, если пользователь разрешил. Токен придёт асинхронно
   /// через onToken и будет отправлен на бэкенд.
+  /// Android: то же через FCM, токен регистрируется сразу.
   Future<bool> requestPermissionAndRegister() async {
+    if (_isAndroid) return _requestAndroid();
     try {
       final granted =
           await _channel.invokeMethod<bool>('requestPermissionAndRegister');
@@ -44,6 +138,22 @@ class PushService {
   /// 'unknown' — канал недоступен / не iOS; экран настроек тогда показывает
   /// запрос как прежде (безопасный дефолт).
   Future<String> getPermissionStatus() async {
+    if (_isAndroid) {
+      // Android не различает «не спрашивали» и «запретили» до первого
+      // запроса, поэтому всё, что не «разрешено», отдаём как notDetermined:
+      // экран настроек покажет кнопку запроса, а если запрет окончательный —
+      // после запроса подскажет путь в системные настройки.
+      if (!await _ensureFcm()) return 'unknown';
+      try {
+        final settings =
+            await FirebaseMessaging.instance.getNotificationSettings();
+        return _isGranted(settings.authorizationStatus)
+            ? 'authorized'
+            : 'notDetermined';
+      } catch (_) {
+        return 'unknown';
+      }
+    }
     try {
       final status =
           await _channel.invokeMethod<String>('getNotificationStatus');
@@ -56,8 +166,25 @@ class PushService {
   }
 
   /// Тихо переустанавливает токен на бэкенде (вызывается при старте, если юзер
-  /// авторизован и разрешение выдано ранее).
+  /// авторизован и разрешение уже выдано ранее).
   Future<void> refreshToken() async {
+    if (_isAndroid) {
+      // Firebase поднимаем и гостю: нужен приём тапа по уведомлению.
+      if (!await _ensureFcm()) return;
+      if (_ref.read(authProvider).status != AuthStatus.authenticated) return;
+      try {
+        final messaging = FirebaseMessaging.instance;
+        final settings = await messaging.getNotificationSettings();
+        // Без разрешения токен не регистрируем — его попросят на экране 4.8
+        // или в настройках уведомлений.
+        if (!_isGranted(settings.authorizationStatus)) return;
+        final token = await messaging.getToken().timeout(_fcmTimeout);
+        if (token != null && token.isNotEmpty) await _registerToken(token);
+      } catch (_) {
+        // Не критично — повторим при следующем запуске.
+      }
+      return;
+    }
     if (_ref.read(authProvider).status != AuthStatus.authenticated) return;
     try {
       final token = await _channel.invokeMethod<String>('getToken');
@@ -97,7 +224,7 @@ class PushService {
       final api = _ref.read(apiClientProvider);
       await api.dio.post(
         _registerPath,
-        data: {'pushToken': token, 'platform': 'ios'},
+        data: {'pushToken': token, 'platform': _isAndroid ? 'android' : 'ios'},
       );
     } catch (_) {
       // Не критично — повторим при следующем входе/запуске.
