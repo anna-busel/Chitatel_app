@@ -1,26 +1,21 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_spacing.dart';
-import '../../core/constants/store_policy.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 
-/// Строка «🔒 Для участниц» на карточках каталога и главной вместо цены.
-/// Только Android (см. store_policy.dart).
+/// Замочек на карточках каталога и главной вместо цены (только Android, см.
+/// store_policy.dart). 17.10.2026: без надписи — «Для участниц» путало:
+/// разборы продаются отдельно от клуба.
 class MembersOnlyLabel extends StatelessWidget {
   const MembersOnlyLabel({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.lock_outline, size: 14, color: AppColors.textSecondary),
-        const SizedBox(width: 4),
-        Text(
-          kMembersOnlyLabel,
-          style: AppTypography.bodyBold.copyWith(color: AppColors.textSecondary),
-        ),
-      ],
+    return const Icon(
+      Icons.lock_outline,
+      size: 16,
+      color: AppColors.textSecondary,
+      semanticLabel: 'Закрыто',
     );
   }
 }

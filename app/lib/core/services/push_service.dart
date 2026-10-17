@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../network/api_client.dart';
 import '../router/app_router.dart';
 import '../router/routes.dart';
@@ -33,6 +34,19 @@ class PushService {
 
   final Ref _ref;
   static const MethodChannel _channel = MethodChannel('chitatel/push');
+
+  /// Android: свой канал из MainActivity.kt (17.10.2026) — включены ли
+  /// уведомления у приложения и открыть их системные настройки.
+  static const MethodChannel _settingsChannel =
+      MethodChannel('chitatel/settings');
+
+  /// Флаг «окно разрешения уже показывали» — спрашиваем один раз.
+  static const String _askedKey = 'push_permission_asked';
+
+  /// Текст последней ошибки запуска Firebase. ВРЕМЕННО (17.10.2026, только
+  /// внутреннее тестирование): экран уведомлений показывает его, чтобы без
+  /// кабеля увидеть, почему FCM не поднимается. Убрать перед Alpha.
+  String? lastFcmError;
 
   // POST /api/notifications/register. Путь держим локально, чтобы не трогать
   // общий api_endpoints.dart (baseUrl уже содержит /api).
@@ -88,10 +102,53 @@ class PushService {
         WidgetsBinding.instance.ensureVisualUpdate();
       }
       _fcmReady = true;
+      lastFcmError = null;
       return true;
+    } catch (e) {
+      lastFcmError = e.toString();
+      return false;
+    }
+  }
+
+  /// Android: включены ли уведомления у приложения в системе. Не зависит от
+  /// Firebase — экран настроек показывает честное состояние, даже если FCM
+  /// не поднялся.
+  Future<bool> androidNotificationsEnabled() async {
+    try {
+      return await _settingsChannel
+              .invokeMethod<bool>('areNotificationsEnabled') ??
+          false;
     } catch (_) {
       return false;
     }
+  }
+
+  /// Android: открыть системные настройки уведомлений Читателя. Нужна, когда
+  /// окно разрешения Android больше не показывает, и чтобы выключить
+  /// уведомления — само приложение выключить их не может.
+  Future<void> openSystemNotificationSettings() async {
+    try {
+      await _settingsChannel.invokeMethod('openNotificationSettings');
+    } catch (_) {}
+  }
+
+  /// «Не сейчас» на экране онбординга — тоже ответ: больше не спрашиваем
+  /// сами, включить можно в настройках уведомлений (17.10.2026).
+  Future<void> markPermissionAsked() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_askedKey, true);
+    } catch (_) {}
+  }
+
+  /// Android: один раз после входа показываем окно «Разрешить уведомления?»
+  /// тем, кого ещё не спрашивали (старые аккаунты онбординг-экран не видели).
+  /// Новичков не трогаем, пока идёт онбординг: там свой экран с запросом.
+  Future<void> _askOnceIfNeeded() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_askedKey) ?? false) return;
+    if (prefs.getBool('onboarding_pending') ?? false) return;
+    await _requestAndroid();
   }
 
   bool _isGranted(AuthorizationStatus status) =>
@@ -101,6 +158,10 @@ class PushService {
   /// Android: разрешение (системный диалог на Android 13+, на старых
   /// разрешено сразу) + регистрация токена FCM на бэкенде.
   Future<bool> _requestAndroid() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_askedKey, true);
+    } catch (_) {}
     if (!await _ensureFcm()) return false;
     try {
       final messaging = FirebaseMessaging.instance;
@@ -111,7 +172,8 @@ class PushService {
         if (token != null && token.isNotEmpty) await _registerToken(token);
       }
       return granted;
-    } catch (_) {
+    } catch (e) {
+      lastFcmError = e.toString();
       return false;
     }
   }
@@ -143,16 +205,10 @@ class PushService {
       // запроса, поэтому всё, что не «разрешено», отдаём как notDetermined:
       // экран настроек покажет кнопку запроса, а если запрет окончательный —
       // после запроса подскажет путь в системные настройки.
-      if (!await _ensureFcm()) return 'unknown';
-      try {
-        final settings =
-            await FirebaseMessaging.instance.getNotificationSettings();
-        return _isGranted(settings.authorizationStatus)
-            ? 'authorized'
-            : 'notDetermined';
-      } catch (_) {
-        return 'unknown';
-      }
+      // 17.10.2026: состояние берём у самой системы, а не у Firebase.
+      return await androidNotificationsEnabled()
+          ? 'authorized'
+          : 'notDetermined';
     }
     try {
       final status =
@@ -173,11 +229,13 @@ class PushService {
       if (!await _ensureFcm()) return;
       if (_ref.read(authProvider).status != AuthStatus.authenticated) return;
       try {
+        // Без разрешения токен не регистрируем. Тех, кого ещё ни разу не
+        // спрашивали, спрашиваем один раз (17.10.2026).
+        if (!await androidNotificationsEnabled()) {
+          await _askOnceIfNeeded();
+          return;
+        }
         final messaging = FirebaseMessaging.instance;
-        final settings = await messaging.getNotificationSettings();
-        // Без разрешения токен не регистрируем — его попросят на экране 4.8
-        // или в настройках уведомлений.
-        if (!_isGranted(settings.authorizationStatus)) return;
         final token = await messaging.getToken().timeout(_fcmTimeout);
         if (token != null && token.isNotEmpty) await _registerToken(token);
       } catch (_) {

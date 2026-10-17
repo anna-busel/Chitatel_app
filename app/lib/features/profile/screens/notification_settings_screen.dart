@@ -103,6 +103,33 @@ class NotificationSettingsScreen extends ConsumerWidget {
     ));
   }
 
+  /// Android, главный переключатель (17.10.2026).
+  /// Включить → окно разрешения Android; если Android его уже не показывает
+  /// (раньше отказали) — системные настройки уведомлений Читателя.
+  /// Выключить → те же настройки: приложение само выключить не может.
+  Future<void> _setMaster(BuildContext context, WidgetRef ref, bool on) async {
+    final push = ref.read(pushServiceProvider);
+    if (on) {
+      final granted = await push.requestPermissionAndRegister();
+      if (!granted) {
+        final err = push.lastFcmError;
+        if (err != null && context.mounted) {
+          // ВРЕМЕННО (внутреннее тестирование): видно, почему FCM не поднялся.
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            duration: const Duration(seconds: 12),
+            content: Text('FCM: $err'),
+          ));
+        }
+        if (!await push.androidNotificationsEnabled()) {
+          await push.openSystemNotificationSettings();
+        }
+      }
+    } else {
+      await push.openSystemNotificationSettings();
+    }
+    ref.invalidate(_pushStatusProvider);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(profileProvider);
@@ -130,12 +157,15 @@ class NotificationSettingsScreen extends ConsumerWidget {
             message: 'Не удалось загрузить настройки',
             onRetry: () => ref.read(profileProvider.notifier).load(),
           ),
-          data: (profile) => _Body(
-            profile: profile,
-            permissionStatus:
-                ref.watch(_pushStatusProvider).asData?.value ?? 'unknown',
-            onToggle: (key, value) => _toggle(context, ref, key, value),
-            onEnablePush: () => _enablePush(context, ref),
+          data: (profile) => _ResumeRefresh(
+            child: _Body(
+              profile: profile,
+              permissionStatus:
+                  ref.watch(_pushStatusProvider).asData?.value ?? 'unknown',
+              onToggle: (key, value) => _toggle(context, ref, key, value),
+              onEnablePush: () => _enablePush(context, ref),
+              onMasterChanged: (on) => _setMaster(context, ref, on),
+            ),
           ),
         ),
       ),
@@ -154,23 +184,82 @@ class _Setting {
   final String subtitle;
 }
 
+/// Вернулись из системных настроек — перечитываем статус разрешения, чтобы
+/// главный переключатель сразу показал правду (17.10.2026).
+class _ResumeRefresh extends ConsumerStatefulWidget {
+  const _ResumeRefresh({required this.child});
+  final Widget child;
+
+  @override
+  ConsumerState<_ResumeRefresh> createState() => _ResumeRefreshState();
+}
+
+class _ResumeRefreshState extends ConsumerState<_ResumeRefresh> {
+  late final AppLifecycleListener _listener;
+
+  @override
+  void initState() {
+    super.initState();
+    _listener = AppLifecycleListener(
+      onResume: () => ref.invalidate(_pushStatusProvider),
+    );
+  }
+
+  @override
+  void dispose() {
+    _listener.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 class _Body extends StatelessWidget {
   const _Body({
     required this.profile,
     required this.permissionStatus,
     required this.onToggle,
     required this.onEnablePush,
+    required this.onMasterChanged,
   });
   final UserProfile profile;
   final String permissionStatus;
   final void Function(String key, bool value) onToggle;
   final VoidCallback onEnablePush;
+  final void Function(bool on) onMasterChanged;
+
+  bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
+  bool get _enabled =>
+      permissionStatus == 'authorized' || permissionStatus == 'provisional';
 
   @override
   Widget build(BuildContext context) {
+    // Android: виды уведомлений активны, только когда главный включён.
+    final typesActive = !_isAndroid || _enabled;
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.screenPadding),
       children: [
+        if (_isAndroid) ...[
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.cardBackground,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: SwitchListTile.adaptive(
+              value: _enabled,
+              activeColor: AppColors.terracotta,
+              title: Text('Уведомления', style: AppTypography.bodyMedium),
+              subtitle: Text(
+                _enabled ? 'Включены на этом телефоне' : 'Выключены',
+                style: AppTypography.caption,
+              ),
+              onChanged: onMasterChanged,
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
         Container(
           decoration: BoxDecoration(
             color: AppColors.cardBackground,
@@ -196,10 +285,12 @@ class _Body extends StatelessWidget {
                     NotificationSettingsScreen._settings[i].subtitle,
                     style: AppTypography.caption,
                   ),
-                  onChanged: (v) => onToggle(
-                    NotificationSettingsScreen._settings[i].key,
-                    v,
-                  ),
+                  onChanged: typesActive
+                      ? (v) => onToggle(
+                            NotificationSettingsScreen._settings[i].key,
+                            v,
+                          )
+                      : null,
                 ),
                 if (i != NotificationSettingsScreen._settings.length - 1)
                   const Divider(height: 1, indent: 16, endIndent: 16),
@@ -207,7 +298,8 @@ class _Body extends StatelessWidget {
             ],
           ),
         ),
-        _footer(),
+        // На Android всё решает главный переключатель сверху.
+        if (!_isAndroid) _footer(),
       ],
     );
   }

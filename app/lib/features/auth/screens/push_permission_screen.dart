@@ -43,6 +43,7 @@ class _PushPermissionScreenState extends ConsumerState<PushPermissionScreen> {
   }
 
   Future<void> _skip() async {
+    await ref.read(pushServiceProvider).markPermissionAsked();
     await OnboardingController.clearPending();
     if (!mounted) return;
     context.go(Routes.home);
