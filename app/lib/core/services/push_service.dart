@@ -43,11 +43,6 @@ class PushService {
   /// Флаг «окно разрешения уже показывали» — спрашиваем один раз.
   static const String _askedKey = 'push_permission_asked';
 
-  /// Текст последней ошибки запуска Firebase. ВРЕМЕННО (17.10.2026, только
-  /// внутреннее тестирование): экран уведомлений показывает его, чтобы без
-  /// кабеля увидеть, почему FCM не поднимается. Убрать перед Alpha.
-  String? lastFcmError;
-
   // POST /api/notifications/register. Путь держим локально, чтобы не трогать
   // общий api_endpoints.dart (baseUrl уже содержит /api).
   static const String _registerPath = '/notifications/register';
@@ -102,10 +97,8 @@ class PushService {
         WidgetsBinding.instance.ensureVisualUpdate();
       }
       _fcmReady = true;
-      lastFcmError = null;
       return true;
-    } catch (e) {
-      lastFcmError = e.toString();
+    } catch (_) {
       return false;
     }
   }
@@ -172,8 +165,7 @@ class PushService {
         if (token != null && token.isNotEmpty) await _registerToken(token);
       }
       return granted;
-    } catch (e) {
-      lastFcmError = e.toString();
+    } catch (_) {
       return false;
     }
   }

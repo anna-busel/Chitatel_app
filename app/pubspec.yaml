@@ -36,10 +36,13 @@ dependencies:
   record: 6.2.1
   in_app_purchase: 3.3.1
   # Пуши на Android (FCM, задачи C3–C5 ANDROID-PLAN). На iOS не
-  # инициализируется — там APNs через свой канал. 17.10.2026: зрелая ветка
-  # 4.x/16.x вместо только что вышедших 5.0.0/17.0.0 (их взяла сборка 68).
-  firebase_core: 4.12.1
-  firebase_messaging: 16.4.3
+  # инициализируется — там APNs через свой канал. 17.10.2026: ровно тот
+  # набор, что в сборке 68 (там FCM реально зарегистрировал токен). 4.12.1
+  # не годится: рядом с ним встаёт platform_interface 8.1.1, который шлёт
+  # в нативную часть 14 полей настроек, а 4.12.1 читает 15 — Firebase
+  # падает с channel-error на initializeApp (сборка 70).
+  firebase_core: 5.0.0
+  firebase_messaging: 17.0.0
   cached_network_image: 3.4.1
 
 # Вложенные библиотеки, которые между сборками 67 и 68 сменили версию сами.
@@ -58,6 +61,13 @@ dependency_overrides:
   sqflite_common: 2.5.13
   sqflite_darwin: 2.4.4
   synchronized: 3.4.2
+  # Firebase — вложенные пакеты как в сборке 68, чтобы Dart-часть и
+  # нативная часть всегда были одной версии.
+  firebase_core_platform_interface: 8.1.1
+  firebase_core_web: 4.0.0
+  firebase_messaging_platform_interface: 4.11.0
+  firebase_messaging_web: 4.3.0
+  _flutterfire_internals: 1.3.78
 
 dev_dependencies:
   flutter_test:

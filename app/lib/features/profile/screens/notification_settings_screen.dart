@@ -112,14 +112,6 @@ class NotificationSettingsScreen extends ConsumerWidget {
     if (on) {
       final granted = await push.requestPermissionAndRegister();
       if (!granted) {
-        final err = push.lastFcmError;
-        if (err != null && context.mounted) {
-          // ВРЕМЕННО (внутреннее тестирование): видно, почему FCM не поднялся.
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            duration: const Duration(seconds: 12),
-            content: Text('FCM: $err'),
-          ));
-        }
         if (!await push.androidNotificationsEnabled()) {
           await push.openSystemNotificationSettings();
         }
