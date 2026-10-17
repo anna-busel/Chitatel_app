@@ -466,45 +466,28 @@ class _MembersOnlyClubView extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 20),
+            // 17.10.2026: коротко — без «участниц», без «Проверить доступ»
+            // (клуб сам перечитывается при каждом открытии приложения).
             Text(
-              'Клуб для участниц',
+              'Клуб ЧИТАТЕЛЬ',
               textAlign: TextAlign.center,
               style: AppTypography.serifSectionTitle,
             ),
             const SizedBox(height: 12),
             Text(
-              'Книга месяца, разбор Анны по частям, общий чат и вопросы '
-              'Анне. Клуб открыт участницам.',
+              'Каждый месяц — книга, разбор Анны и общий чат.',
               textAlign: TextAlign.center,
               style: AppTypography.body.copyWith(
                 color: AppColors.textSecondary,
               ),
             ),
-            const SizedBox(height: 12),
-            Text(
-              'Если вы уже участница — войдите в тот же аккаунт, с которым '
-              'вступали в клуб, и доступ откроется сам.',
-              textAlign: TextAlign.center,
-              style: AppTypography.caption,
-            ),
-            const SizedBox(height: 28),
-            if (isGuest)
+            if (isGuest) ...[
+              const SizedBox(height: 28),
               AppButton(
                 text: 'Войти',
                 onPressed: () => context.push(Routes.login),
-              )
-            else
-              AppButton(
-                text: 'Проверить доступ',
-                variant: AppButtonVariant.outline,
-                onPressed: () {
-                  // Доступ могли выдать вручную только что — перечитываем
-                  // клуб; во вкладке «Клуб» экран сам сменится на клуб.
-                  ref.invalidate(currentClubProvider);
-                  ref.invalidate(clubListProvider);
-                  if (Navigator.of(context).canPop()) context.go('/club');
-                },
               ),
+            ],
           ],
         ),
       ),

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
+import '../../../core/constants/store_policy.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
@@ -140,7 +141,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     // Событие «нужна покупка» из плеера (превью кончилось / упёрся в платную
     // часть) → поднимаем шторку.
+    // 17.10.2026: на Android шторки нет вовсе (store_policy.dart) — купить
+    // там нельзя, предложить нечего. Превью просто останавливается в конце.
     ref.listen<AsyncValue<BookModel>>(playerPaywallProvider, (prev, next) {
+      if (!kPurchasesEnabled) return;
       next.whenData((book) {
         if (mounted && !_paywallShowing) _showPaywall(book);
       });
@@ -344,8 +348,15 @@ class _TitleSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final stateAsync = ref.watch(playerUiStateProvider);
+    // 17.10.2026: в превью вместо «Часть 1» — «Превью · 5 мин», чтобы было
+    // видно, что это отрывок (экран перестраивается от стрима состояния).
+    final isPreview = ref.read(audioHandlerProvider).isPreviewMode;
     final partTitle = stateAsync.maybeWhen(
-      data: (s) => s.partTitle,
+      data: (s) {
+        if (!isPreview) return s.partTitle;
+        final minutes = (s.duration.inSeconds / 60).round();
+        return minutes > 0 ? 'Превью · $minutes мин' : 'Превью';
+      },
       orElse: () => '',
     );
 
