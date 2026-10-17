@@ -63,8 +63,12 @@ class CoverCache {
   /// Имя файла = последний сегмент пути ассета, чтобы избежать коллизий.
   Future<Uri?> _copyAssetToCache(String assetUrl) async {
     try {
-      // asset://book-covers/slug.png → book-covers/slug.png
-      final assetPath = assetUrl.replaceFirst('asset://', '');
+      // asset://book-covers/slug.png → assets/book-covers/slug.png
+      // 17.10.2026: раньше путь был без 'assets/' — rootBundle не находил
+      // файл, и в шторке/на экране блокировки у разборов со встроенной
+      // обложкой была иконка приложения (как в BookCoverImage — с префиксом).
+      final assetPath =
+          'assets/${assetUrl.replaceFirst('asset://', '')}';
       final byteData = await rootBundle.load(assetPath);
 
       // Library/Caches/ — Apple-рекомендованное место для регенерируемых данных.
