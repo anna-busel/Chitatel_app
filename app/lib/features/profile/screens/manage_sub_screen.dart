@@ -10,7 +10,6 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/error_view.dart';
-import '../../../shared/widgets/members_only_note.dart';
 import '../../payments/providers/purchase_provider.dart';
 import '../providers/profile_provider.dart';
 import '../services/profile_service.dart';
@@ -187,7 +186,7 @@ class _Body extends StatelessWidget {
                     ? _dateLine
                     : kPurchasesEnabled
                         ? 'Клуб открывается по подписке'
-                        : 'Клуб открыт участницам',
+                        : 'Клуб ЧИТАТЕЛЬ',
                 style: AppTypography.caption,
               ),
             ],
@@ -205,8 +204,6 @@ class _Body extends StatelessWidget {
               'оплаченного периода.',
               style: AppTypography.caption,
             )
-          else
-            const MembersOnlyNote(text: kMembersAccessHint),
         ] else if (profile.hasSubscription) ...[
           AppButton(
             text: 'Управлять подпиской в $_storeName',

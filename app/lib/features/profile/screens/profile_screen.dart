@@ -138,13 +138,17 @@ class _ProfileBody extends ConsumerWidget {
           const SizedBox(height: 20),
 
           // — Подписка —
-          _SubscriptionCard(
-            profile: profile,
-            onTap: () => context.push(
-              profile.hasSubscription ? Routes.manageSub : Routes.paywall,
+          // 17.10.2026: на Android карточку видят только те, кто в клубе
+          // («Клуб — действует до …»); остальным предложить нечего.
+          if (kPurchasesEnabled || profile.hasSubscription) ...[
+            _SubscriptionCard(
+              profile: profile,
+              onTap: () => context.push(
+                profile.hasSubscription ? Routes.manageSub : Routes.paywall,
+              ),
             ),
-          ),
-          const SizedBox(height: 20),
+            const SizedBox(height: 20),
+          ],
 
           // — Меню —
           _MenuGroup(
@@ -309,6 +313,7 @@ class _SubscriptionCard extends StatelessWidget {
 
   String get _title {
     if (profile.hasSubscription) {
+      if (!kPurchasesEnabled) return 'Клуб ЧИТАТЕЛЬ';
       return profile.subscriptionPlan == 'season'
           ? 'Сезонная подписка'
           : 'Подписка на клуб';

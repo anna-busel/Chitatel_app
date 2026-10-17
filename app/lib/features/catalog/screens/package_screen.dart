@@ -12,7 +12,6 @@ import '../../payments/providers/store_prices_provider.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/book_cover_image.dart';
 import '../../../shared/widgets/error_view.dart';
-import '../../../shared/widgets/members_only_note.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../book/providers/book_provider.dart';
 import '../../payments/providers/product_purchase_provider.dart';
@@ -171,10 +170,10 @@ class _PackageBody extends ConsumerWidget {
                 ? 'Доступ администратора'
                 : kOwnedLabel,
           )
+        // 17.10.2026: на Android без плашки и без покупки — только список
+        // разборов ниже (у недоступных замочек).
         else if (!kPurchasesEnabled)
-          const MembersOnlyNote(
-            text: 'Разборы пакета доступны участницам. $kMembersAccessHint',
-          )
+          const SizedBox.shrink()
         else
           AppButton(
             text: buyText,
