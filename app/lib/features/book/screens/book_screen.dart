@@ -573,27 +573,18 @@ class _PaidActions extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // 16.10.2026: Android бесплатный (store_policy.dart) — ни цены, ни кнопки
-    // покупки, ни строки про оплату. Плашка «для участниц» + превью.
+    // покупки, ни строки про оплату. 17.10.2026: и без плашки «для участниц»
+    // (разборы продаются отдельно от клуба) — только превью.
     if (!kPurchasesEnabled) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const MembersOnlyNote(
-            text: 'Полный разбор доступен участницам. $kMembersAccessHint',
-          ),
-          if (hasPreview) ...[
-            const SizedBox(height: 10),
-            AppButton(
-              text: 'Слушать превью (5 мин)',
-              onPressed: onPreview,
-              variant: AppButtonVariant.outline,
-            ),
-          ] else if (!hasAudio) ...[
-            const SizedBox(height: 10),
-            _DisabledAudioHint(),
-          ],
-        ],
-      );
+      if (hasPreview) {
+        return AppButton(
+          text: 'Слушать превью (5 мин)',
+          onPressed: onPreview,
+          variant: AppButtonVariant.outline,
+        );
+      }
+      if (!hasAudio) return _DisabledAudioHint();
+      return const SizedBox.shrink();
     }
 
     // 1.0.1: живая цена StoreKit (валюта сторфронта покупателя), БД — запасной
@@ -654,10 +645,8 @@ class _ClubOnlyActions extends StatelessWidget {
     // 16.10.2026: на Android подписку не продаём — только пояснение, без
     // кнопки (store_policy.dart).
     if (!kPurchasesEnabled) {
-      return const MembersOnlyNote(
-        text: 'Разбор книжного клуба — открыт участницам клуба. '
-            '$kMembersAccessHint',
-      );
+      // 17.10.2026: коротко и без слов про подписку/участниц.
+      return const MembersOnlyNote(text: 'Разбор из клуба ЧИТАТЕЛЬ');
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
