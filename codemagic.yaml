@@ -147,3 +147,75 @@ workflows:
     artifacts:
       - app/build/app/outputs/bundle/release/*.aab
       - app/build/app/outputs/mapping/release/mapping.txt
+
+  android-apk:
+    name: Android release APK
+    # 23.10.2026: APK для ручной установки на телефоны без Google Play
+    # (Huawei с EMUI). Тот же код и ключ, что у android-release, только
+    # на выходе APK вместо AAB. Без служб Google на таком телефоне не будет
+    # пушей и входа через Google. android-release этот блок не трогает.
+    # Та же машина, что и у отладочной сборки — см. комментарий выше.
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: 3.44.6
+      java: 17
+      groups:
+        # Группа переменных в настройках приложения (Environment variables).
+        # Нужны четыре штуки, все помечены Secret:
+        #   CM_KEYSTORE           — файл chitatel-upload.jks в base64
+        #   CM_KEYSTORE_PASSWORD  — пароль хранилища
+        #   CM_KEY_ALIAS          — chitatel
+        #   CM_KEY_PASSWORD       — пароль ключа (у нас совпадает с паролем хранилища)
+        - google_play_credentials
+    scripts:
+      - name: Set up keystore and key.properties
+        script: |
+          set -e
+
+          if [ -z "$CM_KEYSTORE" ]; then
+            echo "CM_KEYSTORE пуста: переменная не подключилась к сборке."
+            echo "Проверь, что у неё группа google_play_credentials."
+            exit 1
+          fi
+
+          # Длину печатаем намеренно: по ней видно, скопирована ли строка
+          # целиком. Ожидаем около 3000 символов; заметно меньше — значит
+          # при вставке строку обрезали.
+          echo "Длина CM_KEYSTORE: ${#CM_KEYSTORE} символов"
+
+          # Переносы строк и пробелы легко попадают в переменную при
+          # копировании, а base64 на macOS на них спотыкается — чистим.
+          # openssl вместо base64: -A принимает вход одной длинной строкой
+          # и ведёт себя одинаково на любой машине.
+          printf '%s' "$CM_KEYSTORE" | tr -d '\n\r \t' | openssl base64 -d -A \
+            > "$CM_BUILD_DIR/app/android/app/chitatel-upload.jks"
+
+          SIZE=$(wc -c < "$CM_BUILD_DIR/app/android/app/chitatel-upload.jks")
+          echo "Размер keystore: $SIZE байт"
+          if [ "$SIZE" -lt 1000 ]; then
+            echo "Keystore получился слишком маленьким — строка base64 неполная."
+            exit 1
+          fi
+
+          # Путь к хранилищу относительный: build.gradle.kts резолвит storeFile
+          # через file() внутри модуля app, то есть от app/android/app.
+          cat > "$CM_BUILD_DIR/app/android/key.properties" <<EOF
+          storeFile=chitatel-upload.jks
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          keyPassword=$CM_KEY_PASSWORD
+          EOF
+
+          echo "key.properties создан"
+      - name: Get Flutter packages
+        working_directory: app
+        script: |
+          flutter pub get
+      - name: Flutter build apk (release)
+        working_directory: app
+        script: |
+          flutter build apk --release \
+            --build-number=$PROJECT_BUILD_NUMBER
+    artifacts:
+      - app/build/app/outputs/flutter-apk/app-release.apk
