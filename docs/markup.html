@@ -1,0 +1,1294 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>CRM Читатель</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;color:#171A21;background:#F4F5F7;font-size:14px;line-height:1.45;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+@keyframes dIn{from{transform:translateX(32px);opacity:0}to{transform:none;opacity:1}}
+@keyframes fIn{from{opacity:0}to{opacity:1}}
+@keyframes mIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@keyframes tIn{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+button{transition:background-color .12s ease,border-color .12s ease,color .12s ease}
+.kbd{font-size:11px;font-weight:600;color:#5B6170;border:1px solid #D5D9E0;border-radius:5px;padding:1px 5px;background:#F7F8FA}
+.toast{animation:tIn .18s ease-out}
+@media (prefers-reduced-motion:reduce){.drawer,.backdrop,.menu,.toast{animation:none !important}}
+a{color:#2453A6}a:hover{color:#183C7D}
+h1,h2,h3,p{margin:0}
+.app{min-height:100vh;display:flex;flex-wrap:wrap;background:#F4F5F7}
+.side{flex:0 0 232px;background:#15171C;color:#E6E8EC;padding:16px 12px;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;height:100vh;position:sticky;top:0;overflow-y:auto}
+.grp{font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#7D8492;padding:16px 10px 6px}
+.main{flex:1 1 640px;min-width:0;display:flex;flex-direction:column}
+.top{position:sticky;top:0;z-index:30;display:flex;gap:10px;align-items:center;padding:10px 28px;background:#FFFFFF;border-bottom:1px solid #E3E6EB}
+.page{padding:24px 28px 72px;display:flex;flex-direction:column;gap:18px;width:100%;max-width:1480px;box-sizing:border-box}
+.card{background:#FFFFFF;border:1px solid #E3E6EB;border-radius:10px}
+.cardh{padding:14px 18px;border-bottom:1px solid #ECEEF2;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.tbl{overflow:auto;max-height:640px}
+.thead{white-space:nowrap;position:sticky;top:0;z-index:2;background:#F8F9FB;border-bottom:1px solid #E3E6EB;font-size:12px;font-weight:600;color:#5B6170;text-transform:uppercase;letter-spacing:0.04em;padding:10px 0}
+.trow{border-bottom:1px solid #ECEEF2;background:#FFFFFF;transition:background-color .12s ease}
+.trow:hover{background:#F7F9FC}
+.rowbtn{font:inherit;color:inherit;background:none;border:0;padding:11px 16px 11px 0;text-align:left;cursor:pointer;width:100%}
+.cb{display:flex;align-items:center;justify-content:center;align-self:stretch;cursor:pointer}
+.cb input{width:16px;height:16px;accent-color:#2453A6;cursor:pointer;margin:0}
+.cell{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.muted{color:#5B6170}.small{font-size:13px}
+.btn{font:inherit;font-size:14px;font-weight:500;border:1px solid #D5D9E0;background:#FFFFFF;color:#171A21;border-radius:8px;padding:8px 14px;cursor:pointer;min-height:38px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:#F2F4F7}
+.btn:disabled{color:#9AA0AB;cursor:not-allowed;background:#F7F8FA}
+.btn-p{font:inherit;font-size:14px;font-weight:600;border:1px solid #2453A6;background:#2453A6;color:#FFFFFF;border-radius:8px;padding:8px 16px;cursor:pointer;min-height:38px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.btn-p:hover{background:#1C4590}
+.btn-p:disabled{background:#9AA8C2;border-color:#9AA8C2;cursor:not-allowed}
+.btn-s{font:inherit;font-size:13px;font-weight:500;border:1px solid #D5D9E0;background:#FFFFFF;color:#171A21;border-radius:6px;padding:5px 10px;cursor:pointer;min-height:32px;white-space:nowrap}
+.btn-s:hover{background:#F2F4F7}
+.btn-d{font:inherit;font-size:13px;font-weight:500;border:1px solid #E7C2B8;background:#FFFFFF;color:#8A2E1C;border-radius:6px;padding:5px 10px;cursor:pointer;min-height:32px;white-space:nowrap}
+.btn-d:hover{background:#FDF3F0}
+.ibtn{font:inherit;width:38px;height:38px;border-radius:8px;border:1px solid #D5D9E0;background:#FFFFFF;color:#171A21;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;position:relative;padding:0}
+.ibtn:hover{background:#F2F4F7}
+.ibtn:disabled{color:#B8BDC6;cursor:not-allowed}
+.lnk{font:inherit;background:none;border:0;padding:0;color:#2453A6;cursor:pointer;text-align:left;font-weight:500}
+.lnk:hover{text-decoration:underline}
+.inp{font:inherit;font-size:14px;border:1px solid #D5D9E0;border-radius:8px;padding:8px 12px;background:#FFFFFF;color:#171A21;min-height:38px;box-sizing:border-box;width:100%}
+.inp:disabled{background:#F7F8FA;color:#5B6170}
+.lbl{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+.btn:focus-visible,.btn-p:focus-visible,.btn-s:focus-visible,.btn-d:focus-visible,.ibtn:focus-visible,.lnk:focus-visible,.rowbtn:focus-visible,.inp:focus,button:focus-visible{outline:2px solid #2453A6;outline-offset:1px}
+.menu{animation:mIn .14s ease-out;position:absolute;top:calc(100% + 6px);right:0;background:#FFFFFF;border:1px solid #E3E6EB;border-radius:10px;box-shadow:0 12px 32px rgba(17,20,28,0.14);z-index:50;min-width:300px;padding:6px}
+.kv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 12px}
+.backdrop{animation:fIn .18s ease-out;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(17,20,28,0.36);z-index:60;border:0;padding:0;cursor:pointer;width:100%}
+.drawer{animation:dIn .22s cubic-bezier(.2,.8,.2,1);outline:none;position:fixed;top:0;right:0;bottom:0;width:min(660px,100%);background:#FFFFFF;z-index:61;overflow-y:auto;box-shadow:-12px 0 40px rgba(17,20,28,0.18)}
+.dh{position:sticky;top:0;background:#FFFFFF;z-index:2;padding:18px 22px 0;border-bottom:1px solid #ECEEF2;display:flex;flex-direction:column;gap:12px}
+.db{padding:18px 22px 48px;display:flex;flex-direction:column;gap:16px}
+.sec{border:1px solid #ECEEF2;border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.sech{font-size:14px;font-weight:600}
+.av{width:36px;height:36px;border-radius:50%;background:#E2EAFB;color:#1F3F86;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex:0 0 auto}
+.tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;background:#EEF0F4;color:#3A4050}
+.col{background:#EEF0F4;border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:250px}
+@media (max-width:820px){
+.side{flex:1 1 100%;flex-direction:row;height:auto;position:static;overflow-x:auto;padding:8px;gap:4px}
+.side .grp,.side .brand,.side .sidefoot{display:none}
+.side button{width:auto !important}
+.top{padding:10px 16px}
+.page{padding:16px 16px 64px}
+.kv{grid-template-columns:110px minmax(0,1fr)}
+.hide-sm{display:none !important}
+}
+</style>
+</helmet>
+<div onKeyDown="{{onKey}}">
+<div class="app">
+
+<nav class="side" aria-label="Разделы">
+<div class="brand" style="padding: 4px 10px 8px; display: flex; flex-direction: column; gap: 2px">
+<div style="font-size: 16px; font-weight: 700; letter-spacing: 0.06em">ЧИТАТЕЛЬ</div>
+<div style="font-size: 12px; color: #9298A4">CRM книжного клуба</div>
+</div>
+<div class="grp">Работа</div>
+<button type="button" onClick="{{nav.today.go}}" style="{{nav.today.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg><span>Сегодня</span></button>
+<button type="button" onClick="{{nav.tasks.go}}" style="{{nav.tasks.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"></rect><path d="m8 12 3 3 5-6"></path></svg><span>Задачи</span><sc-if value="{{nav.tasks.hasCount}}" hint-placeholder-val="{{false}}"><span style="{{nav.tasks.countStyle}}">{{nav.tasks.count}}</span></sc-if></button>
+<sc-if value="{{nav.sales.show}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{nav.sales.go}}" style="{{nav.sales.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="1"></circle></svg><span>План продаж</span><sc-if value="{{nav.sales.hasCount}}" hint-placeholder-val="{{false}}"><span style="{{nav.sales.countStyle}}">{{nav.sales.count}}</span></sc-if></button></sc-if>
+<sc-if value="{{nav.inbox.show}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{nav.inbox.go}}" style="{{nav.inbox.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l2 3h4l2-3h5"></path><path d="M5 5h14l2 8v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z"></path></svg><span>Входящие</span><sc-if value="{{nav.inbox.hasCount}}" hint-placeholder-val="{{false}}"><span style="{{nav.inbox.countStyle}}">{{nav.inbox.count}}</span></sc-if></button></sc-if>
+<div class="grp">База</div>
+<button type="button" onClick="{{nav.clients.go}}" style="{{nav.clients.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="4"></circle><path d="M2 21c0-4 3-7 7-7s7 3 7 7"></path><path d="M16 4a4 4 0 0 1 0 8"></path><path d="M22 21c0-3-2-5.5-5-6.5"></path></svg><span>Клиенты</span></button>
+<button type="button" onClick="{{nav.orders.go}}" style="{{nav.orders.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"></path><path d="M9 8h6M9 12h6M9 16h3"></path></svg><span>Заказы</span><sc-if value="{{nav.orders.hasCount}}" hint-placeholder-val="{{false}}"><span style="{{nav.orders.countStyle}}">{{nav.orders.count}}</span></sc-if></button>
+<div class="grp">Каталог</div>
+<button type="button" onClick="{{nav.products.go}}" style="{{nav.products.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5z"></path><path d="M3 8l9 5 9-5M12 13v8"></path></svg><span>Продукты и оплата</span></button>
+<sc-if value="{{nav.mail.show}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{nav.mail.go}}" style="{{nav.mail.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m3 7 9 6 9-6"></path></svg><span>Рассылки</span></button></sc-if>
+<sc-if value="{{nav.fin}}" hint-placeholder-val="{{true}}"><div class="grp">Управление</div></sc-if>
+<sc-if value="{{nav.stats.show}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{nav.stats.go}}" style="{{nav.stats.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path></svg><span>Финансы</span></button></sc-if>
+<sc-if value="{{nav.import.show}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{nav.import.go}}" style="{{nav.import.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"></path></svg><span>Импорт из ГК</span></button></sc-if>
+<sc-if value="{{nav.settings.show}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{nav.settings.go}}" style="{{nav.settings.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"></path></svg><span>Настройки</span></button></sc-if>
+<div class="sidefoot" style="margin-top: auto; padding: 14px 10px 4px; border-top: 1px solid #2A2D35; font-size: 12px; color: #9298A4">Данные демо · 18 октября 2026</div>
+</nav>
+
+<div class="main">
+<header class="top">
+<div style="position: relative; flex: 1 1 360px; max-width: 520px">
+<span style="position: absolute; left: 11px; top: 10px; color: #8A909C; display: flex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></span>
+<input class="inp" type="search" ref="{{searchRef}}" aria-label="Поиск по всей базе" placeholder="Поиск: имя, почта, телефон, @ник или номер заказа" value="{{gq}}" onChange="{{onGq}}" style="padding-left: 36px; padding-right: 64px">
+<span class="kbd hide-sm" style="position: absolute; right: 10px; top: 10px" aria-hidden="true">Ctrl K</span>
+<sc-if value="{{gOpen}}" hint-placeholder-val="{{false}}">
+<div class="menu" style="left: 0; right: auto; width: 100%; box-sizing: border-box">
+<sc-for list="{{gres}}" as="g" hint-placeholder-count="3">
+<button type="button" onClick="{{g.open}}" style="font: inherit; color: #171A21; width: 100%; text-align: left; border: 0; background: #FFFFFF; padding: 9px 10px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; align-items: center">
+<span style="display: flex; flex-direction: column; min-width: 0"><span style="font-weight: 600">{{g.title}}</span><span class="small muted cell">{{g.sub}}</span></span>
+<span class="tag">{{g.kind}}</span>
+</button>
+</sc-for>
+<sc-if value="{{gEmpty}}" hint-placeholder-val="{{false}}"><div class="small muted" style="padding: 10px">Ничего не найдено.</div></sc-if>
+</div>
+</sc-if>
+</div>
+<div style="margin-left: auto; display: flex; gap: 8px; align-items: center">
+<sc-if value="{{canOrders}}" hint-placeholder-val="{{true}}"><button class="btn-p" type="button" onClick="{{newOrder}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="hide-sm">Новый заказ</span></button></sc-if>
+<div style="position: relative">
+<button class="ibtn" type="button" aria-label="Уведомления" onClick="{{toggleNotif}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"></path></svg><sc-if value="{{hasUnread}}" hint-placeholder-val="{{false}}"><span style="position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: #C2412D; color: #FFFFFF; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{unread}}</span></sc-if></button>
+<sc-if value="{{notifOpen}}" hint-placeholder-val="{{false}}">
+<div class="menu" style="width: 380px; max-width: calc(100vw - 32px); max-height: 480px; overflow-y: auto">
+<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 10px"><span style="font-weight: 600">Уведомления</span><button class="lnk small" type="button" onClick="{{readAll}}">Прочитать все</button></div>
+<sc-for list="{{notifs}}" as="n" hint-placeholder-count="4">
+<button type="button" onClick="{{n.go}}" style="font: inherit; color: #171A21; width: 100%; text-align: left; border: 0; background: #FFFFFF; padding: 9px 10px; border-radius: 6px; cursor: pointer; display: flex; gap: 10px; align-items: flex-start">
+<sc-if value="{{n.dot}}" hint-placeholder-val="{{true}}"><span style="width: 8px; height: 8px; border-radius: 50%; background: #2453A6; margin-top: 6px; flex: 0 0 auto"></span></sc-if>
+<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 600">{{n.text}}</span><span class="small muted">{{n.sub}}</span><span class="small muted">{{n.when}}</span></span>
+</button>
+</sc-for>
+<sc-if value="{{notifEmpty}}" hint-placeholder-val="{{false}}"><div class="small muted" style="padding: 10px">Новых событий нет.</div></sc-if>
+</div>
+</sc-if>
+</div>
+<div style="position: relative">
+<button type="button" onClick="{{toggleUser}}" aria-label="Профиль" style="font: inherit; display: flex; gap: 8px; align-items: center; border: 1px solid #D5D9E0; background: #FFFFFF; border-radius: 999px; padding: 3px 12px 3px 3px; cursor: pointer; color: #171A21">
+<span class="av" style="{{me.avStyle}}">{{me.initials}}</span>
+<span class="hide-sm" style="display: flex; flex-direction: column; line-height: 1.15; text-align: left"><span style="font-size: 13px; font-weight: 600">{{me.name}}</span><span style="font-size: 12px; color: #5B6170">{{me.role}}</span></span>
+</button>
+<sc-if value="{{userOpen}}" hint-placeholder-val="{{false}}">
+<div class="menu" style="width: 320px">
+<div class="small muted" style="padding: 8px 12px 4px">Посмотреть CRM глазами роли (для демо)</div>
+<sc-for list="{{roleOpts}}" as="r" hint-placeholder-count="4"><button type="button" onClick="{{r.pick}}" style="{{r.style}}">{{r.label}}</button></sc-for>
+<div style="border-top: 1px solid #ECEEF2; margin: 6px 0"></div>
+<button type="button" onClick="{{logout}}" style="font: inherit; font-size: 14px; text-align: left; width: 100%; border: 0; background: #FFFFFF; padding: 9px 12px; border-radius: 6px; cursor: pointer; color: #171A21">Выйти</button>
+</div>
+</sc-if>
+</div>
+</div>
+</header>
+
+<main class="page">
+
+<!-- ================= СЕГОДНЯ ================= -->
+<sc-if value="{{sc.today}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h1 style="font-size: 22px; font-weight: 700">Сегодня</h1>
+<p class="muted">Воскресенье, 18 октября · что требует действия</p>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px">
+<sc-for list="{{T.kpis}}" as="k" hint-placeholder-count="4">
+<button type="button" onClick="{{k.go}}" style="font: inherit; text-align: left; cursor: pointer; background: #FFFFFF; border: 1px solid #E3E6EB; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; color: #171A21">
+<span style="{{k.numStyle}}">{{k.v}}</span>
+<span class="small muted">{{k.l}}</span>
+</button>
+</sc-for>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; align-items: start">
+<section class="card">
+<div class="cardh"><div style="display: flex; flex-direction: column; gap: 2px"><h2 style="font-size: 15px; font-weight: 600">Мои задачи на сегодня</h2><p class="small muted">Включая просроченные. Часть создаётся автоматически</p></div><button class="lnk small" type="button" onClick="{{T.tasksAll}}">Все задачи →</button></div>
+<sc-for list="{{T.tasks}}" as="t" hint-placeholder-count="3"><div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border-bottom: 1px solid #ECEEF2">
+<input type="checkbox" aria-label="Выполнено" checked="{{t.done}}" onChange="{{t.toggle}}" style="width: 18px; height: 18px; accent-color: #1D5A35; margin-top: 2px; cursor: pointer">
+<div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+<button class="lnk" type="button" onClick="{{t.edit}}" style="color: #171A21"><span style="{{t.titleStyle}}">{{t.title}}</span></button>
+<span style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center"><span class="tag">{{t.type}}</span><button class="lnk small" type="button" onClick="{{t.openClient}}">{{t.client}}</button><span class="small muted">· {{t.who}}</span><span style="{{t.priStyle}}">{{t.pri}}</span><sc-if value="{{t.hasAuto}}" hint-placeholder-val="{{false}}"><span class="small muted">· авто: {{t.auto}}</span></sc-if></span>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px"><span style="{{t.dueStyle}}">{{t.due}}</span><span class="small" style="color: #8A2E1C">{{t.overText}}</span><sc-if value="{{t.canPostpone}}" hint-placeholder-val="{{true}}"><button class="btn-s" type="button" onClick="{{t.postpone}}">+1 день</button></sc-if></div>
+</div></sc-for>
+<sc-if value="{{T.tasksEmpty}}" hint-placeholder-val="{{false}}"><div class="muted" style="padding: 18px">На сегодня задач нет.</div></sc-if>
+</section>
+<sc-if value="{{T.showPend}}" hint-placeholder-val="{{false}}"><section class="card">
+<div class="cardh"><div style="display: flex; flex-direction: column; gap: 2px"><h2 style="font-size: 15px; font-weight: 600">Переводы на карту ждут подтверждения</h2><p class="small muted">Менеджер записал перевод — Анна подтверждает, что деньги пришли. После этого открывается доступ</p></div></div>
+<sc-for list="{{T.pend}}" as="u" hint-placeholder-count="1">
+<div style="padding: 13px 18px; border-bottom: 1px solid #ECEEF2; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between; gap: 12px; align-items: center"><button class="lnk" type="button" onClick="{{u.open}}">#{{u.id}} · {{u.name}}</button><span style="font-weight: 600; white-space: nowrap">{{u.amount}}</span></div>
+<div class="small muted">{{u.product}}</div>
+<div class="small">{{u.pay}}</div>
+<div style="display: flex; gap: 6px; flex-wrap: wrap">
+<sc-if value="{{u.canConfirm}}" hint-placeholder-val="{{false}}"><button class="btn-s" type="button" onClick="{{u.confirm}}" style="border-color: #1D5A35; color: #1D5A35">Деньги пришли — подтвердить</button></sc-if>
+<sc-if value="{{u.waiting}}" hint-placeholder-val="{{true}}"><span style="display: inline-flex; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #E2EAFB; color: #1F3F86">Ждёт подтверждения Анны</span></sc-if>
+<button class="btn-s" type="button" onClick="{{u.open}}">Открыть заказ</button>
+</div>
+</div>
+</sc-for>
+<sc-if value="{{T.pendEmpty}}" hint-placeholder-val="{{false}}"><div class="muted" style="padding: 18px">Неподтверждённых переводов нет.</div></sc-if>
+</section></sc-if>
+
+<section class="card">
+<div class="cardh"><div style="display: flex; flex-direction: column; gap: 2px"><h2 style="font-size: 15px; font-weight: 600">Ждут оплаты</h2><p class="small muted">По сроку оплаты. Напоминания уходят автоматически</p></div><button class="lnk small" type="button" onClick="{{nav.orders.go}}">Все заказы →</button></div>
+<sc-for list="{{T.unpaid}}" as="u" hint-placeholder-count="3">
+<div style="padding: 13px 18px; border-bottom: 1px solid #ECEEF2; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between; gap: 12px; align-items: center">
+<div style="display: flex; gap: 8px; align-items: center; min-width: 0"><button class="lnk" type="button" onClick="{{u.open}}">#{{u.id}} · {{u.name}}</button><span style="{{u.stStyle}}">{{u.st}}</span></div>
+<span style="font-weight: 600; white-space: nowrap">{{u.amount}}</span>
+</div>
+<div class="small muted">{{u.product}}</div>
+<div style="{{u.deadlineStyle}}">{{u.deadline}}</div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px">
+<sc-if value="{{u.canPay}}" hint-placeholder-val="{{true}}"><button class="btn-s" type="button" onClick="{{u.open}}">Провести оплату</button></sc-if>
+<button class="btn-s" type="button" onClick="{{u.copy}}">Скопировать ссылку</button>
+</div>
+</div>
+</sc-for>
+<sc-if value="{{T.unpaidEmpty}}" hint-placeholder-val="{{false}}"><div class="muted" style="padding: 18px">Все счета оплачены.</div></sc-if>
+</section>
+
+<section class="card">
+<div class="cardh"><div style="display: flex; flex-direction: column; gap: 2px"><h2 style="font-size: 15px; font-weight: 600">Оплатили, но не связаны с приложением</h2><p class="small muted">За 14 дней. Доступ в приложении не открылся</p></div></div>
+<sc-for list="{{T.unlinked}}" as="x" hint-placeholder-count="3">
+<div style="padding: 13px 18px; border-bottom: 1px solid #ECEEF2; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between; gap: 12px; align-items: center"><button class="lnk" type="button" onClick="{{x.open}}">{{x.name}}</button><span style="{{x.statusStyle}}">{{x.status}}</span></div>
+<div class="small muted">{{x.product}} · почта при оплате {{x.gk}}</div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><button class="btn-s" type="button" onClick="{{x.code}}">{{x.codeLabel}}</button><button class="btn-s" type="button" onClick="{{x.open}}">Указать почту приложения</button></div>
+</div>
+</sc-for>
+<sc-if value="{{T.unlinkedEmpty}}" hint-placeholder-val="{{false}}"><div class="muted" style="padding: 18px">Все свежие оплаты связаны с приложением.</div></sc-if>
+</section>
+
+<section class="card">
+<div class="cardh"><div style="display: flex; flex-direction: column; gap: 2px"><h2 style="font-size: 15px; font-weight: 600">Заявки в Telegram-каналы</h2><p class="small muted">Бот сегодня сам принял {{T.tgAuto}} заявок с оплатой. Ниже — где оплата не найдена</p><p class="small muted">Как работает: каналы с вступлением по заявке, бот клуба — их администратор. В письме после оплаты — личная ссылка на бота, по ней бот узнаёт клиентку. Когда она подаёт заявку в канал, бот проверяет оплату в CRM и одобряет сам.</p></div></div>
+<sc-for list="{{T.tg}}" as="r" hint-placeholder-count="2">
+<div style="padding: 13px 18px; border-bottom: 1px solid #ECEEF2; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="font-weight: 600">{{r.nick}}</span><span class="small muted">{{r.when}}</span></div>
+<div class="small muted">{{r.channel}}</div>
+<div class="small" style="color: #7A4A0B">{{r.why}}</div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px">
+<button class="btn-s" type="button" onClick="{{r.approve}}">Одобрить</button>
+<button class="btn-s" type="button" onClick="{{r.decline}}">Отклонить и отправить ссылку на оплату</button>
+<sc-if value="{{r.hasClient}}" hint-placeholder-val="{{true}}"><button class="btn-s" type="button" onClick="{{r.open}}">Карточка: {{r.client}}</button></sc-if>
+</div>
+</div>
+</sc-for>
+<sc-if value="{{T.tgEmpty}}" hint-placeholder-val="{{false}}"><div class="muted" style="padding: 18px">Заявок без оплаты нет.</div></sc-if>
+</section>
+
+<section class="card">
+<div class="cardh"><h2 style="font-size: 15px; font-weight: 600">Последние оплаты</h2></div>
+<sc-for list="{{T.recent}}" as="r" hint-placeholder-count="5">
+<button type="button" class="rowbtn" onClick="{{r.open}}" style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 11px 18px; border-bottom: 1px solid #ECEEF2">
+<span class="cell" style="font-weight: 600">{{r.name}}</span><span style="font-weight: 600; white-space: nowrap">{{r.amount}}</span>
+<span class="cell small muted">#{{r.id}} · {{r.product}}</span><span class="small muted" style="white-space: nowrap">{{r.date}}</span>
+<span style="display: flex; gap: 6px; flex-wrap: wrap"><span style="{{r.srcStyle}}">{{r.src}}</span><span style="{{r.appStyle}}">{{r.app}}</span></span>
+</button>
+</sc-for>
+</section>
+</div>
+</div>
+</sc-if>
+
+<!-- ================= ЗАДАЧИ ================= -->
+<sc-if value="{{sc.tasks}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between">
+<div style="display: flex; flex-direction: column; gap: 4px"><h1 style="font-size: 22px; font-weight: 700">Задачи</h1><p class="muted">Позвонить, написать, отправить предложение, встреча. Сроки, приоритеты и ответственные. О просроченных — уведомление.</p></div>
+<button class="btn-p" type="button" onClick="{{TK.add}}">+ Задача</button>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center"><sc-for list="{{TK.chips}}" as="t" hint-placeholder-count="5"><button type="button" onClick="{{t.pick}}" style="{{t.style}}">{{t.text}}</button></sc-for>
+<select class="inp" aria-label="Чьи задачи" value="{{TK.scope}}" onChange="{{TK.onScope}}" style="width: auto; margin-left: auto"><option value="mine">Мои</option><option value="all">Все</option></select></div>
+<section class="card" style="overflow: hidden">
+<sc-for list="{{TK.rows}}" as="t" hint-placeholder-count="5"><div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border-bottom: 1px solid #ECEEF2">
+<input type="checkbox" aria-label="Выполнено" checked="{{t.done}}" onChange="{{t.toggle}}" style="width: 18px; height: 18px; accent-color: #1D5A35; margin-top: 2px; cursor: pointer">
+<div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+<button class="lnk" type="button" onClick="{{t.edit}}" style="color: #171A21"><span style="{{t.titleStyle}}">{{t.title}}</span></button>
+<span style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center"><span class="tag">{{t.type}}</span><button class="lnk small" type="button" onClick="{{t.openClient}}">{{t.client}}</button><span class="small muted">· {{t.who}}</span><span style="{{t.priStyle}}">{{t.pri}}</span><sc-if value="{{t.hasAuto}}" hint-placeholder-val="{{false}}"><span class="small muted">· авто: {{t.auto}}</span></sc-if></span>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px"><span style="{{t.dueStyle}}">{{t.due}}</span><span class="small" style="color: #8A2E1C">{{t.overText}}</span><sc-if value="{{t.canPostpone}}" hint-placeholder-val="{{true}}"><button class="btn-s" type="button" onClick="{{t.postpone}}">+1 день</button></sc-if></div>
+</div></sc-for>
+<sc-if value="{{TK.empty}}" hint-placeholder-val="{{false}}"><div class="muted" style="padding: 22px 18px">Задач нет.</div></sc-if>
+</section>
+</div>
+</sc-if>
+
+<!-- ================= ПЛАН ПРОДАЖ ================= -->
+<sc-if value="{{sc.sales}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h1 style="font-size: 22px; font-weight: 700">План продаж</h1>
+<p class="muted" style="max-width: 860px">{{PL.note}}</p>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{PL.chips}}" as="t" hint-placeholder-count="5"><button type="button" onClick="{{t.pick}}" style="{{t.style}}">{{t.text}}</button></sc-for></div>
+<div style="display: grid; grid-template-columns: repeat(5, minmax(250px, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 6px; align-items: start">
+<sc-for list="{{PL.cols}}" as="col" hint-placeholder-count="5">
+<div class="col">
+<div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px"><span style="font-weight: 600">{{col.title}}</span><span class="tag" style="background: #FFFFFF">{{col.count}}</span></div>
+<sc-for list="{{col.cards}}" as="k" hint-placeholder-count="2">
+<div class="card" style="padding: 12px; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between; gap: 8px; align-items: flex-start"><button class="lnk" type="button" onClick="{{k.open}}">{{k.name}}</button></div>
+<span style="{{k.kindStyle}}; align-self: flex-start">{{k.kind}}</span>
+<span class="small">{{k.why}}</span>
+<span class="small muted">Предложить: {{k.offer}}</span>
+<span class="small muted">{{k.last}} · {{k.contact}}</span>
+<sc-if value="{{k.isLost}}" hint-placeholder-val="{{false}}"><select class="inp" aria-label="Причина отказа" value="{{k.reason}}" onChange="{{k.onReason}}" style="min-height: 32px; padding: 4px 8px; font-size: 13px"><sc-for list="{{k.reasonOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></sc-if>
+<div style="display: flex; gap: 6px; align-items: center; margin-top: 4px">
+<sc-if value="{{k.hasPrev}}" hint-placeholder-val="{{false}}"><button class="btn-s" type="button" aria-label="В предыдущую колонку" onClick="{{k.prev}}">←</button></sc-if>
+<button class="btn-s" type="button" onClick="{{k.order}}" style="flex: 1 1 auto">{{k.orderLabel}}</button>
+<button class="btn-s" type="button" onClick="{{k.task}}" aria-label="Создать задачу">+ Задача</button>
+<sc-if value="{{k.hasNext}}" hint-placeholder-val="{{true}}"><button class="btn-s" type="button" aria-label="В следующую колонку" onClick="{{k.next}}">→</button></sc-if>
+</div>
+</div>
+</sc-for>
+<sc-if value="{{col.empty}}" hint-placeholder-val="{{false}}"><div class="small muted" style="padding: 10px 4px">Пусто</div></sc-if>
+</div>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+<!-- ================= ВХОДЯЩИЕ ================= -->
+<sc-if value="{{sc.inbox}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h1 style="font-size: 22px; font-weight: 700">Входящие</h1>
+<p class="muted">Форма на сайте, почта и Telegram-бот клуба в одном месте. Видно всем, видно, кто ведёт диалог.</p>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{IN.chips}}" as="t" hint-placeholder-count="3"><button type="button" onClick="{{t.pick}}" style="{{t.style}}">{{t.text}}</button></sc-for></div>
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+<section class="card" style="flex: 1 1 320px; overflow: hidden">
+<sc-for list="{{IN.list}}" as="t" hint-placeholder-count="4">
+<button type="button" onClick="{{t.pick}}" style="{{t.style}}">
+<span class="av" style="{{t.avStyle}}">{{t.initials}}</span>
+<span style="display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 auto">
+<span style="display: flex; justify-content: space-between; gap: 8px"><span style="font-weight: 600">{{t.name}}</span><span class="small muted" style="white-space: nowrap">{{t.when}}</span></span>
+<span class="small" style="color: #3A4050">{{t.preview}}</span>
+<span style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center"><span style="{{t.chStyle}}">{{t.channel}}</span><span style="{{t.stStyle}}">{{t.status}}</span><span class="small muted">· {{t.assign}}</span></span>
+</span>
+</button>
+</sc-for>
+<sc-if value="{{IN.empty}}" hint-placeholder-val="{{false}}"><div class="muted" style="padding: 18px">Здесь пусто.</div></sc-if>
+</section>
+<section class="card" style="flex: 999 1 460px; min-width: 0; display: flex; flex-direction: column">
+<div style="padding: 14px 18px; border-bottom: 1px solid #ECEEF2; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between">
+<div style="display: flex; gap: 10px; align-items: center"><span class="av" style="{{IN.th.avStyle}}">{{IN.th.initials}}</span><div style="display: flex; flex-direction: column"><button class="lnk" type="button" onClick="{{IN.th.open}}">{{IN.th.name}}</button><span class="small muted">{{IN.th.channel}} · {{IN.th.until}}{{IN.th.bal}}</span><span style="{{IN.th.localStyle}}">{{IN.th.local}}</span></div></div>
+<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+<span style="{{IN.th.appStyle}}">{{IN.th.appState}}</span>
+<button class="btn-s" type="button" onClick="{{IN.toggleSpam}}">{{IN.spamLabel}}</button>
+<select class="inp" aria-label="Кто ведёт диалог" value="{{IN.th.assign}}" onChange="{{IN.th.onAssign}}" style="width: auto; min-height: 34px; padding: 4px 10px"><sc-for list="{{IN.assignOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.label}}</option></sc-for></select>
+</div>
+</div>
+<sc-if value="{{IN.th.canLink}}" hint-placeholder-val="{{false}}">
+<div style="margin: 14px 18px 0; padding: 12px 14px; background: #FFF6E8; border: 1px solid #F0D9AE; border-radius: 8px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between">
+<span class="small">В сообщении указана почта приложения: <b>{{IN.th.hint}}</b></span>
+<button class="btn-s" type="button" onClick="{{IN.th.link}}">Связать и открыть доступ</button>
+</div>
+</sc-if>
+<div style="padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-height: 220px">
+<sc-for list="{{IN.th.msgs}}" as="m" hint-placeholder-count="2"><div style="{{m.style}}"><span class="small muted">{{m.who}} · {{m.when}}</span><span>{{m.text}}</span></div></sc-for>
+</div>
+<div style="padding: 14px 18px; border-top: 1px solid #ECEEF2; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><span class="small muted" style="align-self: center">Шаблоны:</span><sc-for list="{{IN.templates}}" as="tp" hint-placeholder-count="4"><button class="btn-s" type="button" onClick="{{tp.use}}">{{tp.label}}</button></sc-for></div>
+<textarea class="inp" rows="3" aria-label="Ответ" placeholder="Ответ уйдёт в тот же канал, откуда пришло сообщение" value="{{IN.reply}}" onChange="{{IN.onReply}}" style="resize: vertical"></textarea>
+<div><button class="btn-p" type="button" onClick="{{IN.send}}">Отправить</button></div>
+</div>
+</section>
+</div>
+</div>
+</sc-if>
+
+<!-- ================= КЛИЕНТКИ ================= -->
+<sc-if value="{{sc.clients}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between">
+<div style="display: flex; flex-direction: column; gap: 4px"><h1 style="font-size: 22px; font-weight: 700">Клиенты</h1><p class="muted">Найдено {{CL.total}} · после импорта здесь будет вся база ГетКурса</p></div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap"><button class="btn" type="button" onClick="{{CL.newSegment}}">+ Сегмент</button><button class="btn" type="button" onClick="{{CL.exportAll}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"></path></svg>Выгрузить в Excel</button></div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<div style="flex: 1 1 320px; max-width: 520px"><input class="inp" type="search" aria-label="Поиск по клиенткам" placeholder="Имя, почта ГК или приложения, телефон, @ник, тег" value="{{CL.q}}" onChange="{{CL.onQ}}"></div>
+<div style="position: relative">
+<button class="btn" type="button" onClick="{{CL.toggleCols}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16M15 4v16"></path></svg>Колонки</button>
+<sc-if value="{{CL.colsOpen}}" hint-placeholder-val="{{false}}">
+<div class="menu" style="left: 0; right: auto; min-width: 240px">
+<sc-for list="{{CL.colOpts}}" as="o" hint-placeholder-count="7"><label style="display: flex; gap: 10px; align-items: center; padding: 8px 10px; cursor: pointer; border-radius: 6px"><input type="checkbox" checked="{{o.on}}" onChange="{{o.toggle}}" style="width: 16px; height: 16px; accent-color: #2453A6"><span>{{o.label}}</span></label></sc-for>
+</div>
+</sc-if>
+</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{CL.chips}}" as="t" hint-placeholder-count="8"><button type="button" onClick="{{t.pick}}" style="{{t.style}}">{{t.text}}</button></sc-for></div>
+<sc-if value="{{CL.hasSel}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px; background: #15171C; color: #FFFFFF; border-radius: 10px">
+<span style="font-weight: 600; margin-right: 8px">{{CL.selText}}</span>
+<button class="btn-s" type="button" onClick="{{CL.bulkPlan}}">В план продаж</button>
+<button class="btn-s" type="button" onClick="{{CL.bulkTag}}">Тег «Акция»</button>
+<button class="btn-s" type="button" onClick="{{CL.bulkExport}}">Выгрузить</button>
+<button class="lnk" type="button" onClick="{{CL.clearSel}}" style="color: #C9D6F2; margin-left: auto">Снять выделение</button>
+</div>
+</sc-if>
+<section class="card" style="overflow: hidden">
+<div class="tbl">
+<div class="thead" style="{{CL.outer}}">
+<label class="cb"><input type="checkbox" aria-label="Выбрать всех на странице" checked="{{CL.allSel}}" onChange="{{CL.toggleAll}}"></label>
+<div style="{{CL.inner}}; padding-right: 16px">
+<sc-for list="{{CL.heads}}" as="h" hint-placeholder-count="7"><sc-if value="{{h.sortable}}" hint-placeholder-val="{{false}}"><button type="button" onClick="{{h.sort}}" style="{{h.style}}">{{h.label}} {{h.arrow}}</button></sc-if><sc-if value="{{h.plain}}" hint-placeholder-val="{{true}}"><span>{{h.label}}</span></sc-if></sc-for>
+</div>
+</div>
+<sc-for list="{{CL.rows}}" as="r" hint-placeholder-count="10">
+<div class="trow" style="{{CL.outer}}">
+<label class="cb"><input type="checkbox" aria-label="Выбрать" checked="{{r.sel}}" onChange="{{r.toggle}}"></label>
+<button type="button" class="rowbtn" onClick="{{r.open}}" style="{{CL.inner}}">
+<span style="display: flex; gap: 10px; align-items: center; min-width: 0"><span class="av" style="{{r.avStyle}}">{{r.initials}}</span><span style="display: flex; flex-direction: column; min-width: 0"><span class="cell" style="font-weight: 600">{{r.name}}</span><span class="cell small muted">{{r.city}}</span></span></span>
+<span class="cell">{{r.gk}}</span>
+<sc-if value="{{CL.cols.app}}" hint-placeholder-val="{{true}}"><span class="cell"><span style="{{r.appStyle}}">{{r.app}}</span></span></sc-if>
+<sc-if value="{{CL.cols.phone}}" hint-placeholder-val="{{true}}"><span class="cell">{{r.phone}}</span></sc-if>
+<sc-if value="{{CL.cols.tg}}" hint-placeholder-val="{{true}}"><span class="cell">{{r.tg}}</span></sc-if>
+<sc-if value="{{CL.cols.city}}" hint-placeholder-val="{{false}}"><span class="cell">{{r.city}}</span></sc-if>
+<sc-if value="{{CL.cols.until}}" hint-placeholder-val="{{true}}"><span class="cell" style="{{r.untilStyle}}">{{r.until}}</span></sc-if>
+<sc-if value="{{CL.cols.ltv}}" hint-placeholder-val="{{true}}"><span class="cell">{{r.ltv}}</span></sc-if>
+<sc-if value="{{CL.cols.last}}" hint-placeholder-val="{{true}}"><span class="cell muted">{{r.last}}</span></sc-if>
+</button>
+</div>
+</sc-for>
+<sc-if value="{{CL.empty}}" hint-placeholder-val="{{false}}"><div class="muted" style="padding: 22px 18px">Никого не нашли. Проверьте написание или снимите фильтр.</div></sc-if>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid #ECEEF2">
+<span class="small muted">{{CL.pager.info}}</span>
+<div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap">
+<button class="ibtn" type="button" aria-label="Предыдущая страница" onClick="{{CL.pager.prev}}" disabled="{{CL.pager.noPrev}}" style="width: 32px; height: 32px">‹</button>
+<sc-for list="{{CL.pager.pages}}" as="pg" hint-placeholder-count="4"><button type="button" onClick="{{pg.go}}" style="{{pg.style}}">{{pg.n}}</button></sc-for>
+<button class="ibtn" type="button" aria-label="Следующая страница" onClick="{{CL.pager.next}}" disabled="{{CL.pager.noNext}}" style="width: 32px; height: 32px">›</button>
+</div>
+</div>
+</section>
+</div>
+</sc-if>
+
+<!-- ================= ЗАКАЗЫ ================= -->
+<sc-if value="{{sc.orders}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between">
+<div style="display: flex; flex-direction: column; gap: 4px"><h1 style="font-size: 22px; font-weight: 700">Заказы</h1><p class="muted">{{OR.total}}</p></div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<button class="btn" type="button" onClick="{{OR.exportAll}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"></path></svg>Выгрузить в Excel</button>
+<sc-if value="{{OR.canCreate}}" hint-placeholder-val="{{true}}"><button class="btn-p" type="button" onClick="{{newOrder}}">+ Новый заказ</button></sc-if>
+</div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px"><sc-for list="{{OR.strip}}" as="k" hint-placeholder-count="5"><div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span style="font-size: 17px; font-weight: 700">{{k.v}}</span><span class="small muted">{{k.l}}</span></div></sc-for></div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{OR.tabs}}" as="t" hint-placeholder-count="5"><button type="button" onClick="{{t.pick}}" style="{{t.style}}">{{t.text}}</button></sc-for></div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<div style="flex: 1 1 260px; max-width: 380px"><input class="inp" type="search" aria-label="Поиск по заказам" placeholder="Номер, клиентка, почта, позиция, тег" value="{{OR.q}}" onChange="{{OR.onQ}}"></div>
+<div style="flex: 0 1 200px"><select class="inp" aria-label="Способ оплаты" value="{{OR.src}}" onChange="{{OR.onSrc}}"><sc-for list="{{OR.srcOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div>
+<div style="flex: 0 1 190px"><select class="inp" aria-label="Менеджер" value="{{OR.mgr}}" onChange="{{OR.onMgr}}"><sc-for list="{{OR.mgrOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div>
+<div style="flex: 0 1 160px"><select class="inp" aria-label="Период" value="{{OR.period}}" onChange="{{OR.onPeriod}}"><sc-for list="{{OR.periodOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div>
+<button class="lnk small" type="button" onClick="{{OR.reset}}">Сбросить</button>
+</div>
+<sc-if value="{{OR.hasSel}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px; background: #15171C; color: #FFFFFF; border-radius: 10px">
+<span style="font-weight: 600; margin-right: 8px">{{OR.selText}}</span>
+<button class="btn-s" type="button" onClick="{{OR.bulkRemind}}">Напомнить об оплате</button>
+<button class="btn-s" type="button" onClick="{{OR.bulkExport}}">Выгрузить</button>
+<button class="lnk" type="button" onClick="{{OR.clearSel}}" style="color: #C9D6F2; margin-left: auto">Снять выделение</button>
+</div>
+</sc-if>
+<section class="card" style="overflow: hidden">
+<div class="tbl">
+<div class="thead" style="{{OR.outer}}">
+<label class="cb"><input type="checkbox" aria-label="Выбрать все на странице" checked="{{OR.allSel}}" onChange="{{OR.toggleAll}}"></label>
+<div style="{{OR.inner}}; padding-right: 16px">
+<sc-for list="{{OR.heads}}" as="h" hint-placeholder-count="9"><sc-if value="{{h.sortable}}" hint-placeholder-val="{{false}}"><button type="button" onClick="{{h.sort}}" style="{{h.style}}">{{h.label}} {{h.arrow}}</button></sc-if><sc-if value="{{h.plain}}" hint-placeholder-val="{{true}}"><span>{{h.label}}</span></sc-if></sc-for>
+</div>
+</div>
+<sc-for list="{{OR.rows}}" as="o" hint-placeholder-count="10">
+<div class="trow" style="{{OR.outer}}">
+<label class="cb"><input type="checkbox" aria-label="Выбрать" checked="{{o.sel}}" onChange="{{o.toggle}}"></label>
+<button type="button" class="rowbtn" onClick="{{o.open}}" style="{{OR.inner}}">
+<span style="display: flex; flex-direction: column; min-width: 0"><span style="font-weight: 600">#{{o.id}}</span><span class="cell small muted">{{o.date}}</span></span>
+<span class="cell" style="font-weight: 600">{{o.name}}</span>
+<span style="display: flex; flex-direction: column; min-width: 0"><span class="cell">{{o.product}}</span><sc-if value="{{o.hasNote}}" hint-placeholder-val="{{false}}"><span class="cell small muted">{{o.note}}</span></sc-if></span>
+<span style="font-weight: 600; white-space: nowrap">{{o.amount}}</span>
+<span><span style="{{o.stStyle}}">{{o.st}}</span></span>
+<span class="cell"><span style="{{o.srcStyle}}">{{o.src}}</span></span>
+<span class="cell muted">{{o.mgr}}</span>
+<span class="cell"><span style="{{o.appStyle}}">{{o.app}}</span></span>
+</button>
+</div>
+</sc-for>
+<sc-if value="{{OR.empty}}" hint-placeholder-val="{{false}}"><div class="muted" style="padding: 22px 18px">По этим условиям заказов нет.</div></sc-if>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid #ECEEF2">
+<span class="small muted">{{OR.pager.info}}</span>
+<div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap">
+<button class="ibtn" type="button" aria-label="Предыдущая страница" onClick="{{OR.pager.prev}}" disabled="{{OR.pager.noPrev}}" style="width: 32px; height: 32px">‹</button>
+<sc-for list="{{OR.pager.pages}}" as="pg" hint-placeholder-count="6"><button type="button" onClick="{{pg.go}}" style="{{pg.style}}">{{pg.n}}</button></sc-for>
+<button class="ibtn" type="button" aria-label="Следующая страница" onClick="{{OR.pager.next}}" disabled="{{OR.pager.noNext}}" style="width: 32px; height: 32px">›</button>
+</div>
+</div>
+</section>
+</div>
+</sc-if>
+
+<!-- ================= ПРОДУКТЫ И ОПЛАТА ================= -->
+<sc-if value="{{sc.products}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between">
+<div style="display: flex; flex-direction: column; gap: 4px"><h1 style="font-size: 22px; font-weight: 700">Продукты и оплата</h1><p class="muted">Каждая позиция знает, что она открывает в приложении. Отсюда же — промокоды и страницы оплаты для Тильды.</p></div>
+<sc-if value="{{PR.canEdit}}" hint-placeholder-val="{{true}}"><button class="btn-p" type="button" onClick="{{PR.newProduct}}">+ Новый продукт</button></sc-if>
+</div>
+<div role="tablist" style="display: flex; gap: 24px; border-bottom: 1px solid #E3E6EB; overflow-x: auto"><sc-for list="{{PR.tabs}}" as="t" hint-placeholder-count="3"><button type="button" role="tab" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button></sc-for></div>
+
+<sc-if value="{{PR.isProducts}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 14px">
+<section class="card">
+<div class="cardh"><div style="display: flex; flex-direction: column; gap: 2px"><h2 style="font-size: 15px; font-weight: 600">Разборы месяцев клуба</h2><p class="small muted">Разбор прошедшего месяца можно продавать отдельно одной кнопкой — без перезаливки, контент тот же</p></div></div>
+<sc-for list="{{PR.clubMonths}}" as="x" hint-placeholder-count="3">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 18px; border-bottom: 1px solid #ECEEF2; flex-wrap: wrap">
+<span><span class="muted" style="text-transform: capitalize">{{x.month}}</span> · <span style="font-weight: 600">{{x.book}}</span></span>
+<span style="display: flex; gap: 8px; align-items: center">
+<sc-if value="{{x.selling}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #DFF0E5; color: #1D5A35">Продаётся · {{x.price}}</span><button class="btn-s" type="button" onClick="{{x.open}}">Открыть</button></sc-if>
+<sc-if value="{{x.canSell}}" hint-placeholder-val="{{true}}"><button class="btn-s" type="button" onClick="{{x.sell}}">{{x.sellLabel}}</button></sc-if>
+<sc-if value="{{x.current}}" hint-placeholder-val="{{false}}"><span class="small muted">Идёт сейчас — можно будет после окончания месяца</span></sc-if>
+</span>
+</div>
+</sc-for>
+</section>
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{PR.chips}}" as="t" hint-placeholder-count="6"><button type="button" onClick="{{t.pick}}" style="{{t.style}}">{{t.text}}</button></sc-for></div>
+<sc-if value="{{PR.canEdit}}" hint-placeholder-val="{{true}}"><span></span></sc-if>
+<section class="card" style="overflow: hidden">
+<div class="tbl">
+<div class="thead" style="display: grid; grid-template-columns: minmax(240px, 2fr) 120px 110px minmax(200px, 1.5fr) 170px 110px 80px; gap: 12px; padding: 10px 16px; min-width: 1100px">
+<span>Позиция</span><span>Цена</span><span>Срок</span><span>Открывает в приложении</span><span>Сторы</span><span>Статус</span><span>Продаж</span>
+</div>
+<sc-for list="{{PR.rows}}" as="p" hint-placeholder-count="8">
+<div class="trow" style="min-width: 1100px">
+<button type="button" class="rowbtn" onClick="{{p.open}}" style="display: grid; grid-template-columns: minmax(240px, 2fr) 120px 110px minmax(200px, 1.5fr) 170px 110px 80px; gap: 12px; padding: 11px 16px; align-items: center">
+<span style="display: flex; flex-direction: column; min-width: 0"><span style="font-weight: 600">{{p.name}}</span><sc-if value="{{p.hasAsk}}" hint-placeholder-val="{{false}}"><span class="small" style="color: #1F3F86">? {{p.ask}}</span></sc-if></span>
+<span>{{p.price}}</span>
+<span class="muted">{{p.term}}</span>
+<span><span style="{{p.grantStyle}}">{{p.grant}}</span></span>
+<span class="small muted">{{p.stores}}</span>
+<span><span style="{{p.activeStyle}}">{{p.active}}</span></span>
+<span class="muted">{{p.sold}}</span>
+</button>
+</div>
+</sc-for>
+</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{PR.isPromos}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 14px">
+<sc-if value="{{PR.canPromo}}" hint-placeholder-val="{{true}}">
+<section class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+<h2 style="font-size: 15px; font-weight: 600">Новый промокод</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; align-items: end">
+<div><label class="lbl" for="pc">Код</label><input id="pc" class="inp" placeholder="WINTER15" value="{{PR.np.code}}" onChange="{{PR.onNp.code}}"></div>
+<div><label class="lbl" for="pt">Тип скидки</label><select id="pt" class="inp" value="{{PR.np.type}}" onChange="{{PR.onNp.type}}"><option value="%">Процент</option><option value="BYN">Сумма, BYN</option></select></div>
+<div><label class="lbl" for="pv">Размер</label><input id="pv" class="inp" inputmode="decimal" placeholder="15" value="{{PR.np.val}}" onChange="{{PR.onNp.val}}"></div>
+<div><label class="lbl" for="ps">На что</label><select id="ps" class="inp" value="{{PR.np.scope}}" onChange="{{PR.onNp.scope}}"><option value="all">Все продукты</option><option value="club">Клуб</option><option value="content">Разборы и пакеты</option></select></div>
+<div><label class="lbl" for="pl">Лимит</label><input id="pl" class="inp" inputmode="numeric" placeholder="без лимита" value="{{PR.np.limit}}" onChange="{{PR.onNp.limit}}"></div>
+<div><label class="lbl" for="pu">Действует до</label><input id="pu" class="inp" type="date" value="{{PR.np.until}}" onChange="{{PR.onNp.until}}"></div>
+<div><button class="btn-p" type="button" onClick="{{PR.createPromo}}" style="width: 100%">Создать</button></div>
+</div>
+</section>
+</sc-if>
+<section class="card" style="overflow: hidden">
+<div class="tbl">
+<div class="thead" style="display: grid; grid-template-columns: 150px 110px minmax(150px, 1fr) 120px 110px 120px 120px; gap: 12px; padding: 10px 16px; min-width: 900px"><span>Код</span><span>Скидка</span><span>На что</span><span>Использован</span><span>До</span><span>Статус</span><span></span></div>
+<sc-for list="{{PR.promos}}" as="x" hint-placeholder-count="3">
+<div class="trow" style="display: grid; grid-template-columns: 150px 110px minmax(150px, 1fr) 120px 110px 120px 120px; gap: 12px; padding: 11px 16px; align-items: center; min-width: 900px">
+<span style="font-weight: 700; letter-spacing: 0.03em">{{x.code}}</span><span>{{x.disc}}</span><span>{{x.scope}}</span><span>{{x.used}}</span><span class="muted">{{x.until}}</span><span><span style="{{x.stStyle}}">{{x.st}}</span></span>
+<span><sc-if value="{{PR.canPromo}}" hint-placeholder-val="{{true}}"><button class="btn-s" type="button" onClick="{{x.toggle}}">Вкл / выкл</button></sc-if></span>
+</div>
+</sc-for>
+</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{PR.isPages}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+<section class="card" style="flex: 1 1 340px; overflow: hidden">
+<div class="cardh"><div style="display: flex; flex-direction: column; gap: 2px"><h2 style="font-size: 15px; font-weight: 600">Страницы оплаты</h2><p class="small muted">Ссылку ставят на кнопку «Купить» в Тильде вместо формы ГетКурса</p></div></div>
+<sc-for list="{{PR.pages}}" as="p" hint-placeholder-count="6">
+<div style="display: flex; align-items: stretch; border-bottom: 1px solid #ECEEF2">
+<button type="button" onClick="{{p.pick}}" style="{{p.style}}"><span style="font-weight: 600">{{p.name}}</span><span class="small muted">{{p.url}}</span></button>
+<button class="btn-s" type="button" onClick="{{p.copy}}" style="align-self: center; margin-right: 12px">Копировать</button>
+</div>
+</sc-for>
+<div style="padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid #E3E6EB; background: #FAFBFC">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap"><span class="sech">Редактировать страницу</span><button class="btn-s" type="button" onClick="{{PR.duplicatePage}}" disabled="{{PR.pgDisabled}}">Дублировать</button></div>
+<div><label class="lbl" for="pgn">Название на странице</label><input id="pgn" class="inp" value="{{PR.pg.name}}" onChange="{{PR.onPg.name}}" disabled="{{PR.pgDisabled}}"></div>
+<div><label class="lbl" for="pgd">Что входит (каждый пункт с новой строки)</label><textarea id="pgd" class="inp" rows="4" value="{{PR.pg.desc}}" onChange="{{PR.onPg.desc}}" disabled="{{PR.pgDisabled}}" style="resize: vertical"></textarea></div>
+<div style="display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px">
+<div><label class="lbl" for="pgp">Цена</label><input id="pgp" class="inp" inputmode="decimal" value="{{PR.pg.price}}" onChange="{{PR.onPg.price}}" disabled="{{PR.pgDisabled}}"></div>
+<div><label class="lbl" for="pgs">Адрес страницы</label><input id="pgs" class="inp" value="{{PR.pg.slug}}" onChange="{{PR.onPg.slug}}" disabled="{{PR.pgDisabled}}"></div>
+</div>
+<span class="small muted">{{PR.pgUrl}}</span>
+<div><button class="btn-p" type="button" onClick="{{PR.savePage}}" disabled="{{PR.pgDisabled}}">Сохранить страницу</button></div>
+</div>
+</section>
+<div style="flex: 0 1 400px; display: flex; flex-direction: column; gap: 8px; align-items: center">
+<span class="small muted">Так её видит клиентка (превью, телефон)</span>
+<div style="width: 360px; max-width: 100%; border: 8px solid #15171C; border-radius: 36px; background: #FAFAF8; padding: 22px 18px 26px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px">
+<div style="font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: #5B6170">ЧИТАТЕЛЬ · КНИЖНЫЙ КЛУБ АННЫ БУСЕЛ</div>
+<div style="font-size: 19px; font-weight: 700; line-height: 1.25">{{PR.ck.name}}</div>
+<div class="small muted">{{PR.ck.grant}}</div>
+<sc-if value="{{PR.ck.hasDesc}}" hint-placeholder-val="{{true}}"><div style="font-size: 14px; white-space: pre-line; color: #3A4050; border-left: 3px solid #D9E1EE; padding-left: 10px">{{PR.ck.desc}}</div></sc-if>
+<div style="display: flex; gap: 6px"><input class="inp" aria-label="Промокод" placeholder="Промокод" value="{{PR.ck.promo}}" onChange="{{PR.ck.onPromo}}"><button class="btn" type="button" onClick="{{PR.ck.applyPromo}}">Применить</button></div>
+<sc-if value="{{PR.ck.hasPromoMsg}}" hint-placeholder-val="{{false}}"><span class="small" style="color: #1F3F86">{{PR.ck.promoMsg}}</span></sc-if>
+<div style="display: grid; grid-template-columns: 1fr auto; gap: 4px 12px">
+<span class="muted">Цена</span><span>{{PR.ck.price}}</span>
+<sc-if value="{{PR.ck.hasDisc}}" hint-placeholder-val="{{false}}"><span class="muted">Скидка</span></sc-if><sc-if value="{{PR.ck.hasDisc}}" hint-placeholder-val="{{false}}"><span style="color: #1D5A35">{{PR.ck.disc}}</span></sc-if>
+<span style="font-weight: 700">К оплате</span><span style="font-weight: 700">{{PR.ck.total}}</span>
+</div>
+<sc-if value="{{PR.cb.isTopup}}" hint-placeholder-val="{{false}}"><div><label class="lbl" for="cka">Сумма пополнения, BYN</label><input id="cka" class="inp" inputmode="decimal" placeholder="например, 300" value="{{PR.cb.amount}}" onChange="{{PR.cb.onAmount}}"></div></sc-if>
+<div><label class="lbl" for="cke">Ваша почта</label><input id="cke" class="inp" type="email" placeholder="та же, что в приложении" value="{{PR.ck.email}}" onChange="{{PR.ck.onEmail}}"><span class="small muted" style="display: block; margin-top: 6px">Если почта совпадёт с приложением, доступ откроется сам. Если нет — придёт код активации.</span></div>
+<sc-if value="{{PR.cb.balKnown}}" hint-placeholder-val="{{false}}"><span class="small" style="color: #1D5A35; font-weight: 600">{{PR.cb.balText}}</span></sc-if>
+<label style="display: flex; gap: 10px; align-items: center; cursor: pointer"><input type="checkbox" checked="{{PR.ck.gift}}" onChange="{{PR.ck.toggleGift}}" style="width: 16px; height: 16px; accent-color: #2453A6"><span>Это подарок</span></label>
+<sc-if value="{{PR.ck.gift}}" hint-placeholder-val="{{false}}"><div><label class="lbl" for="ckg">Почта получательницы</label><input id="ckg" class="inp" type="email" value="{{PR.ck.giftEmail}}" onChange="{{PR.ck.onGiftEmail}}"><span class="small muted" style="display: block; margin-top: 6px">Получательнице придёт письмо с доступом и кодом для приложения. Покупка сохранится за вами.</span></div></sc-if>
+<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl" style="margin: 0">Способ оплаты</span><sc-for list="{{PR.ck.methods}}" as="m" hint-placeholder-count="3"><button type="button" onClick="{{m.pick}}" style="{{m.style}}"><span style="font-weight: 600">{{m.label}}</span><span class="small muted">{{m.via}}</span></button></sc-for></div>
+<button class="btn-p" type="button" onClick="{{PR.ck.pay}}" style="justify-content: center; min-height: 46px">Оплатить {{PR.ck.total}}</button>
+</div>
+</div>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<!-- ================= РАССЫЛКИ ================= -->
+<sc-if value="{{sc.mail}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between">
+<div style="display: flex; flex-direction: column; gap: 4px"><h1 style="font-size: 22px; font-weight: 700">Рассылки</h1><p class="muted">Автоматические письма и разовые рассылки на почту и в Telegram-бот, по сегментам базы. Массовые сообщения уходят от бота — личный аккаунт менеджера Telegram больше не блокирует.</p></div>
+<button class="btn-p" type="button" onClick="{{MA.create}}">+ Новая рассылка</button>
+</div>
+<section class="card" style="overflow: hidden">
+<div class="cardh"><h2 style="font-size: 15px; font-weight: 600">Автоматические</h2></div>
+<div class="tbl">
+<div class="thead" style="display: grid; grid-template-columns: minmax(180px, 1fr) minmax(240px, 1.6fr) 170px 90px 120px 120px; gap: 12px; padding: 10px 16px; min-width: 960px"><span>Письмо</span><span>Когда уходит</span><span>Канал</span><span>Отправлено</span><span>Статус</span><span></span></div>
+<sc-for list="{{MA.autos}}" as="a" hint-placeholder-count="5">
+<div class="trow" style="display: grid; grid-template-columns: minmax(180px, 1fr) minmax(240px, 1.6fr) 170px 90px 120px 120px; gap: 12px; padding: 11px 16px; align-items: center; min-width: 960px">
+<span style="font-weight: 600">{{a.name}}</span><span class="small muted">{{a.trigger}}</span><span class="small">{{a.ch}}</span><span>{{a.sent}}</span><span><span style="{{a.stStyle}}">{{a.st}}</span></span><span><button class="btn-s" type="button" onClick="{{a.toggle}}">{{a.label}}</button></span>
+</div>
+</sc-for>
+</div>
+</section>
+<section class="card" style="overflow: hidden">
+<div class="cardh"><h2 style="font-size: 15px; font-weight: 600">Разовые рассылки</h2></div>
+<div class="tbl">
+<div class="thead" style="display: grid; grid-template-columns: minmax(200px, 1.4fr) minmax(170px, 1fr) 170px 130px 140px 100px 80px; gap: 12px; padding: 10px 16px; min-width: 1000px"><span>Название</span><span>Сегмент</span><span>Канал</span><span>Статус</span><span>Когда</span><span>Получили</span><span>Открыли</span></div>
+<sc-for list="{{MA.camps}}" as="c" hint-placeholder-count="3">
+<div class="trow" style="display: grid; grid-template-columns: minmax(200px, 1.4fr) minmax(170px, 1fr) 170px 130px 140px 100px 80px; gap: 12px; padding: 11px 16px; align-items: center; min-width: 1000px">
+<span style="font-weight: 600">{{c.name}}</span><span class="small">{{c.seg}}</span><span class="small">{{c.ch}}</span><span><span style="{{c.stStyle}}">{{c.st}}</span></span><span class="small muted">{{c.when}}</span><span>{{c.sent}}</span><span>{{c.open}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+</div>
+</sc-if>
+
+<!-- ================= ФИНАНСЫ ================= -->
+<sc-if value="{{sc.stats}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between">
+<div style="display: flex; flex-direction: column; gap: 4px"><h1 style="font-size: 22px; font-weight: 700">Финансы</h1><p class="muted">{{SS.rateNote}}</p></div>
+<button class="btn" type="button" onClick="{{SS.exportAll}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"></path></svg>Отчёт в Excel</button>
+</div>
+<div role="tablist" style="display: flex; gap: 24px; border-bottom: 1px solid #E3E6EB"><sc-for list="{{SS.tabs}}" as="t" hint-placeholder-count="2"><button type="button" role="tab" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button></sc-for></div>
+<sc-if value="{{SS.isSales}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{SS.periods}}" as="t" hint-placeholder-count="3"><button type="button" onClick="{{t.pick}}" style="{{t.style}}">{{t.text}}</button></sc-for></div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px"><sc-for list="{{SS.SALES.kpis}}" as="k" hint-placeholder-count="4"><div class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 22px; font-weight: 700">{{k.v}}</span><span class="small muted">{{k.l}}</span></div></sc-for></div>
+<section class="card" style="overflow: hidden">
+<div class="cardh"><div style="display: flex; flex-direction: column; gap: 2px"><h2 style="font-size: 15px; font-weight: 600">Откуда приходят заказы и новые покупательницы</h2><p class="small muted">Конверсия — доля оплаченных из созданных заказов</p></div></div>
+<div class="tbl"><div class="thead" style="display: grid; grid-template-columns: minmax(180px, 1fr) 90px 90px 100px 130px 150px; gap: 12px; padding: 10px 16px; min-width: 820px"><span>Источник</span><span>Заказов</span><span>Оплачено</span><span>Конверсия</span><span>Выручка</span><span>Новых клиенток</span></div>
+<sc-for list="{{SS.SALES.src}}" as="x" hint-placeholder-count="4"><div class="trow" style="display: grid; grid-template-columns: minmax(180px, 1fr) 90px 90px 100px 130px 150px; gap: 12px; padding: 11px 16px; min-width: 820px"><span style="font-weight: 600">{{x.name}}</span><span>{{x.n}}</span><span>{{x.paid}}</span><span>{{x.conv}}</span><span>{{x.v}}</span><span>{{x.first}}</span></div></sc-for></div>
+</section>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; align-items: start">
+<section class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+<h2 style="font-size: 15px; font-weight: 600">План продаж: конверсия по этапам</h2>
+<sc-for list="{{SS.SALES.funnel}}" as="f" hint-placeholder-count="5"><div style="display: grid; grid-template-columns: 110px minmax(0, 1fr) 40px; gap: 10px; align-items: center"><span class="small">{{f.label}}</span><div style="background: #EEF0F4; border-radius: 5px"><div style="{{f.style}}"></div></div><span class="small" style="font-weight: 600; text-align: right">{{f.n}}</span></div></sc-for>
+<span class="small muted">{{SS.SALES.funnelNote}}</span>
+</section>
+<section class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+<h2 style="font-size: 15px; font-weight: 600">Причины отказов</h2>
+<sc-for list="{{SS.SALES.loss}}" as="x" hint-placeholder-count="3"><div style="display: flex; flex-direction: column; gap: 4px"><div style="display: flex; justify-content: space-between"><span class="small">{{x.name}}</span><span class="small" style="font-weight: 600">{{x.n}}</span></div><div style="background: #F6ECE9; border-radius: 4px"><div style="{{x.style}}"></div></div></div></sc-for>
+<sc-if value="{{SS.SALES.lossEmpty}}" hint-placeholder-val="{{false}}"><span class="small muted">Отказов нет.</span></sc-if>
+<span class="small muted">Причину выбирают на карточке в колонке «Отказ» плана продаж.</span>
+</section>
+</div>
+<section class="card" style="overflow: hidden">
+<div class="cardh"><h2 style="font-size: 15px; font-weight: 600">Эффективность менеджеров</h2></div>
+<div class="tbl"><div class="thead" style="display: grid; grid-template-columns: minmax(200px, 1fr) 90px 90px 100px 130px 130px 110px; gap: 12px; padding: 10px 16px; min-width: 900px"><span>Кто</span><span>Заказов</span><span>Оплачено</span><span>Конверсия</span><span>Выручка</span><span>Задач выполн.</span><span>Просрочено</span></div>
+<sc-for list="{{SS.SALES.mgrs}}" as="x" hint-placeholder-count="3"><div class="trow" style="display: grid; grid-template-columns: minmax(200px, 1fr) 90px 90px 100px 130px 130px 110px; gap: 12px; padding: 11px 16px; min-width: 900px"><span style="font-weight: 600">{{x.name}}</span><span>{{x.n}}</span><span>{{x.paid}}</span><span>{{x.conv}}</span><span>{{x.v}}</span><span>{{x.done}}</span><span>{{x.over}}</span></div></sc-for></div>
+</section>
+</div>
+</sc-if>
+<sc-if value="{{SS.isRevenue}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{SS.periods}}" as="t" hint-placeholder-count="3"><button type="button" onClick="{{t.pick}}" style="{{t.style}}">{{t.text}}</button></sc-for></div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px">
+<sc-for list="{{SS.kpis}}" as="k" hint-placeholder-count="5"><div class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 22px; font-weight: 700">{{k.v}}</span><span class="small muted">{{k.l}}</span></div></sc-for>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; align-items: start">
+<section class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="font-size: 15px; font-weight: 600">Выручка по месяцам, BYN</h2>
+<div style="display: flex; gap: 10px; align-items: flex-end; height: 230px; border-bottom: 1px solid #E3E6EB; padding-bottom: 6px">
+<sc-for list="{{SS.bars}}" as="b" hint-placeholder-count="6">
+<div style="flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0">
+<span class="small" style="white-space: nowrap; font-weight: 600">{{b.v}}</span>
+<div style="{{b.style}}"></div>
+</div>
+</sc-for>
+</div>
+<div style="display: flex; gap: 10px"><sc-for list="{{SS.bars}}" as="b" hint-placeholder-count="6"><span class="small muted" style="flex: 1 1 0; text-align: center; display: flex; flex-direction: column"><span style="color: #171A21; font-weight: 600">{{b.label}}</span><span>{{b.n}}</span></span></sc-for></div>
+</section>
+<section class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+<h2 style="font-size: 15px; font-weight: 600">Топ продуктов за период</h2>
+<sc-for list="{{SS.prod}}" as="p" hint-placeholder-count="6">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; justify-content: space-between; gap: 12px"><span class="small cell">{{p.name}}</span><span class="small" style="font-weight: 600; white-space: nowrap">{{p.v}}</span></div>
+<div style="background: #EEF0F4; border-radius: 4px"><div style="{{p.style}}"></div></div>
+</div>
+</sc-for>
+</section>
+</div>
+<section class="card" style="overflow: hidden">
+<div class="cardh"><h2 style="font-size: 15px; font-weight: 600">По способам оплаты</h2></div>
+<div class="tbl">
+<div class="thead" style="display: grid; grid-template-columns: minmax(160px, 1fr) 110px 150px 150px 150px; gap: 12px; padding: 10px 16px; min-width: 760px"><span>Способ</span><span>Платежей</span><span>Получено</span><span>Комиссия стора</span><span>Чистыми</span></div>
+<sc-for list="{{SS.src}}" as="x" hint-placeholder-count="4">
+<div class="trow" style="display: grid; grid-template-columns: minmax(160px, 1fr) 110px 150px 150px 150px; gap: 12px; padding: 11px 16px; min-width: 760px"><span style="font-weight: 600">{{x.name}}</span><span>{{x.n}}</span><span>{{x.gross}}</span><span class="muted">{{x.fee}}</span><span style="font-weight: 600">{{x.net}}</span></div>
+</sc-for>
+</div>
+</section>
+</div>
+</sc-if>
+<sc-if value="{{SS.isCards}}" hint-placeholder-val="{{false}}">
+<section class="card" style="overflow: hidden">
+<div class="cardh"><div style="display: flex; flex-direction: column; gap: 2px"><h2 style="font-size: 15px; font-weight: 600">Балансы клиенток</h2><p class="small muted">Пополнения (в том числе клубные карты по акциям) и оплаты с баланса. Пополнить или списать можно в карточке клиентки и при оплате заказа</p></div></div>
+<div class="tbl">
+<div class="thead" style="display: grid; grid-template-columns: minmax(200px, 1fr) 140px 140px 140px 140px; gap: 12px; padding: 10px 16px; min-width: 780px"><span>Клиент</span><span>Пополнено</span><span>Потрачено</span><span>Остаток</span><span>Последняя операция</span></div>
+<sc-for list="{{SS.cards}}" as="x" hint-placeholder-count="2">
+<div class="trow" style="min-width: 780px"><button type="button" class="rowbtn" onClick="{{x.open}}" style="display: grid; grid-template-columns: minmax(200px, 1fr) 140px 140px 140px 140px; gap: 12px; padding: 11px 16px"><span style="font-weight: 600">{{x.name}}</span><span>{{x.inn}}</span><span>{{x.out}}</span><span style="font-weight: 600">{{x.bal}}</span><span class="muted">{{x.last}}</span></button></div>
+</sc-for>
+<sc-if value="{{SS.cardsEmpty}}" hint-placeholder-val="{{false}}"><div class="muted" style="padding: 18px">Клубных карт пока нет.</div></sc-if>
+</div>
+</section>
+</sc-if>
+</div>
+</sc-if>
+
+<!-- ================= ИМПОРТ ================= -->
+<sc-if value="{{sc.import}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 16px; max-width: 1000px">
+<div style="display: flex; flex-direction: column; gap: 4px"><h1 style="font-size: 22px; font-weight: 700">Импорт из ГетКурса</h1><p class="muted">Пользователи и заказы из ГК плюс Excel с длительными абонементами. Колонки распознаются сами, дубли склеиваются, повторный импорт не создаёт дублей.</p></div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px"><sc-for list="{{IM.steps}}" as="x" hint-placeholder-count="3"><span style="{{x.style}}">{{x.label}}</span></sc-for></div>
+<sc-if value="{{IM.s1}}" hint-placeholder-val="{{true}}">
+<section class="card" style="border-style: dashed; padding: 40px 24px; display: flex; flex-direction: column; gap: 12px; align-items: center; text-align: center">
+<h2 style="font-size: 16px; font-weight: 600">Перетащите файлы сюда</h2>
+<p class="muted" style="max-width: 520px">XLSX или CSV. Можно несколько сразу: пользователи ГК, заказы ГК, таблица абонементов.</p>
+<button class="btn-p" type="button" onClick="{{IM.next}}">Выбрать файлы</button>
+</section>
+</sc-if>
+<sc-if value="{{IM.s2}}" hint-placeholder-val="{{false}}">
+<section class="card" style="overflow: hidden">
+<div class="cardh"><span style="font-weight: 600">getcourse_users.xlsx · 11 955 строк</span><span class="small muted">+ getcourse_deals.xlsx · абонементы_КК.xlsx</span></div>
+<div class="tbl">
+<sc-for list="{{IM.map}}" as="m" hint-placeholder-count="8">
+<div class="trow" style="display: grid; grid-template-columns: minmax(200px, 1.3fr) 30px minmax(200px, 1.1fr) 150px; gap: 12px; padding: 11px 16px; align-items: center; min-width: 640px"><span>{{m.col}}</span><span class="muted">→</span><span style="font-weight: 500">{{m.to}}</span><span><span style="{{m.style}}">{{m.st}}</span></span></div>
+</sc-for>
+</div>
+<div style="padding: 14px 16px; display: flex; gap: 8px"><button class="btn-p" type="button" onClick="{{IM.next}}">Проверить данные</button><button class="btn" type="button" onClick="{{IM.back}}">Назад</button></div>
+</section>
+</sc-if>
+<sc-if value="{{IM.s3}}" hint-placeholder-val="{{false}}">
+<section class="card" style="padding: 18px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px">
+<sc-for list="{{IM.stats}}" as="x" hint-placeholder-count="6"><div style="border: 1px solid #ECEEF2; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span style="font-size: 22px; font-weight: 700">{{x.v}}</span><span class="small muted">{{x.k}}</span></div></sc-for>
+</div>
+<p class="small muted">Строки с ошибками не импортируются — их можно скачать, поправить и загрузить повторно.</p>
+<div style="display: flex; gap: 8px; flex-wrap: wrap"><button class="btn-p" type="button" onClick="{{IM.done}}">Импортировать</button><button class="btn" type="button" onClick="{{IM.errors}}">Скачать строки с ошибками</button><button class="btn" type="button" onClick="{{IM.back}}">Назад</button></div>
+</section>
+</sc-if>
+</div>
+</sc-if>
+
+<!-- ================= НАСТРОЙКИ ================= -->
+<sc-if value="{{sc.settings}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<h1 style="font-size: 22px; font-weight: 700">Настройки</h1>
+<div role="tablist" style="display: flex; gap: 24px; border-bottom: 1px solid #E3E6EB; overflow-x: auto"><sc-for list="{{SE.tabs}}" as="t" hint-placeholder-count="5"><button type="button" role="tab" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button></sc-for></div>
+
+<sc-if value="{{SE.isAuto}}" hint-placeholder-val="{{false}}">
+<section class="card" style="overflow: hidden">
+<div class="cardh"><div style="display: flex; flex-direction: column; gap: 2px"><h2 style="font-size: 15px; font-weight: 600">Правила автоматизации</h2><p class="small muted">Назначение ответственных, задачи, уведомления и переходы между этапами. Автописьма клиенткам — в разделе «Рассылки».</p></div><button class="btn-s" type="button" onClick="{{SE.toMail}}">Автописьма →</button></div>
+<sc-for list="{{SE.rules}}" as="r" hint-placeholder-count="6"><div class="trow" style="display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; flex-wrap: wrap"><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 320px"><span style="font-weight: 600">{{r.name}}</span><span class="small muted">{{r.how}} · сработало за месяц: {{r.n}}</span></span><span style="display: flex; gap: 8px; align-items: center"><span style="{{r.stStyle}}">{{r.st}}</span><button class="btn-s" type="button" onClick="{{r.toggle}}">{{r.label}}</button></span></div></sc-for>
+</section>
+</sc-if>
+
+<sc-if value="{{SE.isPay}}" hint-placeholder-val="{{true}}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; align-items: start">
+<section class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+<h2 style="font-size: 15px; font-weight: 600">Переводы на карту</h2>
+<label style="display: flex; gap: 10px; align-items: flex-start; cursor: pointer"><input type="checkbox" checked="{{SE.requireConfirm}}" onChange="{{SE.toggleConfirm}}" style="width: 16px; height: 16px; accent-color: #2453A6; margin-top: 3px"><span><b>Анна подтверждает переводы в CRM</b><br><span class="small muted">Выключено: как сейчас — Анна подтверждает в чате, менеджер проводит оплату и отмечает, на какую карту пришли деньги. Включено: доступ открывается только после подтверждения Анны в CRM.</span></span></label>
+<div class="small muted">Карты для переводов:</div>
+<sc-for list="{{SE.accounts}}" as="a" hint-placeholder-count="2"><span class="tag" style="align-self: flex-start">{{a}}</span></sc-for>
+</section>
+<section class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 8px">
+<h2 style="font-size: 15px; font-weight: 600">Почта отправителя</h2>
+<span>club@annabusel.org</span>
+<span class="small muted">Письма уходят с домена Анны через почтовый сервис. Для настройки нужен доступ к DNS домена annabusel.org — добавим записи, чтобы письма не попадали в спам. Ответы клиенток приходят во «Входящие» CRM.</span>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{SE.isTeam}}" hint-placeholder-val="{{false}}">
+<section class="card" style="overflow: hidden">
+<div class="cardh"><div style="display: flex; flex-direction: column; gap: 2px"><h2 style="font-size: 15px; font-weight: 600">Команда</h2><p class="small muted">Вход — пароль и код из приложения-аутентификатора. Роли меняет только владелец.</p></div><sc-if value="{{SE.canTeam}}" hint-placeholder-val="{{true}}"><button class="btn" type="button" onClick="{{SE.invite}}">Пригласить сотрудника</button></sc-if></div>
+<div class="tbl">
+<sc-for list="{{SE.members}}" as="m" hint-placeholder-count="4">
+<div class="trow" style="display: grid; grid-template-columns: minmax(220px, 1.4fr) 200px 220px 150px; gap: 12px; padding: 12px 16px; align-items: center; min-width: 820px">
+<span style="display: flex; gap: 10px; align-items: center"><span class="av" style="{{m.avStyle}}">{{m.initials}}</span><span style="font-weight: 600">{{m.name}}</span></span>
+<span><sc-if value="{{m.isOwnerRow}}" hint-placeholder-val="{{false}}"><span class="tag">Владелец</span></sc-if><sc-if value="{{SE.canTeam}}" hint-placeholder-val="{{false}}"><sc-if value="{{m.noOwner}}" hint-placeholder-val="{{true}}"><select class="inp" aria-label="Роль" value="{{m.role}}" onChange="{{m.onRole}}"><sc-for list="{{SE.roleOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></sc-if></sc-if><sc-if value="{{m.showRoleText}}" hint-placeholder-val="{{true}}"><span>{{m.roleLabel}}</span></sc-if></span>
+<span style="display: flex; gap: 8px; align-items: center"><span class="small muted">2FA</span><span style="{{m.tfaStyle}}">{{m.tfa}}</span><sc-if value="{{m.noTfa}}" hint-placeholder-val="{{false}}"><button class="btn-s" type="button" onClick="{{m.remind2fa}}">Напомнить</button></sc-if></span>
+<span class="small muted">{{m.last}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{SE.isPerms}}" hint-placeholder-val="{{false}}">
+<section class="card" style="overflow: hidden">
+<div class="tbl">
+<div class="thead" style="display: grid; grid-template-columns: minmax(280px, 2fr) repeat(4, minmax(110px, 1fr)); gap: 12px; padding: 10px 16px; min-width: 820px"><span>Действие</span><span style="text-align: center">Владелец</span><span style="text-align: center">Администратор</span><span style="text-align: center">Маркетинг</span><span style="text-align: center">Менеджер</span></div>
+<sc-for list="{{SE.perms}}" as="p" hint-placeholder-count="8">
+<div class="trow" style="display: grid; grid-template-columns: minmax(280px, 2fr) repeat(4, minmax(110px, 1fr)); gap: 12px; padding: 11px 16px; min-width: 820px"><span>{{p.label}}</span><sc-for list="{{p.cells}}" as="x" hint-placeholder-count="4"><span style="{{x.style}}">{{x.text}}</span></sc-for></div>
+</sc-for>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{SE.isIntegr}}" hint-placeholder-val="{{false}}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px">
+<sc-for list="{{SE.integr}}" as="x" hint-placeholder-count="6"><div class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 8px"><div style="display: flex; justify-content: space-between; gap: 10px; align-items: flex-start"><span style="font-weight: 600">{{x.name}}</span><span style="{{x.stStyle}}">{{x.st}}</span></div><span class="small muted">{{x.what}}</span></div></sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{SE.isRates}}" hint-placeholder-val="{{false}}">
+<section class="card" style="padding: 18px; display: flex; flex-direction: column; gap: 14px; max-width: 560px">
+<p class="small muted">Курсы для пересчёта выручки в BYN в отчётах. Задаёте вы — например, раз в месяц по курсу банка.</p>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px">
+<div><label class="lbl" for="rusd">1 USD, BYN</label><input id="rusd" class="inp" inputmode="decimal" value="{{SE.rates.USD}}" onChange="{{SE.onRate.USD}}"></div>
+<div><label class="lbl" for="rrub">1 RUB, BYN</label><input id="rrub" class="inp" inputmode="decimal" value="{{SE.rates.RUB}}" onChange="{{SE.onRate.RUB}}"></div>
+<div><label class="lbl" for="reur">1 EUR, BYN</label><input id="reur" class="inp" inputmode="decimal" value="{{SE.rates.EUR}}" onChange="{{SE.onRate.EUR}}"></div>
+<div><label class="lbl" for="rgel">1 GEL, BYN</label><input id="rgel" class="inp" inputmode="decimal" value="{{SE.rates.GEL}}" onChange="{{SE.onRate.GEL}}"></div>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{SE.isJournal}}" hint-placeholder-val="{{false}}">
+<section class="card" style="overflow: hidden">
+<div class="cardh"><h2 style="font-size: 15px; font-weight: 600">Журнал действий за сутки</h2></div>
+<sc-for list="{{SE.journal}}" as="j" hint-placeholder-count="6">
+<button type="button" class="rowbtn" onClick="{{j.open}}" style="display: grid; grid-template-columns: 120px 150px minmax(0, 1fr); gap: 12px; padding: 10px 16px; border-bottom: 1px solid #ECEEF2"><span class="small muted">{{j.when}}</span><span class="small" style="font-weight: 600">{{j.who}}</span><span class="small">{{j.text}}</span></button>
+</sc-for>
+<sc-if value="{{SE.journalEmpty}}" hint-placeholder-val="{{false}}"><div class="muted" style="padding: 18px">Действий за сутки нет.</div></sc-if>
+</section>
+</sc-if>
+</div>
+</sc-if>
+
+</main>
+</div>
+</div>
+
+<!-- ================= БОКОВЫЕ ПАНЕЛИ ================= -->
+<sc-if value="{{DR.open}}" hint-placeholder-val="{{false}}">
+<button class="backdrop" type="button" aria-label="Закрыть панель" onClick="{{DR.close}}"></button>
+<aside class="drawer" aria-label="Карточка" tabIndex="-1" ref="{{drawerRef}}">
+
+<sc-if value="{{DR.client}}" hint-placeholder-val="{{false}}">
+<div class="dh">
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span class="av" style="{{DC.avStyle}}">{{DC.initials}}</span>
+<div style="display: flex; flex-direction: column; gap: 4px; flex: 1 1 auto; min-width: 0">
+<h2 style="font-size: 19px; font-weight: 700">{{DC.name}}</h2>
+<span class="small muted">{{DC.city}} · {{DC.since}}</span>
+<span style="{{DC.localStyle}}">{{DC.local}}</span>
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+<sc-for list="{{DC.tags}}" as="t" hint-placeholder-count="2"><span class="tag">{{t.t}}<button type="button" aria-label="Снять тег" onClick="{{t.remove}}" style="font: inherit; border: 0; background: none; cursor: pointer; padding: 0 0 0 2px; color: #5B6170">×</button></span></sc-for>
+<input class="inp" aria-label="Новый тег" placeholder="+ тег" value="{{DC.tag}}" onChange="{{DC.onTag}}" style="width: 110px; min-height: 26px; padding: 2px 8px; font-size: 12px; border-radius: 999px">
+<sc-if value="{{DC.tag}}" hint-placeholder-val="{{false}}"><button class="btn-s" type="button" onClick="{{DC.addTag}}" style="min-height: 26px; padding: 2px 8px">Добавить</button></sc-if>
+</div>
+</div>
+<button class="ibtn" type="button" aria-label="Закрыть" onClick="{{DR.close}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<sc-if value="{{DC.canOrders}}" hint-placeholder-val="{{true}}"><button class="btn-p" type="button" onClick="{{DC.newOrder}}">+ Заказ</button><button class="btn" type="button" onClick="{{DC.giveFree}}">Выдать без оплаты</button></sc-if>
+<div style="position: relative"><button class="btn" type="button" onClick="{{DC.toggleWrite}}">Написать ▾</button>
+<sc-if value="{{DC.writeOpen}}" hint-placeholder-val="{{false}}"><div class="menu" style="left: 0; right: auto; min-width: 300px">
+<sc-for list="{{DC.writeOpts}}" as="w" hint-placeholder-count="3"><button type="button" onClick="{{w.go}}" disabled="{{w.dis}}" style="{{w.style}}"><span style="font-weight: 600">{{w.label}}</span><span class="small muted">{{w.sub}}</span></button></sc-for>
+</div></sc-if></div>
+<button class="btn" type="button" onClick="{{DC.addTask}}">+ Задача</button>
+<button class="btn" type="button" onClick="{{DC.toPlan}}">В план продаж</button>
+</div>
+<div role="tablist" style="display: flex; gap: 20px; overflow-x: auto"><sc-for list="{{DC.tabs}}" as="t" hint-placeholder-count="4"><button type="button" role="tab" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button></sc-for></div>
+</div>
+<div class="db">
+<sc-if value="{{DC.dup}}" hint-placeholder-val="{{false}}">
+<div style="padding: 12px 14px; background: #FFF6E8; border: 1px solid #F0D9AE; border-radius: 8px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between">
+<span class="small">{{DC.dupText}}</span>
+<span style="display: flex; gap: 6px"><button class="btn-s" type="button" onClick="{{DC.openDup}}">Посмотреть</button><button class="btn-s" type="button" onClick="{{DC.merge}}">Объединить сюда</button></span>
+</div>
+</sc-if>
+
+<sc-if value="{{DC.isOverview}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div class="sec" style="padding: 0; gap: 0"><div style="padding: 12px 16px; display: flex; justify-content: space-between; align-items: center"><span class="sech">Задачи и следующий контакт</span><button class="btn-s" type="button" onClick="{{DC.addTask}}">+ Задача</button></div>
+<sc-for list="{{DC.ctasks}}" as="t" hint-placeholder-count="1"><div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border-bottom: 1px solid #ECEEF2">
+<input type="checkbox" aria-label="Выполнено" checked="{{t.done}}" onChange="{{t.toggle}}" style="width: 18px; height: 18px; accent-color: #1D5A35; margin-top: 2px; cursor: pointer">
+<div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+<button class="lnk" type="button" onClick="{{t.edit}}" style="color: #171A21"><span style="{{t.titleStyle}}">{{t.title}}</span></button>
+<span style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center"><span class="tag">{{t.type}}</span><button class="lnk small" type="button" onClick="{{t.openClient}}">{{t.client}}</button><span class="small muted">· {{t.who}}</span><span style="{{t.priStyle}}">{{t.pri}}</span><sc-if value="{{t.hasAuto}}" hint-placeholder-val="{{false}}"><span class="small muted">· авто: {{t.auto}}</span></sc-if></span>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px"><span style="{{t.dueStyle}}">{{t.due}}</span><span class="small" style="color: #8A2E1C">{{t.overText}}</span><sc-if value="{{t.canPostpone}}" hint-placeholder-val="{{true}}"><button class="btn-s" type="button" onClick="{{t.postpone}}">+1 день</button></sc-if></div>
+</div></sc-for>
+<sc-if value="{{DC.noTasks}}" hint-placeholder-val="{{false}}"><div class="small muted" style="padding: 0 16px 12px">Следующий контакт не запланирован.</div></sc-if>
+</div>
+<div class="sec"><span class="sech">Контакты</span><div class="kv"><span class="muted">Почта (ГК / сайт)</span><span style="overflow-wrap: anywhere">{{DC.gk}}</span><span class="muted">Телефон</span><span>{{DC.phone}}</span><span class="muted">Telegram</span><span>{{DC.tg}}</span><span class="muted">Telegram-бот</span><span style="{{DC.botStyle}}">{{DC.bot}}</span>
+<span class="muted">WhatsApp</span><span style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">{{DC.wa}}<sc-if value="{{DC.hasWa}}" hint-placeholder-val="{{false}}"><button class="btn-s" type="button" onClick="{{DC.whatsapp}}">Написать</button></sc-if></span></div></div>
+<div class="sec">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 10px"><span class="sech">Приложение</span><span style="{{DC.appStyle}}">{{DC.appState}}</span></div>
+<sc-if value="{{DC.linked}}" hint-placeholder-val="{{true}}"><div class="kv"><span class="muted">Почта в приложении</span><span style="overflow-wrap: anywhere">{{DC.app}}</span><span class="muted">Последний вход</span><span>{{DC.seen}}</span></div></sc-if>
+<sc-if value="{{DC.notLinked}}" hint-placeholder-val="{{false}}">
+<p class="small muted">Пока аккаунт не связан, оплаты не открывают доступ в приложении. Отправьте код — клиентка введёт его в приложении. Или укажите почту, под которой она вошла.</p>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button class="btn" type="button" onClick="{{DC.sendCode}}">{{DC.codeLabel}}</button>
+<div style="display: flex; gap: 6px; flex: 1 1 260px"><input class="inp" type="email" aria-label="Почта в приложении" placeholder="почта в приложении" value="{{DC.linkEmail}}" onChange="{{DC.onLinkEmail}}"><button class="btn" type="button" onClick="{{DC.link}}">Связать</button></div>
+</div>
+</sc-if>
+</div>
+<div class="sec">
+<span class="sech">Доступ к клубу</span>
+<span style="font-weight: 500">{{DC.until}}</span>
+<sc-if value="{{DC.hasLegacy}}" hint-placeholder-val="{{false}}"><span class="small muted">{{DC.legacy}}</span></sc-if>
+<div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px"><sc-for list="{{DC.months}}" as="m" hint-placeholder-count="12"><span style="{{m.style}}">{{m.label}}</span></sc-for></div>
+<span class="small muted">Синим — оплаченные месяцы, рамкой — текущий.</span>
+<span class="small">{{DC.tgCh}} {{DC.matText}}</span>
+<sc-if value="{{DC.hasTier2}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-self: flex-start; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #E2EAFB; color: #1F3F86">{{DC.tier2}}</span></sc-if>
+<div style="border-top: 1px solid #ECEEF2; padding-top: 10px; display: flex; flex-direction: column; gap: 8px"><span class="small" style="font-weight: 600">Telegram-каналы</span>
+<sc-for list="{{DC.channels}}" as="ch" hint-placeholder-count="2"><div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap"><span class="small">{{ch.name}}</span><span style="display: flex; gap: 6px; align-items: center"><span style="{{ch.stStyle}}">{{ch.st}}</span><button class="btn-s" type="button" onClick="{{ch.toggle}}">{{ch.btn}}</button></span></div></sc-for>
+<span class="small muted">Бот принимает и убирает по оплатам сам, но вручную можно добавить или убрать любую клиентку.</span>
+<div><button class="btn-s" type="button" onClick="{{DC.resendChannel}}">Отправить ссылки на каналы ещё раз</button></div></div>
+<div class="kv"><span class="muted">Разборы</span><span>{{DC.books}}</span><span class="muted">Пакеты</span><span>{{DC.packs}}</span></div>
+</div>
+<div class="sec">
+<div style="display: flex; justify-content: space-between; align-items: center"><span class="sech">Баланс</span><span style="font-size: 18px; font-weight: 700">{{DC.bal}}</span></div>
+<sc-for list="{{DC.ops}}" as="x" hint-placeholder-count="2"><div style="display: flex; justify-content: space-between; gap: 12px"><span class="small"><span class="muted">{{x.when}} · </span>{{x.text}}</span><span style="{{x.style}}">{{x.amt}}</span></div></sc-for>
+<sc-if value="{{DC.canOrders}}" hint-placeholder-val="{{true}}">
+<div style="display: grid; grid-template-columns: 110px minmax(0, 1fr) auto auto; gap: 6px; align-items: center">
+<input class="inp" inputmode="decimal" aria-label="Сумма" placeholder="Сумма" value="{{DC.cardAmt}}" onChange="{{DC.onCardAmt}}">
+<input class="inp" aria-label="За что" placeholder="За что (акция, перезачёт…)" value="{{DC.cardText}}" onChange="{{DC.onCardText}}">
+<button class="btn-s" type="button" onClick="{{DC.topup}}">Пополнить</button>
+<button class="btn-s" type="button" onClick="{{DC.spend}}">Списать</button>
+</div>
+</sc-if>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{DC.isOrders}}" hint-placeholder-val="{{false}}">
+<div class="sec" style="padding: 0; gap: 0">
+<sc-for list="{{DC.orders}}" as="o" hint-placeholder-count="3">
+<button type="button" class="rowbtn" onClick="{{o.open}}" style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 12px 16px; border-bottom: 1px solid #ECEEF2">
+<span class="cell" style="font-weight: 600">{{o.product}}</span><span style="font-weight: 600; white-space: nowrap">{{o.amount}}</span>
+<span style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center"><span class="small muted">#{{o.id}} · {{o.date}}</span><span style="{{o.stStyle}}">{{o.st}}</span><span style="{{o.appStyle}}">{{o.app}}</span></span><span></span>
+</button>
+</sc-for>
+<sc-if value="{{DC.noOrders}}" hint-placeholder-val="{{false}}"><div class="muted" style="padding: 16px">Заказов нет.</div></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{DC.isHist}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column">
+<sc-for list="{{DC.hist}}" as="h" hint-placeholder-count="5"><div style="display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; padding: 9px 0; border-bottom: 1px solid #ECEEF2"><span class="small muted">{{h.when}}</span><span class="small"><b>{{h.who}}</b> · {{h.text}}</span></div></sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{DC.isComments}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; gap: 6px"><input class="inp" aria-label="Новый комментарий" placeholder="Подарок, депозит, договорённость… Enter — сохранить" value="{{DC.comment}}" onChange="{{DC.onComment}}" onKeyDown="{{DC.onCommentKey}}"><button class="btn" type="button" onClick="{{DC.addComment}}">Добавить</button></div>
+<sc-for list="{{DC.comments}}" as="m" hint-placeholder-count="2"><div style="background: #FAFAF7; border: 1px solid #EEEDE6; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px"><span class="small muted">{{m.who}} · {{m.when}}</span><span>{{m.text}}</span></div></sc-for>
+<sc-if value="{{DC.noComments}}" hint-placeholder-val="{{false}}"><p class="small muted">Комментариев пока нет.</p></sc-if>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{DR.order}}" hint-placeholder-val="{{false}}">
+<div class="dh" style="padding-bottom: 14px">
+<div style="display: flex; gap: 12px; align-items: flex-start; justify-content: space-between">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; gap: 10px; align-items: center"><h2 style="font-size: 19px; font-weight: 700">Заказ #{{DO.id}}</h2><span style="{{DO.stStyle}}">{{DO.st}}</span></div>
+<span class="small muted">Создан {{DO.created}} · {{DO.src}}</span>
+</div>
+<button class="ibtn" type="button" aria-label="Закрыть" onClick="{{DR.close}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+</div>
+<sc-if value="{{DO.canResend}}" hint-placeholder-val="{{false}}"><div><button class="btn" type="button" onClick="{{DO.resend}}">Отправить письмо после оплаты ещё раз</button></div></sc-if>
+<sc-if value="{{DO.unpaid}}" hint-placeholder-val="{{true}}"><div style="display: flex; flex-wrap: wrap; gap: 8px"><button class="btn" type="button" onClick="{{DO.copy}}">Скопировать ссылку на оплату</button><button class="btn" type="button" onClick="{{DO.mail}}">Отправить на почту</button><sc-if value="{{DO.canFake}}" hint-placeholder-val="{{true}}"><button class="btn-d" type="button" onClick="{{DO.askFake}}" style="min-height: 38px">Пометить ложным…</button></sc-if></div></sc-if>
+<sc-if value="{{DO.fakeAsk}}" hint-placeholder-val="{{false}}"><div style="padding: 12px 14px; background: #FDF3F0; border: 1px solid #F2D3CA; border-radius: 8px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between"><span class="small">Пометить заказ #{{DO.id}} ложным? Он уйдёт из неоплаченных.</span><span style="display: flex; gap: 6px"><button class="btn-d" type="button" onClick="{{DO.fake}}">Да, ложный</button><button class="btn-s" type="button" onClick="{{DO.cancelFake}}">Отмена</button></span></div></sc-if>
+<sc-if value="{{DO.canEdit}}" hint-placeholder-val="{{false}}"><div><button class="btn" type="button" onClick="{{DO.startEdit}}">Изменить заказ</button></div></sc-if>
+<sc-if value="{{DO.canRestore}}" hint-placeholder-val="{{false}}"><div><button class="btn" type="button" onClick="{{DO.restore}}">Вернуть в работу</button></div></sc-if>
+<sc-if value="{{DO.editing}}" hint-placeholder-val="{{false}}"><div style="padding: 12px 14px; background: #FFF6E8; border: 1px solid #F0D9AE; border-radius: 8px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between"><span class="small">Режим правки: можно сменить позицию и цену, удалить ошибочный платёж. Все изменения попадут в историю.</span><button class="btn-p" type="button" onClick="{{DO.endEdit}}">Готово</button></div></sc-if>
+</div>
+<div class="db">
+<div class="sec">
+<div class="kv">
+<span class="muted">Клиент</span><span><button class="lnk" type="button" onClick="{{DO.openClient}}">{{DO.client}}</button></span>
+<sc-if value="{{DO.gift}}" hint-placeholder-val="{{false}}"><span class="muted">Подарок для</span></sc-if><sc-if value="{{DO.gift}}" hint-placeholder-val="{{false}}"><span>{{DO.giftText}}</span></sc-if>
+<span class="muted">Оплата</span><span>{{DO.method}}</span>
+<span class="muted">Срок оплаты</span><span>{{DO.deadline}} <span class="small muted">{{DO.reminder}}</span></span>
+<span class="muted">Менеджер</span><span><select class="inp" aria-label="Менеджер" value="{{DO.manager}}" onChange="{{DO.onManager}}" style="max-width: 260px"><sc-for list="{{DO.mgrOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></span>
+<span class="muted">Теги</span><span>{{DO.tags}}</span>
+<sc-if value="{{DO.hasNote}}" hint-placeholder-val="{{false}}"><span class="muted">Заметка</span></sc-if><sc-if value="{{DO.hasNote}}" hint-placeholder-val="{{false}}"><span>{{DO.note}}</span></sc-if>
+</div>
+</div>
+<div class="sec">
+<span class="sech">Позиция</span>
+<select class="inp" aria-label="Позиция" value="{{DO.product}}" onChange="{{DO.onProduct}}" disabled="{{DO.locked}}"><sc-for list="{{DO.productOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.label}}</option></sc-for></select>
+<span class="small muted">В приложении: {{DO.grant}}</span>
+<sc-if value="{{DO.editable}}" hint-placeholder-val="{{true}}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px">
+<div style="display: flex; gap: 6px"><input class="inp" inputmode="decimal" aria-label="Цена" value="{{DO.price}}" onChange="{{DO.onPrice}}"><button class="btn-s" type="button" onClick="{{DO.savePrice}}">Сохранить цену</button></div>
+<div style="display: flex; gap: 6px"><input class="inp" aria-label="Промокод" placeholder="Промокод" value="{{DO.promo}}" onChange="{{DO.onPromo}}"><button class="btn-s" type="button" onClick="{{DO.applyPromo}}">Применить</button></div>
+</div>
+</sc-if>
+<sc-if value="{{DO.locked}}" hint-placeholder-val="{{false}}"><span class="small muted">Позицию и цену нельзя менять после первого платежа.</span></sc-if>
+<div style="display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; padding-top: 6px; border-top: 1px solid #ECEEF2">
+<span class="muted">Сумма</span><span>{{DO.sum}}</span>
+<sc-if value="{{DO.hasDisc}}" hint-placeholder-val="{{false}}"><span class="muted">Скидка</span></sc-if><sc-if value="{{DO.hasDisc}}" hint-placeholder-val="{{false}}"><span style="color: #1D5A35">{{DO.disc}}</span></sc-if>
+<span style="font-weight: 600">Итого</span><span style="font-weight: 600">{{DO.total}}</span>
+<span class="muted">Оплачено</span><span>{{DO.paid}}</span>
+<sc-if value="{{DO.hasLeft}}" hint-placeholder-val="{{false}}"><span style="font-weight: 600; color: #7A4A0B">Осталось</span></sc-if><sc-if value="{{DO.hasLeft}}" hint-placeholder-val="{{false}}"><span style="font-weight: 600; color: #7A4A0B">{{DO.left}}</span></sc-if>
+</div>
+</div>
+<div class="sec">
+<span class="sech">Платежи</span>
+<sc-for list="{{DO.pays}}" as="p" hint-placeholder-count="1"><div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap"><span>{{p.method}}<span class="small muted">{{p.extra}} · {{p.when}}</span></span><span style="display: flex; gap: 8px; align-items: center"><sc-if value="{{p.canRemove}}" hint-placeholder-val="{{false}}"><button class="btn-d" type="button" onClick="{{p.remove}}">Удалить</button></sc-if><sc-if value="{{p.waiting}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #E2EAFB; color: #1F3F86">ждёт подтверждения Анны</span></sc-if><sc-if value="{{p.canConfirm}}" hint-placeholder-val="{{false}}"><button class="btn-s" type="button" onClick="{{p.confirm}}" style="border-color: #1D5A35; color: #1D5A35">Деньги пришли</button></sc-if><span style="font-weight: 600">{{p.amt}}</span></span></div></sc-for>
+<sc-if value="{{DO.noPays}}" hint-placeholder-val="{{false}}"><span class="small muted">Платежей ещё не было.</span></sc-if>
+<sc-if value="{{DO.canPay}}" hint-placeholder-val="{{true}}">
+<div style="display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; gap: 6px; align-items: center; padding-top: 8px; border-top: 1px solid #ECEEF2">
+<input class="inp" inputmode="decimal" aria-label="Сумма платежа" value="{{DO.payAmt}}" onChange="{{DO.onPayAmt}}">
+<select class="inp" aria-label="Способ" value="{{DO.payMethod}}" onChange="{{DO.onPayMethod}}"><sc-for list="{{DO.payMethods}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.label}}</option></sc-for></select>
+<button class="btn-p" type="button" onClick="{{DO.addPay}}">Добавить платёж</button>
+</div>
+<sc-if value="{{DO.isTransfer}}" hint-placeholder-val="{{true}}"><div style="display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 6px"><select class="inp" aria-label="На какую карту" value="{{DO.payAcc}}" onChange="{{DO.onPayAcc}}"><sc-for list="{{DO.accOpts}}" as="o" hint-placeholder-count="2"><option value="{{o.v}}">{{o.label}}</option></sc-for></select><input class="inp" aria-label="Примечание" placeholder="Примечание: «Анна подтвердила в чате»" value="{{DO.payNote}}" onChange="{{DO.onPayNote}}"></div><span class="small muted">{{DO.confirmNote}}</span></sc-if>
+<span class="small muted">Можно частями: заказ станет «Оплачен», когда сумма платежей дойдёт до итога. Доступ откроется в этот момент.</span>
+</sc-if>
+</div>
+<div class="sec"><div style="display: flex; justify-content: space-between; align-items: center; gap: 10px"><span class="sech">В приложении</span><span style="{{DO.appStyle}}">{{DO.app}}</span></div></div>
+<sc-if value="{{DO.isRefund}}" hint-placeholder-val="{{false}}"><div class="sec" style="background: #FDF3F0; border-color: #F2D3CA"><span class="sech">Возврат</span><span class="small">{{DO.refundText}}</span></div></sc-if>
+<sc-if value="{{DO.canRefund}}" hint-placeholder-val="{{false}}">
+<div class="sec">
+<span class="sech">Возврат или перезачёт</span>
+<sc-if value="{{DO.refundAllowed}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; gap: 6px; flex-wrap: wrap"><sc-for list="{{DO.refModes}}" as="m" hint-placeholder-count="2"><button type="button" onClick="{{m.pick}}" style="{{m.style}}">{{m.label}}</button></sc-for></div>
+<div style="display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; gap: 6px; align-items: center">
+<input class="inp" inputmode="decimal" aria-label="Сумма" value="{{DO.refAmt}}" onChange="{{DO.onRefAmt}}">
+<input class="inp" aria-label="Причина" placeholder="Причина (обязательно)" value="{{DO.refReason}}" onChange="{{DO.onRefReason}}">
+<button class="btn-d" type="button" onClick="{{DO.doRefund}}" style="min-height: 38px">Оформить</button>
+</div>
+<span class="small muted">Доступ по заказу закроется. Перезачёт кладёт сумму на баланс клиентки.</span>
+</sc-if>
+<sc-if value="{{DO.noRefundRight}}" hint-placeholder-val="{{false}}"><span class="small muted">Возвраты оформляют владелец и администратор.</span></sc-if>
+</div>
+</sc-if>
+<div class="sec">
+<span class="sech">Комментарии к заказу</span>
+<div style="display: flex; gap: 6px"><input class="inp" aria-label="Комментарий к заказу" placeholder="Нестандартная оплата, договорённость… Enter — сохранить" value="{{DO.ocomment}}" onChange="{{DO.onOcomment}}" onKeyDown="{{DO.onOcommentKey}}"><button class="btn" type="button" onClick="{{DO.addComment}}">Добавить</button></div>
+<sc-for list="{{DO.comments}}" as="m" hint-placeholder-count="1"><div style="background: #FAFAF7; border: 1px solid #EEEDE6; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px"><span class="small muted">{{m.who}} · {{m.when}}</span><span>{{m.text}}</span></div></sc-for>
+<sc-if value="{{DO.noComments}}" hint-placeholder-val="{{false}}"><span class="small muted">Комментариев нет.</span></sc-if>
+</div>
+<div class="sec">
+<span class="sech">История</span>
+<sc-for list="{{DO.hist}}" as="h" hint-placeholder-count="3"><div style="display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px"><span class="small muted">{{h.when}}</span><span class="small"><b>{{h.who}}</b> · {{h.text}}</span></div></sc-for>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{DR.newo}}" hint-placeholder-val="{{false}}">
+<div class="dh" style="padding-bottom: 14px"><div style="display: flex; justify-content: space-between; align-items: center"><h2 style="font-size: 19px; font-weight: 700">Новый заказ</h2><button class="ibtn" type="button" aria-label="Закрыть" onClick="{{DR.close}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div></div>
+<div class="db">
+<div class="sec">
+<span class="sech">Клиент</span>
+<sc-if value="{{DN.hasClient}}" hint-placeholder-val="{{false}}"><div style="display: flex; justify-content: space-between; gap: 10px; align-items: center"><span style="display: flex; flex-direction: column"><span style="font-weight: 600">{{DN.clientName}}</span><span class="small muted">{{DN.clientSub}}</span></span><button class="btn-s" type="button" onClick="{{DN.clearClient}}">Изменить</button></div></sc-if>
+<sc-if value="{{DN.noClient}}" hint-placeholder-val="{{true}}">
+<input class="inp" type="search" aria-label="Найти клиентку" placeholder="Имя, почта, телефон или @ник" value="{{DN.cq}}" onChange="{{DN.onCq}}">
+<sc-for list="{{DN.found}}" as="c" hint-placeholder-count="3"><button type="button" onClick="{{c.pick}}" style="font: inherit; color: #171A21; text-align: left; border: 1px solid #ECEEF2; background: #FFFFFF; border-radius: 8px; padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column"><span style="font-weight: 600">{{c.name}}</span><span class="small muted">{{c.sub}}</span></button></sc-for>
+</sc-if>
+<label style="display: flex; gap: 10px; align-items: center; cursor: pointer"><input type="checkbox" checked="{{DN.gift}}" onChange="{{DN.toggleGift}}" style="width: 16px; height: 16px; accent-color: #2453A6"><span>Подарок другому человеку — платит эта клиентка, доступ получает другая</span></label>
+<sc-if value="{{DN.gift}}" hint-placeholder-val="{{false}}"><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px"><input class="inp" aria-label="Имя получательницы" placeholder="Имя получательницы" value="{{DN.giftName}}" onChange="{{DN.onGiftName}}"><input class="inp" type="email" aria-label="Почта получательницы" placeholder="Почта получательницы" value="{{DN.giftEmail}}" onChange="{{DN.onGiftEmail}}"></div></sc-if>
+</div>
+<div class="sec">
+<span class="sech">Позиция</span>
+<select class="inp" aria-label="Позиция" value="{{DN.p}}" onChange="{{DN.onProduct}}"><sc-for list="{{DN.productOpts}}" as="o" hint-placeholder-count="6"><option value="{{o.v}}">{{o.label}}</option></sc-for></select>
+<span class="small muted">В приложении: {{DN.grant}}</span>
+<sc-if value="{{DN.hasAsk}}" hint-placeholder-val="{{false}}"><span class="small" style="color: #1F3F86">? {{DN.ask}}</span></sc-if>
+<sc-if value="{{DN.notFree}}" hint-placeholder-val="{{true}}">
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 8px">
+<div><label class="lbl" for="nprice">Цена</label><input id="nprice" class="inp" inputmode="decimal" value="{{DN.price}}" onChange="{{DN.onPrice}}"></div>
+<div><label class="lbl" for="ncur">Валюта</label><select id="ncur" class="inp" value="{{DN.cur}}" onChange="{{DN.onCur}}"><sc-for list="{{DN.curOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div>
+</div>
+<div style="display: flex; gap: 6px"><input class="inp" aria-label="Промокод" placeholder="Промокод" value="{{DN.promo}}" onChange="{{DN.onPromo}}"><button class="btn" type="button" onClick="{{DN.applyPromo}}">Применить</button></div>
+<sc-if value="{{DN.hasPromoMsg}}" hint-placeholder-val="{{false}}"><span class="small" style="color: #1F3F86">{{DN.promoMsg}}</span></sc-if>
+</sc-if>
+</div>
+<div class="sec">
+<span class="sech">Как оплачивает</span>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px"><sc-for list="{{DN.methods}}" as="m" hint-placeholder-count="4"><button type="button" onClick="{{m.pick}}" style="{{m.style}}"><span style="font-weight: 600">{{m.label}}</span><span class="small muted">{{m.hint}}</span></button></sc-for></div>
+<sc-if value="{{DN.isLink}}" hint-placeholder-val="{{true}}"><div style="display: flex; gap: 8px; align-items: center"><label class="small muted" for="ndays">Срок оплаты</label><select id="ndays" class="inp" value="{{DN.days}}" onChange="{{DN.onDays}}" style="width: auto"><sc-for list="{{DN.dayOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div></sc-if>
+<sc-if value="{{DN.isManual}}" hint-placeholder-val="{{false}}"><div style="display: flex; flex-direction: column; gap: 6px"><div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"><label class="small muted" for="npm">Способ</label><select id="npm" class="inp" value="{{DN.payMethod}}" onChange="{{DN.onPayMethod}}" style="width: auto"><sc-for list="{{DN.payOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.label}}</option></sc-for></select><sc-if value="{{DN.isTransfer}}" hint-placeholder-val="{{true}}"><select class="inp" aria-label="На какую карту" value="{{DN.payAcc}}" onChange="{{DN.onPayAcc}}" style="width: auto"><sc-for list="{{DN.accOpts}}" as="o" hint-placeholder-count="2"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></sc-if></div><input class="inp" aria-label="Примечание" placeholder="Примечание: «Анна подтвердила в чате»" value="{{DN.payNote}}" onChange="{{DN.onPayNote}}"></div></sc-if>
+<sc-if value="{{DN.isCard}}" hint-placeholder-val="{{false}}"><span style="{{DN.cardInfoStyle}}">{{DN.cardInfo}}</span></sc-if>
+<sc-if value="{{DN.isFree}}" hint-placeholder-val="{{false}}"><input class="inp" aria-label="Причина" placeholder="Причина (обязательно): розыгрыш, подарок, перезачёт…" value="{{DN.reason}}" onChange="{{DN.onReason}}"></sc-if>
+<div style="display: flex; gap: 8px; align-items: center"><label class="small muted" for="nmgr">Менеджер</label><select id="nmgr" class="inp" value="{{DN.manager}}" onChange="{{DN.onManager}}" style="width: auto"><sc-for list="{{DN.mgrOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div>
+</div>
+<div class="sec" style="background: #F7F9FC; border-color: #D9E1EE">
+<span class="sech">Итог</span>
+<div class="kv"><sc-for list="{{DN.sum}}" as="x" hint-placeholder-count="5"><span class="muted">{{x.k}}</span><span>{{x.v}}</span></sc-for></div>
+<div><button class="btn-p" type="button" onClick="{{DN.create}}">{{DN.createLabel}}</button></div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{DR.product}}" hint-placeholder-val="{{false}}">
+<div class="dh" style="padding-bottom: 14px"><div style="display: flex; justify-content: space-between; align-items: center"><h2 style="font-size: 19px; font-weight: 700">{{DP.title}}</h2><button class="ibtn" type="button" aria-label="Закрыть" onClick="{{DR.close}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div>
+<sc-if value="{{DP.readOnly}}" hint-placeholder-val="{{false}}"><span class="small" style="color: #7A4A0B">Просмотр: менять продукты и цены может администратор или маркетинг.</span></sc-if></div>
+<div class="db">
+<div class="sec">
+<div><label class="lbl" for="pn">Название</label><input id="pn" class="inp" value="{{DP.name}}" onChange="{{DP.onName}}" disabled="{{DP.disabled}}"></div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 100px minmax(0, 1fr); gap: 8px">
+<div><label class="lbl" for="pp">Цена</label><input id="pp" class="inp" inputmode="decimal" placeholder="пусто — по договорённости" value="{{DP.price}}" onChange="{{DP.onPrice}}" disabled="{{DP.disabled}}"></div>
+<div><label class="lbl" for="pcur">Валюта</label><select id="pcur" class="inp" value="{{DP.cur}}" onChange="{{DP.onCur}}" disabled="{{DP.disabled}}"><sc-for list="{{DP.curOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div>
+<div><label class="lbl" for="pterm">Срок</label><input id="pterm" class="inp" value="{{DP.term}}" onChange="{{DP.onTerm}}" disabled="{{DP.disabled}}"></div>
+</div>
+<div><label class="lbl" for="pcat">Раздел</label><select id="pcat" class="inp" value="{{DP.cat}}" onChange="{{DP.onCat}}" disabled="{{DP.disabled}}"><sc-for list="{{DP.catOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div>
+<label style="display: flex; gap: 10px; align-items: center; cursor: pointer"><input type="checkbox" checked="{{DP.active}}" onChange="{{DP.onActive}}" disabled="{{DP.disabled}}" style="width: 16px; height: 16px; accent-color: #2453A6"><span>Продаётся</span></label>
+</div>
+<div class="sec">
+<span class="sech">Что открывает в приложении</span>
+<select class="inp" aria-label="Что открывает" value="{{DP.grant}}" onChange="{{DP.onGrant}}" disabled="{{DP.disabled}}"><sc-for list="{{DP.grantOpts}}" as="o" hint-placeholder-count="8"><option value="{{o.v}}">{{o.label}}</option></sc-for></select>
+<sc-if value="{{DP.isMonths}}" hint-placeholder-val="{{false}}"><span class="small muted">Месяцы: {{DP.monthsText}}</span></sc-if>
+<sc-if value="{{DP.isBook}}" hint-placeholder-val="{{false}}"><div style="display: flex; flex-direction: column; gap: 4px"><span class="small muted">Разборы из приложения — список обновляется сам. Можно отметить несколько.</span><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 2px 12px"><sc-for list="{{DP.bookOpts}}" as="b" hint-placeholder-count="6"><label style="display: flex; gap: 8px; align-items: center; padding: 5px 0; cursor: pointer"><input type="checkbox" checked="{{b.on}}" onChange="{{b.toggle}}" disabled="{{DP.disabled}}" style="width: 16px; height: 16px; accent-color: #2453A6"><span>{{b.label}}</span></label></sc-for></div></div></sc-if>
+<sc-if value="{{DP.isClubGrant}}" hint-placeholder-val="{{false}}"><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px">
+<div><label class="lbl" for="pmat">Материалы месяца</label><select id="pmat" class="inp" value="{{DP.mat}}" onChange="{{DP.onMat}}" disabled="{{DP.disabled}}"><option value="no">На время доступа</option><option value="yes">Навсегда</option></select></div>
+<div><label class="lbl" for="pchat">Чат месяца</label><select id="pchat" class="inp" value="{{DP.chat}}" onChange="{{DP.onChat}}" disabled="{{DP.disabled}}"><option value="no">Закрывается после доступа</option><option value="yes">Остаётся</option></select></div>
+</div></sc-if>
+<sc-if value="{{DP.showTerm}}" hint-placeholder-val="{{false}}"><div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 160px); gap: 8px; align-items: end">
+<div><label class="lbl" for="pterm2">Срок доступа</label><select id="pterm2" class="inp" value="{{DP.termMode}}" onChange="{{DP.onTermMode}}" disabled="{{DP.disabled}}"><sc-for list="{{DP.termOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div>
+<sc-if value="{{DP.isTermMonths}}" hint-placeholder-val="{{false}}"><div><label class="lbl" for="ptn">Месяцев</label><input id="ptn" class="inp" inputmode="numeric" value="{{DP.termN}}" onChange="{{DP.onTermN}}" disabled="{{DP.disabled}}"></div></sc-if>
+<sc-if value="{{DP.isTermDate}}" hint-placeholder-val="{{false}}"><div><label class="lbl" for="ptd">До даты</label><input id="ptd" class="inp" type="date" value="{{DP.termDate}}" onChange="{{DP.onTermDate}}" disabled="{{DP.disabled}}"></div></sc-if>
+</div></sc-if>
+<label style="display: flex; gap: 10px; align-items: center; cursor: pointer"><input type="checkbox" checked="{{DP.accessOnFirst}}" onChange="{{DP.onAccessOnFirst}}" disabled="{{DP.disabled}}" style="width: 16px; height: 16px; accent-color: #2453A6"><span>Рассрочка: открывать доступ после первого платежа</span></label>
+<sc-if value="{{DP.isPack}}" hint-placeholder-val="{{false}}"><input class="inp" aria-label="Пакет" placeholder="Какой пакет" value="{{DP.pack}}" onChange="{{DP.onPack}}" disabled="{{DP.disabled}}"></sc-if>
+<sc-if value="{{DP.isDeposit}}" hint-placeholder-val="{{false}}"><input class="inp" inputmode="decimal" aria-label="Сумма депозита" placeholder="Сумма на карту, BYN" value="{{DP.deposit}}" onChange="{{DP.onDeposit}}" disabled="{{DP.disabled}}"></sc-if>
+<div><label class="lbl" for="pask">Вопрос к команде (если что-то не решено)</label><input id="pask" class="inp" value="{{DP.ask}}" onChange="{{DP.onAsk}}" disabled="{{DP.disabled}}"></div>
+</div>
+<div class="sec">
+<span class="sech">Продажа</span>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px">
+<div><label class="lbl" for="pasc">ID в App Store</label><input id="pasc" class="inp" placeholder="нет в сторе" value="{{DP.asc}}" onChange="{{DP.onAsc}}" disabled="{{DP.disabled}}"></div>
+<div><label class="lbl" for="pgp">ID в Google Play</label><input id="pgp" class="inp" placeholder="нет в сторе" value="{{DP.gp}}" onChange="{{DP.onGp}}" disabled="{{DP.disabled}}"></div>
+</div>
+<div><label class="lbl" for="pslug">Адрес страницы оплаты</label><input id="pslug" class="inp" value="{{DP.slug}}" onChange="{{DP.onSlug}}" disabled="{{DP.disabled}}"><span class="small muted" style="display: block; margin-top: 6px">{{DP.url}}</span></div>
+<div><label class="lbl" for="ptg">Ссылка на Telegram-канал (уходит в письме после оплаты)</label><input id="ptg" class="inp" placeholder="t.me/+…" value="{{DP.tgLink}}" onChange="{{DP.onTgLink}}" disabled="{{DP.disabled}}"></div>
+<div><label class="lbl" for="plet">Письмо после оплаты</label><textarea id="plet" class="inp" rows="4" value="{{DP.letter}}" onChange="{{DP.onLetter}}" disabled="{{DP.disabled}}" style="resize: vertical"></textarea></div>
+</div>
+<sc-if value="{{DP.canEdit}}" hint-placeholder-val="{{true}}"><div style="display: flex; gap: 8px"><button class="btn-p" type="button" onClick="{{DP.save}}">Сохранить</button><button class="btn" type="button" onClick="{{DR.close}}">Отмена</button></div></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{DR.task}}" hint-placeholder-val="{{false}}">
+<div class="dh" style="padding-bottom: 14px"><div style="display: flex; justify-content: space-between; align-items: center"><h2 style="font-size: 19px; font-weight: 700">Задача</h2><button class="ibtn" type="button" aria-label="Закрыть" onClick="{{DR.close}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div></div>
+<div class="db">
+<div class="sec">
+<div style="display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 8px"><div><label class="lbl" for="tkt">Тип</label><select id="tkt" class="inp" value="{{DT.type}}" onChange="{{DT.onType}}"><sc-for list="{{DT.typeOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div>
+<div><label class="lbl" for="tkn">Что сделать</label><input id="tkn" class="inp" placeholder="Позвонить, предложить Зимний сезон" value="{{DT.title}}" onChange="{{DT.onTitle}}"></div></div>
+</div>
+<div class="sec"><span class="sech">Клиент</span>
+<sc-if value="{{DT.hasClient}}" hint-placeholder-val="{{false}}"><div style="display: flex; justify-content: space-between; gap: 10px; align-items: center"><span style="display: flex; flex-direction: column"><span style="font-weight: 600">{{DT.clientName}}</span><span class="small muted">{{DT.clientSub}}</span></span><button class="btn-s" type="button" onClick="{{DT.clearClient}}">Изменить</button></div></sc-if>
+<sc-if value="{{DT.noClient}}" hint-placeholder-val="{{true}}"><input class="inp" type="search" aria-label="Найти клиентку" placeholder="Имя, почта, телефон или @ник" value="{{DT.cq}}" onChange="{{DT.onCq}}">
+<sc-for list="{{DT.found}}" as="c" hint-placeholder-count="3"><button type="button" onClick="{{c.pick}}" style="font: inherit; color: #171A21; text-align: left; border: 1px solid #ECEEF2; background: #FFFFFF; border-radius: 8px; padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column"><span style="font-weight: 600">{{c.name}}</span><span class="small muted">{{c.sub}}</span></button></sc-for></sc-if>
+</div>
+<div class="sec"><span class="sech">Когда и кто</span>
+<div style="display: flex; gap: 6px; flex-wrap: wrap"><sc-for list="{{DT.quick}}" as="q" hint-placeholder-count="4"><button class="btn-s" type="button" onClick="{{q.pick}}">{{q.label}}</button></sc-for></div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px">
+<div><label class="lbl" for="tkd">Дата</label><input id="tkd" class="inp" type="date" value="{{DT.date}}" onChange="{{DT.onDate}}"></div>
+<div><label class="lbl" for="tktm">Время</label><input id="tktm" class="inp" type="time" value="{{DT.time}}" onChange="{{DT.onTime}}"></div>
+<div><label class="lbl" for="tkp">Приоритет</label><select id="tkp" class="inp" value="{{DT.pri}}" onChange="{{DT.onPri}}"><sc-for list="{{DT.priOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div>
+<div><label class="lbl" for="tkw">Ответственный</label><select id="tkw" class="inp" value="{{DT.who}}" onChange="{{DT.onWho}}"><sc-for list="{{DT.whoOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div>
+</div>
+<span class="small muted">Если задача просрочится, ответственный получит уведомление.</span>
+</div>
+<div><button class="btn-p" type="button" onClick="{{DT.save}}">Сохранить задачу</button></div>
+</div>
+</sc-if>
+
+<sc-if value="{{DR.seg}}" hint-placeholder-val="{{false}}">
+<div class="dh" style="padding-bottom: 14px"><div style="display: flex; justify-content: space-between; align-items: center"><h2 style="font-size: 19px; font-weight: 700">Новый сегмент</h2><button class="ibtn" type="button" aria-label="Закрыть" onClick="{{DR.close}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div></div>
+<div class="db">
+<div class="sec"><div><label class="lbl" for="sgn">Название сегмента</label><input id="sgn" class="inp" placeholder="Например: Не покупали разборы полгода" value="{{DS.name}}" onChange="{{DS.onName}}"></div><span class="small muted">Сегмент обновляется сам: новые клиентки попадают в него автоматически. Его можно выбрать в «Клиентах» и в рассылках.</span></div>
+<div class="sec">
+<span class="sech">Кому</span>
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><span class="small muted" style="align-self: center">Быстро:</span><sc-for list="{{SB.presets}}" as="pr" hint-placeholder-count="6"><button class="btn-s" type="button" onClick="{{pr.pick}}">{{pr.label}}</button></sc-for></div>
+<sc-for list="{{SB.conds}}" as="k" hint-placeholder-count="1">
+<sc-if value="{{k.notFirst}}" hint-placeholder-val="{{false}}"><div style="display: flex; gap: 4px; align-items: center"><button type="button" onClick="{{k.setAnd}}" style="{{k.andStyle}}">И</button><button type="button" onClick="{{k.setOr}}" style="{{k.orStyle}}">ИЛИ</button></div></sc-if>
+<div style="display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.2fr) auto; gap: 6px; align-items: center">
+<button type="button" onClick="{{k.toggleNot}}" style="{{k.notStyle}}" aria-label="Отрицание условия">НЕ</button>
+<select class="inp" aria-label="Условие" value="{{k.field}}" onChange="{{k.onField}}"><sc-for list="{{k.fieldOpts}}" as="o" hint-placeholder-count="6"><option value="{{o.v}}">{{o.label}}</option></sc-for></select>
+<sc-if value="{{k.hasVal}}" hint-placeholder-val="{{true}}"><select class="inp" aria-label="Значение" value="{{k.val}}" onChange="{{k.onVal}}"><sc-for list="{{k.valOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></sc-if>
+<sc-if value="{{k.noVal}}" hint-placeholder-val="{{false}}"><span></span></sc-if>
+<button class="ibtn" type="button" aria-label="Убрать условие" onClick="{{k.remove}}" style="width: 34px; height: 34px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+</div>
+</sc-for>
+<sc-if value="{{SB.noConds}}" hint-placeholder-val="{{false}}"><span class="small muted">Без условий — вся база.</span></sc-if>
+<div><button class="btn-s" type="button" onClick="{{SB.addCond}}">+ Условие</button></div>
+<div style="padding: 10px 12px; background: #F7F9FC; border: 1px solid #D9E1EE; border-radius: 8px; display: flex; flex-direction: column; gap: 4px"><span class="small muted">Сегмент</span><span class="small" style="font-weight: 600">{{SB.summary}}</span><span class="small">{{SB.countText}}</span></div>
+<span class="small muted">«НЕ» переворачивает условие: «НЕ покупала из раздела: Разборы». Условия через «И» должны выполняться вместе, «ИЛИ» — любое из групп.</span>
+</div>
+<div><button class="btn-p" type="button" onClick="{{DS.save}}">Сохранить сегмент</button></div>
+</div>
+</sc-if>
+
+<sc-if value="{{DR.camp}}" hint-placeholder-val="{{false}}">
+<div class="dh" style="padding-bottom: 14px"><div style="display: flex; justify-content: space-between; align-items: center"><h2 style="font-size: 19px; font-weight: 700">Новая рассылка</h2><button class="ibtn" type="button" aria-label="Закрыть" onClick="{{DR.close}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div></div>
+<div class="db">
+<div class="sec">
+<div><label class="lbl" for="mn">Название (видите только вы)</label><input id="mn" class="inp" value="{{DM.name}}" onChange="{{DM.onName}}"></div>
+</div>
+<div class="sec">
+<span class="sech">Кому</span>
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><span class="small muted" style="align-self: center">Быстро:</span><sc-for list="{{SB.presets}}" as="pr" hint-placeholder-count="6"><button class="btn-s" type="button" onClick="{{pr.pick}}">{{pr.label}}</button></sc-for></div>
+<sc-for list="{{SB.conds}}" as="k" hint-placeholder-count="1">
+<sc-if value="{{k.notFirst}}" hint-placeholder-val="{{false}}"><div style="display: flex; gap: 4px; align-items: center"><button type="button" onClick="{{k.setAnd}}" style="{{k.andStyle}}">И</button><button type="button" onClick="{{k.setOr}}" style="{{k.orStyle}}">ИЛИ</button></div></sc-if>
+<div style="display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.2fr) auto; gap: 6px; align-items: center">
+<button type="button" onClick="{{k.toggleNot}}" style="{{k.notStyle}}" aria-label="Отрицание условия">НЕ</button>
+<select class="inp" aria-label="Условие" value="{{k.field}}" onChange="{{k.onField}}"><sc-for list="{{k.fieldOpts}}" as="o" hint-placeholder-count="6"><option value="{{o.v}}">{{o.label}}</option></sc-for></select>
+<sc-if value="{{k.hasVal}}" hint-placeholder-val="{{true}}"><select class="inp" aria-label="Значение" value="{{k.val}}" onChange="{{k.onVal}}"><sc-for list="{{k.valOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></sc-if>
+<sc-if value="{{k.noVal}}" hint-placeholder-val="{{false}}"><span></span></sc-if>
+<button class="ibtn" type="button" aria-label="Убрать условие" onClick="{{k.remove}}" style="width: 34px; height: 34px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+</div>
+</sc-for>
+<sc-if value="{{SB.noConds}}" hint-placeholder-val="{{false}}"><span class="small muted">Без условий — вся база.</span></sc-if>
+<div><button class="btn-s" type="button" onClick="{{SB.addCond}}">+ Условие</button></div>
+<div style="padding: 10px 12px; background: #F7F9FC; border: 1px solid #D9E1EE; border-radius: 8px; display: flex; flex-direction: column; gap: 4px"><span class="small muted">Сегмент</span><span class="small" style="font-weight: 600">{{SB.summary}}</span><span class="small">{{SB.countText}}</span></div>
+<span class="small muted">«НЕ» переворачивает условие: «НЕ покупала из раздела: Разборы». Условия через «И» должны выполняться вместе, «ИЛИ» — любое из групп.</span>
+<div><label class="lbl" for="mch">Канал</label><select id="mch" class="inp" value="{{DM.ch}}" onChange="{{DM.onCh}}" style="max-width: 260px"><sc-for list="{{DM.chOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.label}}</option></sc-for></select></div>
+<span class="small" style="font-weight: 600">{{DM.matchedText}}</span>
+<div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap"><input class="inp" aria-label="Название сегмента" placeholder="Сохранить эти условия как сегмент: название" value="{{DM.segName}}" onChange="{{DM.onSegName}}" style="flex: 1 1 220px"><button class="btn-s" type="button" onClick="{{DM.saveSeg}}">Сохранить сегмент</button></div>
+</div>
+<div class="sec">
+<sc-if value="{{DM.needSubject}}" hint-placeholder-val="{{true}}"><div><label class="lbl" for="msub">Тема письма</label><input id="msub" class="inp" value="{{DM.subject}}" onChange="{{DM.onSubject}}"></div></sc-if>
+<div style="display: flex; gap: 6px; flex-wrap: wrap"><sc-for list="{{DM.fmts}}" as="w" hint-placeholder-count="2"><button type="button" onClick="{{w.pick}}" style="{{w.style}}">{{w.label}}</button></sc-for></div>
+<sc-if value="{{DM.isText}}" hint-placeholder-val="{{true}}"><div><label class="lbl" for="mtext">Текст</label><textarea id="mtext" class="inp" rows="6" value="{{DM.text}}" onChange="{{DM.onText}}" style="resize: vertical"></textarea></div></sc-if>
+<sc-if value="{{DM.isHtml}}" hint-placeholder-val="{{false}}"><div><label class="lbl" for="mhtml">HTML письма (скопируйте из Тильды: Экспорт → HTML-код)</label><textarea id="mhtml" class="inp" rows="8" value="{{DM.html}}" onChange="{{DM.onHtml}}" placeholder="&lt;table&gt;…&lt;/table&gt;" style="resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px"></textarea><div style="margin-top: 6px"><button class="btn-s" type="button" onClick="{{DM.test}}">Отправить тестовое письмо себе</button></div></div></sc-if>
+<div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center"><sc-for list="{{DM.whens}}" as="w" hint-placeholder-count="2"><button type="button" onClick="{{w.pick}}" style="{{w.style}}">{{w.label}}</button></sc-for><sc-if value="{{DM.isLater}}" hint-placeholder-val="{{false}}"><input class="inp" type="datetime-local" aria-label="Когда отправить" value="{{DM.at}}" onChange="{{DM.onAt}}" style="width: auto"></sc-if></div>
+<div><button class="btn-p" type="button" onClick="{{DM.create}}">{{DM.createLabel}}</button></div>
+</div>
+</div>
+</sc-if>
+
+</aside>
+</sc-if>
+
+<sc-if value="{{hasToast}}" hint-placeholder-val="{{false}}">
+<div class="toast" role="status" style="position: fixed; left: 50%; transform: translateX(-50%); bottom: 24px; max-width: min(600px, calc(100vw - 32px)); background: #15171C; color: #FFFFFF; border-radius: 10px; padding: 12px 16px; font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); z-index: 80; display: flex; gap: 16px; align-items: center"><span>{{toast}}</span><sc-if value="{{undo}}" hint-placeholder-val="{{false}}"><button type="button" onClick="{{doUndo}}" style="font: inherit; font-weight: 600; background: none; border: 0; color: #9DB8F0; cursor: pointer; padding: 0; white-space: nowrap">Отменить</button></sc-if></div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+/*__JS__*/
+</script>
+</body>
+</html>
