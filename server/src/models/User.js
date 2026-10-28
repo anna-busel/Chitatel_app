@@ -79,6 +79,15 @@ const userSchema = new mongoose.Schema(
     // одноразовым scripts/backfill-club-entitlements.js.
     clubMonthsEntitled: { type: [String], default: [] },
 
+    // Месяцы Тарифа 2 «Клуб + встречи с Анной» (UPDATES-PLAN M, 28.10.2026),
+    // те же ключи 'YYYY-M'. Тариф 2 = клуб месяца + живые встречи в Zoom, поэтому
+    // ключ здесь всегда идёт вместе с ключом в clubMonthsEntitled.
+    // Пополняется: покупкой club.premium.* (applyTransaction), ручной выдачей в
+    // админке (status=premium или «Тариф 2 на месяц»), позже — CRM.
+    // Ссылку на встречу клуба сервер отдаёт только тем, у кого месяц клуба
+    // есть в этом наборе (см. hasTier2ForClub в middleware/subscription.js).
+    tier2MonthsEntitled: { type: [String], default: [] },
+
     hasArchiveAccess: { type: Boolean, default: false },
     purchasedBooks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Book' }],
     purchasedPackages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Package' }],

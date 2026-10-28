@@ -398,7 +398,7 @@ const resolveClubAccess = async (req, _res, next) => {
 
     const user = await User.findById(req.user.userId)
       .select(
-        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled role isBanned mutedUntil'
+        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled tier2MonthsEntitled role isBanned mutedUntil'
       )
       .lean();
 
@@ -419,8 +419,16 @@ const resolveClubAccess = async (req, _res, next) => {
     // Ядро проверки вынесено в computeClubAccess (общее с socket, аудит P11).
     const access = computeClubAccess(user, club, new Date());
     if (access) {
-      req.club = club;
+      // Встречи Тарифа 2 (ссылки Zoom — платный доступ) убираем из req.club,
+      // чтобы они не ушли всем участницам вместе с клубом. Отдельно кладём в
+      // req.clubMeetings: массив — если у неё Тариф 2 на этот клуб, null — нет.
+      const clubWithoutMeetings = { ...club };
+      delete clubWithoutMeetings.meetings;
+      req.club = clubWithoutMeetings;
       req.clubAccess = access;
+      req.clubMeetings = hasTier2ForClub(user, club, new Date())
+        ? serializeMeetings(club)
+        : null;
       return next();
     }
 
@@ -437,7 +445,78 @@ const resolveClubAccess = async (req, _res, next) => {
   }
 };
 
+/* ------------------------------------------------------------------ *
+ *          ТАРИФ 2 «КЛУБ + ВСТРЕЧИ» (UPDATES-PLAN M, 28.10.2026)      *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Новый набор месяцев Тарифа 2 после транзакции подписки. Чистая функция —
+ * вызывается из purchase.service.applyTransaction рядом с обновлением
+ * clubMonthsEntitled и покрыта тестами (tests/tier2.test.js).
+ *
+ * - успешная оплата club.premium.* (status 'active', tier 'premium') →
+ *   добавить оплаченные месяцы (+ месяц льготного периода, если он есть);
+ * - возврат денег (status 'refunded') → снять оплаченные этой транзакцией
+ *   месяцы, какой бы ни был tier: без клубного месяца Тариф 2 не имеет смысла,
+ *   а клубный месяц при возврате снимается всегда;
+ * - basic-оплата, истечение, отмена автопродления → набор не трогаем
+ *   (переход на basic со следующего месяца не отбирает уже оплаченный).
+ *
+ * @param {string[]|undefined} current — user.tier2MonthsEntitled
+ * @param {{ tier: string|null, status: string, grantedKeys: string[], graceKey?: string|null }} tx
+ * @returns {string[]}
+ */
+function nextTier2Months(current, { tier, status, grantedKeys, graceKey = null }) {
+  const keys = Array.isArray(current) ? [...current] : [];
+  if (status === 'refunded') {
+    return keys.filter((k) => !grantedKeys.includes(k));
+  }
+  if (status === 'active' && tier === 'premium') {
+    [...grantedKeys, ...(graceKey ? [graceKey] : [])].forEach((k) => {
+      if (!keys.includes(k)) {
+        keys.push(k);
+      }
+    });
+  }
+  return keys;
+}
+
+/**
+ * Есть ли у участницы Тариф 2 на этот клуб: доступ к самому клубу (ровно по
+ * computeClubAccess, её не меняем) + месяц клуба в tier2MonthsEntitled.
+ * Админ (Анна) видит встречи всегда.
+ *
+ * user — lean User с полями для computeClubAccess + tier2MonthsEntitled.
+ */
+function hasTier2ForClub(user, club, now = new Date()) {
+  if (user.role === 'admin') {
+    return true;
+  }
+  if (!computeClubAccess(user, club, now)) {
+    return false;
+  }
+  return (user.tier2MonthsEntitled || []).includes(clubMonthKey(club));
+}
+
+/**
+ * Встречи клуба для отдачи участнице. reminderSentAt — служебное поле
+ * планировщика, наружу не нужно.
+ */
+function serializeMeetings(club) {
+  return (club.meetings || [])
+    .map((m) => ({
+      id: String(m._id),
+      title: m.title,
+      startsAt: m.startsAt,
+      zoomUrl: m.zoomUrl,
+    }))
+    .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+}
+
 module.exports = {
+  nextTier2Months,
+  hasTier2ForClub,
+  serializeMeetings,
   requireSubscription,
   requireAdmin,
   resolveClubAccess,

@@ -5,6 +5,7 @@ const { thoughtForDate } = require('../services/thought.service');
 const { getReminderSetting, reminderCron } = require('../services/reminder.service');
 const { takeNextText } = require('../services/reminder-text.service');
 const { getNotif } = require('../services/notification-setting.service');
+const { scheduleMeetingReminders } = require('./meeting-reminders');
 
 /**
  * Планировщик push по расписанию (MASTER 7.9).
@@ -152,6 +153,13 @@ const schedulePushJobs = async () => {
     await scheduleDailyQuote();
   } catch (err) {
     logger.error('Daily-quote initial schedule error', { message: err.message });
+  }
+
+  // Напоминание за час до встречи Тарифа 2 (UPDATES-PLAN M).
+  try {
+    scheduleMeetingReminders();
+  } catch (err) {
+    logger.error('Meeting reminders schedule error', { message: err.message });
   }
 
   logger.info(

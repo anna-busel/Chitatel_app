@@ -34,6 +34,18 @@ const partScheduleSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// Живая встреча с Анной в Zoom для Тарифа 2 (UPDATES-PLAN M, 28.10.2026).
+// ⚠️ zoomUrl — платный доступ: resolveClubAccess вырезает встречи из клуба,
+// и в ответах GET /api/club/current и /:id они приходят отдельным полем
+// meetings — только участницам с Тарифом 2 этого месяца (иначе null).
+const meetingSchema = new mongoose.Schema({
+  title: { type: String, default: 'Встреча с Анной', maxlength: 200 },
+  startsAt: { type: Date, required: true },
+  zoomUrl: { type: String, required: true, maxlength: 500 },
+  // Пуш «через час начало» уже ушёл — чтобы планировщик не слал второй раз.
+  reminderSentAt: { type: Date, default: null },
+});
+
 const clubMonthSchema = new mongoose.Schema(
   {
     // Идентификация месяца
@@ -73,6 +85,9 @@ const clubMonthSchema = new mongoose.Schema(
       ref: 'ChatMessage',
       default: null,
     },
+
+    // Встречи Тарифа 2 этого месяца (см. meetingSchema выше).
+    meetings: { type: [meetingSchema], default: [] },
   },
   {
     timestamps: true,
