@@ -25,10 +25,20 @@ class PurchaseService {
 
   // Product ID должны ТОЧНО совпадать с создаными в App Store Connect
   // (задача 3.1 — создаёт Анна). Подписка «Клуб»: месяц + сезон (3 мес).
-  // Премиум появится позже как club.premium.* в той же subscription group.
   static const String monthlyId = 'club.basic.monthly';
   static const String seasonId = 'club.basic.season';
-  static const Set<String> clubProductIds = {monthlyId, seasonId};
+
+  /// Тариф 2 «Клуб + встречи с Анной» (UPDATES-PLAN M, 28.10.2026): та же
+  /// subscription group «Клуб», уровнем выше basic — Apple сам делает апгрейд
+  /// с basic. Пока продукт не создан/не одобрен в App Store Connect, StoreKit
+  /// его не отдаёт, и карточка на пейволе просто не появляется.
+  static const String premiumMonthlyId = 'club.premium.monthly';
+
+  static const Set<String> clubProductIds = {
+    monthlyId,
+    seasonId,
+    premiumMonthlyId,
+  };
 
   /// appAccountToken из userId (фикс B2 аудита 07.07.2026).
   ///
