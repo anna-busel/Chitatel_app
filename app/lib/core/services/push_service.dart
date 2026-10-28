@@ -304,6 +304,8 @@ class PushService {
       case 'chat_reply':
       case 'mention':
       case 'qa_answer':
+      // Тариф 2: «через час встреча с Анной» — карточка встречи в клубе.
+      case 'club_meeting':
         router.go(Routes.club);
       default:
         router.go(Routes.home);

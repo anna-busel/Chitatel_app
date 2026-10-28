@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
@@ -6,12 +7,15 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../payments/screens/paywall_screen.dart';
+import '../../payments/providers/store_prices_provider.dart';
 import '../../payments/season_window.dart';
+import '../../payments/services/purchase_service.dart';
 import '../models/club_access.dart';
 import '../models/club_summary.dart';
 import '../providers/club_provider.dart';
 import '../services/club_api_service.dart';
 import '../widgets/club_about_tab.dart';
+import '../widgets/club_meeting_card.dart';
 import '../widgets/chat_tab.dart';
 import '../widgets/club_switcher_sheet.dart';
 import '../widgets/qa_tab.dart';
@@ -203,6 +207,30 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
     final fallbackId = ref.watch(clubArchiveFallbackProvider);
     final isExpiredFallback = selectedId != null && selectedId == fallbackId;
 
+    // Тариф 2 «клуб + встречи» (UPDATES-PLAN M, 28.10.2026).
+    // ⚠️ Apple 3.1.3(b): на iPhone доступ, выданный вне приложения (админка,
+    // позже CRM), можно открывать, только если тот же Тариф 2 продаётся и
+    // через App Store. Поэтому на iOS карточка встречи видна, только когда
+    // StoreKit отдаёт club.premium.monthly. На Android условия нет (Google
+    // разрешает доступ, купленный вне приложения, без цен и ссылок на оплату).
+    final isIos = defaultTargetPlatform == TargetPlatform.iOS;
+    final storePrices = ref.watch(storePricesProvider);
+    if (isIos) {
+      ref
+          .read(storePricesProvider.notifier)
+          .ensure(const [PurchaseService.premiumMonthlyId]);
+    }
+    final tier2SoldInStore =
+        storePrices.containsKey(PurchaseService.premiumMonthlyId);
+    final meetings = result.meetings;
+    // Подписчица «Клуба» на iPhone может перейти на Тариф 2 подпиской Apple
+    // (та же группа подписок — апгрейд делает Apple).
+    final showTier2Offer = isIos &&
+        tier2SoldInStore &&
+        meetings == null &&
+        access.kind == ClubAccessKind.active &&
+        access.tier == 'basic';
+
     return Column(
       children: [
         _ClubHeaderSwitcher(
@@ -210,6 +238,19 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
           title: club.title,
           onTap: _openSwitcher,
         ),
+
+        if (meetings != null && (!isIos || tier2SoldInStore))
+          ClubMeetingCard(meetings: meetings),
+
+        if (showTier2Offer)
+          _SeasonClubBanner(
+            text: 'Живые встречи с Анной в Zoom — подписка «Месяц + встречи»',
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PaywallScreen()),
+              );
+            },
+          ),
 
         if (showSeasonBanner)
           _SeasonClubBanner(
