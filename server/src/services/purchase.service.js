@@ -3,7 +3,10 @@ const path = require('path');
 const config = require('../config');
 const logger = require('../config/logger');
 const { AppError } = require('../middleware/error');
-const { clubMonthKeysForPurchase } = require('../middleware/subscription');
+const {
+  clubMonthKeysForPurchase,
+  nextTier2Months,
+} = require('../middleware/subscription');
 const User = require('../models/User');
 const Book = require('../models/Book');
 const Package = require('../models/Package');
@@ -414,6 +417,7 @@ async function applyTransaction({
     if (!Array.isArray(user.clubMonthsEntitled)) {
       user.clubMonthsEntitled = [];
     }
+    let graceKey = null;
     if (status === 'refunded') {
       // Возврат денег — снять оплаченные этой транзакцией месяцы.
       user.clubMonthsEntitled = user.clubMonthsEntitled.filter(
@@ -430,12 +434,20 @@ async function applyTransaction({
       // (формат ключа как clubMonthKey: `${year}-${month}` без padStart).
       if (gracePeriodExpiresAt instanceof Date && expiresAt) {
         const abs = expiresAt.getFullYear() * 12 + expiresAt.getMonth() + 1;
-        const graceKey = `${Math.floor(abs / 12)}-${(abs % 12) + 1}`;
+        graceKey = `${Math.floor(abs / 12)}-${(abs % 12) + 1}`;
         if (!user.clubMonthsEntitled.includes(graceKey)) {
           user.clubMonthsEntitled.push(graceKey);
         }
       }
     }
+    // Тариф 2 «Клуб + встречи» (club.premium.*, UPDATES-PLAN M): те же месяцы
+    // в отдельный набор. Правила — в nextTier2Months (покрыта тестами).
+    user.tier2MonthsEntitled = nextTier2Months(user.tier2MonthsEntitled, {
+      tier: mapped.tier,
+      status,
+      grantedKeys,
+      graceKey,
+    });
     // status 'expired'/'cancelled' — набор НЕ трогаем: оплаченный месяц
     // остаётся за человеком, а ограничивает доступ уже временное окно клуба
     // (текущий/архив). Отмена авто-продления не должна отбирать оплаченный клуб.
@@ -507,6 +519,7 @@ function entitlementsOf(user) {
     subscriptionPlan: user.subscriptionPlan,
     subscriptionExpiresAt: user.subscriptionExpiresAt,
     hasArchiveAccess: user.hasArchiveAccess,
+    tier2MonthsEntitled: user.tier2MonthsEntitled || [],
     purchasedBooks: user.purchasedBooks,
     purchasedPackages: user.purchasedPackages,
   };
