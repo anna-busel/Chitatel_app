@@ -5,6 +5,7 @@ import '../../../core/network/api_client.dart';
 import '../../../core/network/api_endpoints.dart';
 import '../models/chat_message.dart';
 import '../models/club_access.dart';
+import '../models/club_meeting.dart';
 import '../models/club_month.dart';
 import '../models/club_summary.dart';
 import '../models/qa_question.dart';
@@ -20,10 +21,14 @@ class CurrentClubResult {
     required this.club,
     required this.access,
     required this.bookJson,
+    this.meetings,
   });
 
   final ClubMonth club;
   final ClubAccess access;
+
+  /// Встречи Тарифа 2 (UPDATES-PLAN M). null — Тарифа 2 на этот клуб нет.
+  final List<ClubMeeting>? meetings;
 
   /// Полный JSON книги. Парсится Book.fromJson на стороне `features/book/`,
   /// чтобы не дублировать модель.
@@ -158,6 +163,7 @@ class ClubApiService {
       club: ClubMonth.fromJson(data['club'] as Map<String, dynamic>),
       access: ClubAccess.fromJson(data['access'] as Map<String, dynamic>),
       bookJson: data['book'] as Map<String, dynamic>?,
+      meetings: ClubMeeting.listFromJson(data['meetings']),
     );
   }
 
@@ -171,6 +177,7 @@ class ClubApiService {
       club: ClubMonth.fromJson(data['club'] as Map<String, dynamic>),
       access: ClubAccess.fromJson(data['access'] as Map<String, dynamic>),
       bookJson: data['book'] as Map<String, dynamic>?,
+      meetings: ClubMeeting.listFromJson(data['meetings']),
     );
   }
 
