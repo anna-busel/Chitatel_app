@@ -380,6 +380,9 @@ router.get('/current', resolveClubAccess, async (req, res, next) => {
       club: req.club,
       book,
       access: req.clubAccess,
+      // Тариф 2 (UPDATES-PLAN M): встречи этого клуба со ссылкой Zoom.
+      // null — у участницы нет Тарифа 2 на этот месяц (карточку не показываем).
+      meetings: req.clubMeetings,
     });
   } catch (err) {
     return next(err);
@@ -397,6 +400,9 @@ router.get('/:clubMonthId', resolveClubAccess, async (req, res, next) => {
       club: req.club,
       book,
       access: req.clubAccess,
+      // Тариф 2 (UPDATES-PLAN M): встречи этого клуба со ссылкой Zoom.
+      // null — у участницы нет Тарифа 2 на этот месяц (карточку не показываем).
+      meetings: req.clubMeetings,
     });
   } catch (err) {
     return next(err);
