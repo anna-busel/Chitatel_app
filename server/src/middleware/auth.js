@@ -2,6 +2,11 @@ const jwt = require('jsonwebtoken');
 const config = require('../config');
 const { AppError } = require('./error');
 
+// Токены CRM (scope 'crm' / 'crm-2fa', CRM-PLAN A2) в приложении не работают,
+// даже если подписаны тем же секретом.
+const isCrmToken = (decoded) =>
+  Boolean(decoded && typeof decoded.scope === 'string' && decoded.scope.startsWith('crm'));
+
 /**
  * JWT verify middleware
  * Проверяет Authorization: Bearer <token>
@@ -18,6 +23,9 @@ const requireAuth = (req, _res, next) => {
 
   try {
     const decoded = jwt.verify(token, config.jwt.secret);
+    if (isCrmToken(decoded)) {
+      return next(new AppError('UNAUTHORIZED', 'Невалидный токен', 401));
+    }
     req.user = decoded;
     return next();
   } catch (err) {
@@ -43,7 +51,7 @@ const optionalAuth = (req, _res, next) => {
 
   try {
     const decoded = jwt.verify(token, config.jwt.secret);
-    req.user = decoded;
+    req.user = isCrmToken(decoded) ? null : decoded;
   } catch (_err) {
     req.user = null;
   }

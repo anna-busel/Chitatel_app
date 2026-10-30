@@ -49,7 +49,8 @@ const socketAuth = (socket, next) => {
     }
 
     const decoded = jwt.verify(token, config.jwt.secret);
-    if (!decoded || !decoded.userId) {
+    // Токены CRM (scope 'crm*') в чат клуба не пускаем (CRM-PLAN A2).
+    if (!decoded || !decoded.userId || decoded.scope) {
       return next(new Error('UNAUTHORIZED'));
     }
 

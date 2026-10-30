@@ -11,6 +11,7 @@ const User = require('../models/User');
 const Quote = require('../models/Quote');
 const WeeklyReport = require('../models/WeeklyReport');
 const Progress = require('../models/Progress');
+const { deleteUserReviews } = require('../services/review.service');
 
 const router = Router();
 
@@ -149,7 +150,8 @@ router.post('/logout', requireAuth, validate(logoutSchema), async (req, res, nex
  *    того, как мы начали их сохранять) или ключ не настроен — пишем в лог и
  *    продолжаем: удаление не должно срываться из-за этого.
  * 2. Удаляем ПОЛНОСТЬЮ личный контент: цитаты (Quote), еженедельные ИИ-отчёты
- *    (WeeklyReport), прогресс прослушивания (Progress).
+ *    (WeeklyReport), прогресс прослушивания (Progress), отзывы на разборы
+ *    (Review) с пересчётом рейтинга этих разборов (UPDATES-PLAN A4, R1).
  * 3. Стираем PII в User: email, имя, аватар, пароль, push-токен, ответы опроса,
  *    страна/город, почта для рассылки, блок-лист, привязки Apple/Google, apple
  *    refresh token. Имя заменяем на «Удалённый аккаунт» — это же имя увидят
@@ -199,6 +201,7 @@ router.delete(
       await Quote.deleteMany({ userId });
       await WeeklyReport.deleteMany({ userId });
       await Progress.deleteMany({ userId });
+      await deleteUserReviews(userId);
 
       // 3-6. Обезличиваем аккаунт и закрываем вход.
       await User.updateOne(
