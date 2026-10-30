@@ -350,7 +350,7 @@ function closeModal(){ document.getElementById('scrim').classList.remove('show')
 function subBadge(u){
   if(u.isBanned) return '<span class="badge b-ban">бан</span>';
   var s=u.subscriptionStatus;
-  if(s==='premium') return '<span class="badge b-prem">Премиум</span>';
+  if(s==='premium') return '<span class="badge b-prem">Тариф 2</span>';
   if(s==='basic') return '<span class="badge b-basic">Базовая</span>';
   if(s==='expired') return '<span class="badge b-exp">истекла</span>';
   return '<span class="badge b-free">без подписки</span>';
@@ -504,11 +504,12 @@ function renderUser(){
     '<div class="kv"><span class="k">Купленные разборы</span><span class="v">'+books+'</span></div>'+
     '<div class="kv"><span class="k">Пакеты</span><span class="v">'+packs+'</span></div>'+
     '<div class="kv"><span class="k">Клубные месяцы</span><span class="v">'+clubMonthsHtml(u)+'</span></div>'+
+    '<div class="kv"><span class="k">Тариф 2 (встречи)</span><span class="v">'+tier2MonthsHtml(u)+'</span></div>'+
     '<div class="divider"></div>'+
     '<div class="lbl" style="margin-top:0">Подписка на клуб</div>'+
     '<div class="fld"><div class="seg" id="grStatus">'+
-      '<div class="opt on" data-v="basic" onclick="pick(this)">Базовая</div>'+
-      '<div class="opt" data-v="premium" onclick="pick(this)">Премиум</div></div>'+
+      '<div class="opt on" data-v="basic" onclick="pick(this)">Клуб</div>'+
+      '<div class="opt" data-v="premium" onclick="pick(this)">Тариф 2: клуб + встречи</div></div>'+
       '<div class="seg" id="grPlan">'+
       '<div class="opt on" data-v="monthly" onclick="pick(this)">1 мес</div>'+
       '<div class="opt" data-v="season" onclick="pick(this)">Сезон (3)</div>'+
@@ -516,7 +517,8 @@ function renderUser(){
       '<div class="opt" data-v="annual" onclick="pick(this)">Год</div></div>'+
       '<div class="fld" style="margin-top:8px"><label>Или срок вручную — до даты (перенос абонемента)</label><input id="grUntil" type="date"></div>'+
       '<button class="btn primary" onclick="grantSub()">Выдать подписку</button>'+
-      '<div class="hint">Подписка = доступ к клубу месяца. Если указать дату — срок и клубные месяцы считаются по ней (для переноса уже оплаченных абонементов), план игнорируется. Разовые разборы и пакеты — ниже.</div></div>'+
+      '<div class="hint">Подписка = доступ к клубу месяца. «Тариф 2» — то же плюс встречи с Анной: в клубе появится карточка встречи со ссылкой Zoom. Если указать дату — срок и клубные месяцы считаются по ней (для переноса уже оплаченных абонементов), план игнорируется. Разовые разборы и пакеты — ниже.</div></div>'+
+    tier2AddHtml(u)+
     '<div class="lbl">Разовый доступ</div>'+
     '<div class="fld"><label>Разбор</label>'+
       '<select id="grBook">'+_accessBooks.map(function(b){return '<option value="'+esc(b.bookSlug)+'">'+esc(b.title)+'</option>';}).join('')+'</select>'+
@@ -589,8 +591,40 @@ function clubMonthsHtml(u){
       'onclick="revokeClubMonth(\''+esc(m)+'\');return false;">×</a></span>';
   }).join('');
 }
+// Тариф 2 «клуб + встречи» по месяцам (UPDATES-PLAN M). Месяц Тарифа 2
+// всегда идёт вместе с клубным: снятие клубного месяца снимает и его.
+function tier2MonthsHtml(u){
+  var ms=(u.tier2MonthsEntitled||[]);
+  if(!ms.length) return '—';
+  return ms.map(function(m){
+    return '<span class="badge b-prem" style="margin:0 4px 4px 0;display:inline-block">'+esc(m)+
+      ' <a href="#" title="Убрать Тариф 2 за этот месяц (клуб останется)" style="text-decoration:none;color:var(--danger,#C0392B)" '+
+      'onclick="revokeTier2Month(\''+esc(m)+'\');return false;">×</a></span>';
+  }).join('');
+}
+// Добавить Тариф 2 к уже выданному клубному месяцу (купила клуб, доплатила за встречи).
+function tier2AddHtml(u){
+  var t2=(u.tier2MonthsEntitled||[]);
+  var free=(u.clubMonthsEntitled||[]).filter(function(m){ return t2.indexOf(m)<0; });
+  if(!free.length) return '';
+  return '<div class="fld" style="margin-top:10px"><label>Добавить встречи (Тариф 2) к месяцу клуба</label>'+
+    '<select id="grT2Month">'+free.map(function(m){return '<option value="'+esc(m)+'">'+esc(m)+'</option>';}).join('')+'</select>'+
+    '<button class="btn ghost" style="margin-top:6px" onclick="grantTier2Month()">Добавить Тариф 2</button></div>';
+}
+async function grantTier2Month(){
+  var el=document.getElementById('grT2Month'); var month=el&&el.value; if(!month) return;
+  try{ await api('/admin/users/'+_curUser._id+'/grant-tier2-month',{method:'POST',body:JSON.stringify({month:month})});
+    toast('Тариф 2 за '+month+' выдан'); await openUser(_curUser._id);
+  }catch(e){ toast(e.message); }
+}
+async function revokeTier2Month(month){
+  if(!confirm('Убрать Тариф 2 (встречи) за '+month+'? Клуб останется.')) return;
+  try{ await api('/admin/users/'+_curUser._id+'/revoke-tier2-month',{method:'POST',body:JSON.stringify({month:month})});
+    toast('Тариф 2 за '+month+' снят'); await openUser(_curUser._id);
+  }catch(e){ toast(e.message); }
+}
 async function revokeClubMonth(month){
-  if(!confirm('Убрать доступ к клубу за '+month+'?')) return;
+  if(!confirm('Убрать доступ к клубу за '+month+'? Тариф 2 за этот месяц тоже снимется.')) return;
   try{ await api('/admin/users/'+_curUser._id+'/revoke-club-month',{method:'POST',body:JSON.stringify({month:month})});
     toast('Месяц '+month+' снят'); await openUser(_curUser._id);
   }catch(e){ toast(e.message); }
@@ -878,8 +912,50 @@ function renderClub(){
       (c.bookId?'':'<button class="btn ghost sm" style="margin-top:8px" onclick="newClubBook()">＋ Создать разбор для клуба</button>')+
       '<div class="hint">Разбор клуба не показывается в общем каталоге и не продаётся отдельно — его слушают только участницы клуба (и в архиве на следующий месяц). Описание, обложка и аудио задаются внутри разбора.</div></div>'+
     '<div class="btnrow" style="margin-top:6px"><button class="btn primary" onclick="saveClub()">'+(c.id?'Сохранить':'Создать клуб')+'</button>'+
-      (c.id?'<button class="btn danger sm" onclick="delClub()">Удалить</button>':'')+'</div>'
+      (c.id?'<button class="btn danger sm" onclick="delClub()">Удалить</button>':'')+'</div>'+
+    (c.id?'<div class="divider"></div><div class="lbl" style="margin-top:0">3. Встречи с Анной (Тариф 2)</div><div id="meetBox"></div>':'')
   );
+  if(c.id){ _meetDraft=(c.meetings||[]).map(function(m){ return { id:m.id, title:m.title, startsAt:m.startsAt, zoomUrl:m.zoomUrl, reminderSentAt:m.reminderSentAt }; }); renderMeetings(); }
+}
+// Встречи Тарифа 2 (UPDATES-PLAN M). Карточку встречи со ссылкой видят в клубе
+// только участницы с Тарифом 2 этого месяца; за час до начала им уходит пуш.
+var _meetDraft=[];
+function toLocalDT(d){ if(!d) return ''; var x=new Date(d); if(isNaN(x.getTime())) return ''; x=new Date(x.getTime()-x.getTimezoneOffset()*60000); return x.toISOString().slice(0,16); }
+function readMeetings(){
+  _meetDraft=_meetDraft.map(function(m,i){
+    var t=document.getElementById('mtT'+i), d=document.getElementById('mtD'+i), u=document.getElementById('mtU'+i);
+    return { id:m.id, reminderSentAt:m.reminderSentAt, title:t?t.value:m.title, startsAt:d&&d.value?new Date(d.value).toISOString():'', zoomUrl:u?u.value.trim():m.zoomUrl };
+  });
+}
+function renderMeetings(){
+  var box=document.getElementById('meetBox'); if(!box) return;
+  box.innerHTML=(_meetDraft.length?'':'<div class="muted" style="margin-bottom:8px">Встреч пока нет</div>')+
+    _meetDraft.map(function(m,i){
+      return '<div class="fld" style="border:1px solid var(--line,#e5ddd3);border-radius:10px;padding:10px;margin-bottom:8px">'+
+        '<label>Название</label><input id="mtT'+i+'" value="'+esc(m.title||'Встреча с Анной')+'">'+
+        '<label style="margin-top:6px">Дата и время (по вашему часовому поясу)</label><input id="mtD'+i+'" type="datetime-local" value="'+toLocalDT(m.startsAt)+'">'+
+        '<label style="margin-top:6px">Ссылка Zoom</label><input id="mtU'+i+'" placeholder="https://us02web.zoom.us/j/…" value="'+esc(m.zoomUrl||'')+'">'+
+        (m.reminderSentAt?'<div class="hint">Напоминание отправлено '+fmtDate(m.reminderSentAt)+'</div>':'')+
+        '<button class="btn ghost sm" style="margin-top:6px" onclick="delMeeting('+i+')">Убрать встречу</button></div>';
+    }).join('')+
+    '<div class="btnrow"><button class="btn ghost sm" onclick="addMeeting()">＋ Встреча</button>'+
+    '<button class="btn primary sm" onclick="saveMeetings()">Сохранить встречи</button></div>'+
+    '<div class="hint">Видят только участницы с Тарифом 2 на этот месяц (выдаётся в карточке участницы или покупкой «Клуб + встречи» в приложении). За час до начала им приходит пуш.</div>';
+}
+function addMeeting(){ readMeetings(); _meetDraft.push({ id:null, title:'Встреча с Анной', startsAt:'', zoomUrl:'' }); renderMeetings(); }
+function delMeeting(i){ readMeetings(); _meetDraft.splice(i,1); renderMeetings(); }
+async function saveMeetings(){
+  readMeetings();
+  for(var i=0;i<_meetDraft.length;i++){
+    var m=_meetDraft[i];
+    if(!m.startsAt){ toast('Укажите дату и время встречи '+(i+1)); return; }
+    if(!/^https:\/\/\S+$/i.test(m.zoomUrl||'')){ toast('Ссылка встречи '+(i+1)+' должна начинаться с https://'); return; }
+  }
+  var body={ meetings:_meetDraft.map(function(m){ var o={ title:m.title, startsAt:m.startsAt, zoomUrl:m.zoomUrl }; if(m.id) o.id=m.id; return o; }) };
+  try{ var d=await api('/admin/club/'+_curClub.id+'/meetings',{method:'PUT',body:JSON.stringify(body)});
+    _curClub=d.club; toast('Встречи сохранены');
+    _meetDraft=(_curClub.meetings||[]).map(function(m){ return { id:m.id, title:m.title, startsAt:m.startsAt, zoomUrl:m.zoomUrl, reminderSentAt:m.reminderSentAt }; }); renderMeetings();
+  }catch(e){ toast(e.message); }
 }
 function toMonthInput(d){ var s=toDateInput(d); return s?s.slice(0,7):''; }
 // Создать разбор для клуба: закрываем окно клуба и открываем редактор разбора
