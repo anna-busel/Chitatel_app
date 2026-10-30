@@ -247,12 +247,21 @@ class _TariffCard extends StatelessWidget {
   String get _title {
     if (product.id == PurchaseService.seasonId) return SeasonWindow.cardTitle();
     if (product.id == PurchaseService.monthlyId) return 'Месяц';
+    if (product.id == PurchaseService.premiumMonthlyId) {
+      return 'Месяц + встречи с Анной';
+    }
     return product.title;
   }
 
   String get _note {
     if (product.id == PurchaseService.seasonId) {
       return SeasonWindow.openCardNote();
+    }
+    if (product.id == PurchaseService.premiumMonthlyId) {
+      // Тариф 2 (UPDATES-PLAN M): честно, что внутри — Apple 3.1.3(d).
+      return 'Всё, что в клубе месяца, и живые встречи с Анной в Zoom — '
+          'ссылка появится в клубе. Продлевается автоматически, отменить '
+          'можно в любой момент.';
     }
     return 'Полный доступ к клубу этого месяца. '
         'Продлевается автоматически, отменить можно в любой момент.';

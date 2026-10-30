@@ -156,7 +156,7 @@ router.get('/:id', async (req, res, next) => {
       .select(
         'name email marketingEmail role authProvider subscriptionStatus ' +
           'subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt ' +
-          'clubMonthsEntitled hasArchiveAccess purchasedBooks purchasedPackages ' +
+          'clubMonthsEntitled tier2MonthsEntitled hasArchiveAccess purchasedBooks purchasedPackages ' +
           'isBanned mutedUntil onboardingCompleted country city avatarUrl createdAt ' +
           // 02.10.2026: subscriptionPlatform — видно, откуда подписка (Apple,
           // Google или выдана вручную); devices — с каких платформ заходили;
@@ -278,6 +278,12 @@ router.post(
         : clubMonthKeysForPurchase(now, plan);
       const set = new Set([...(user.clubMonthsEntitled || []), ...keys]);
       user.clubMonthsEntitled = [...set];
+      // Тариф 2 (status=premium, UPDATES-PLAN M): те же месяцы — в набор
+      // Тарифа 2, по нему участнице видна встреча с Анной в клубе.
+      if (status === 'premium') {
+        const t2 = new Set([...(user.tier2MonthsEntitled || []), ...keys]);
+        user.tier2MonthsEntitled = [...t2];
+      }
 
       await user.save();
 
@@ -418,7 +424,13 @@ router.post(
       }
       const user = await User.findByIdAndUpdate(
         req.params.id,
-        { $pull: { clubMonthsEntitled: req.body.month } },
+        // Тариф 2 без клуба не бывает — снимаем и его месяц (UPDATES-PLAN M).
+        {
+          $pull: {
+            clubMonthsEntitled: req.body.month,
+            tier2MonthsEntitled: req.body.month,
+          },
+        },
         { new: true }
       ).select('clubMonthsEntitled');
       if (!user) {
@@ -433,6 +445,101 @@ router.post(
       return success(res, {
         ok: true,
         clubMonthsEntitled: user.clubMonthsEntitled || [],
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/* ------------------------------------------------------------------ *
+ *          ТАРИФ 2 «КЛУБ + ВСТРЕЧИ» НА МЕСЯЦ (UPDATES-PLAN M)         *
+ * ------------------------------------------------------------------ */
+
+/**
+ * POST /api/admin/users/:id/grant-tier2-month  { month: '2026-11' }
+ * Добавить Тариф 2 на месяц тому, у кого клуб этого месяца уже есть
+ * (купила базовый в приложении, на сайте, выдан вручную). Тариф 2 = клуб +
+ * встречи, поэтому без клубного месяца не выдаём: сначала «Выдать подписку».
+ */
+router.post(
+  '/:id/grant-tier2-month',
+  validate(clubMonthSchema),
+  async (req, res, next) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        throw new AppError('NOT_FOUND', 'Неверный id пользователя', 400);
+      }
+      const { month } = req.body;
+      const user = await User.findById(req.params.id).select(
+        'clubMonthsEntitled tier2MonthsEntitled'
+      );
+      if (!user) {
+        throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
+      }
+      if (!(user.clubMonthsEntitled || []).includes(month)) {
+        throw new AppError(
+          'VALIDATION_ERROR',
+          `Клуба за ${month} у участницы нет. Сначала выдайте подписку (можно сразу «Тариф 2»)`,
+          400
+        );
+      }
+      if (!(user.tier2MonthsEntitled || []).includes(month)) {
+        user.tier2MonthsEntitled = [...(user.tier2MonthsEntitled || []), month];
+        await user.save();
+      }
+
+      Purchase.create({
+        userId: user._id,
+        itemType: 'subscription',
+        itemId: 'tier2',
+        platform: 'web',
+        appleProductId: null,
+        transactionId: manualTxId('tier2', user._id, month),
+        purchasedAt: new Date(),
+        status: 'active',
+      }).catch((e) =>
+        logger.warn('manual tier2 Purchase не записан', { message: e.message })
+      );
+
+      logger.info('Tier2 month granted', { userId: req.params.id, month });
+      return success(res, {
+        ok: true,
+        tier2MonthsEntitled: user.tier2MonthsEntitled || [],
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/admin/users/:id/revoke-tier2-month  { month: '2026-11' }
+ * Убрать Тариф 2 за месяц. Клуб этого месяца остаётся.
+ */
+router.post(
+  '/:id/revoke-tier2-month',
+  validate(clubMonthSchema),
+  async (req, res, next) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        throw new AppError('NOT_FOUND', 'Неверный id пользователя', 400);
+      }
+      const user = await User.findByIdAndUpdate(
+        req.params.id,
+        { $pull: { tier2MonthsEntitled: req.body.month } },
+        { new: true }
+      ).select('tier2MonthsEntitled');
+      if (!user) {
+        throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
+      }
+      logger.info('Tier2 month revoked', {
+        userId: req.params.id,
+        month: req.body.month,
+      });
+      return success(res, {
+        ok: true,
+        tier2MonthsEntitled: user.tier2MonthsEntitled || [],
       });
     } catch (err) {
       return next(err);

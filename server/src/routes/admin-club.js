@@ -79,6 +79,14 @@ function serializeClub(club, book) {
       partNumber: p.partNumber,
       opensAt: p.opensAt,
     })),
+    // Встречи Тарифа 2 (UPDATES-PLAN M) — админке со ссылками.
+    meetings: (club.meetings || []).map((m) => ({
+      id: String(m._id),
+      title: m.title,
+      startsAt: m.startsAt,
+      zoomUrl: m.zoomUrl,
+      reminderSentAt: m.reminderSentAt || null,
+    })),
   };
 }
 
@@ -310,6 +318,64 @@ router.patch('/:id', validate(clubSchema), async (req, res, next) => {
     }
     await markBookInClub(book._id, year, month);
 
+    return success(res, { club: serializeClub(club, book) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ *             ВСТРЕЧИ ТАРИФА 2 (UPDATES-PLAN M, 28.10.2026)            *
+ * ------------------------------------------------------------------ */
+const meetingItemSchema = z.object({
+  id: z.string().optional(),
+  title: z.string().trim().max(200).optional().default('Встреча с Анной'),
+  startsAt: z.coerce.date(),
+  zoomUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .refine((u) => /^https:\/\/\S+$/i.test(u), {
+      message: 'Ссылка должна начинаться с https://',
+    }),
+});
+const meetingsSchema = z.object({
+  meetings: z.array(meetingItemSchema).max(20),
+});
+
+/**
+ * PUT /api/admin/club/:id/meetings  { meetings: [{ id?, title, startsAt, zoomUrl }] }
+ * Заменяет список встреч клуба целиком (админка шлёт всё, что на экране).
+ * У встречи, которая была и время не поменялось, сохраняем отметку
+ * «напоминание отправлено» — чтобы пуш не ушёл второй раз. Поменяли время —
+ * напоминание уйдёт заново к новому времени.
+ */
+router.put('/:id/meetings', validate(meetingsSchema), async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      throw new AppError('NOT_FOUND', 'Клуб не найден', 404);
+    }
+    const club = await ClubMonth.findById(req.params.id);
+    if (!club) {
+      throw new AppError('NOT_FOUND', 'Клуб не найден', 404);
+    }
+    const prevById = new Map(
+      (club.meetings || []).map((m) => [String(m._id), m])
+    );
+    club.meetings = req.body.meetings.map((m) => {
+      const prev = m.id ? prevById.get(m.id) : null;
+      const sameTime =
+        prev && new Date(prev.startsAt).getTime() === m.startsAt.getTime();
+      return {
+        ...(prev ? { _id: prev._id } : {}),
+        title: m.title || 'Встреча с Анной',
+        startsAt: m.startsAt,
+        zoomUrl: m.zoomUrl,
+        reminderSentAt: sameTime ? prev.reminderSentAt : null,
+      };
+    });
+    await club.save();
+    const book = await Book.findById(club.bookId).select('title bookSlug').lean();
     return success(res, { club: serializeClub(club, book) });
   } catch (err) {
     return next(err);
