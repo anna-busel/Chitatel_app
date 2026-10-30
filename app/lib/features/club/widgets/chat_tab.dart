@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../../core/network/network_error.dart';
 import '../../../core/storage/secure_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
@@ -678,12 +679,11 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
       String msg;
       if (code == 'LINK_NOT_ALLOWED') {
         msg = 'Ссылки в чате запрещены. Уберите ссылку из сообщения';
-      } else if (code == 'CLUB_BLOCKED') {
-        msg = 'Ваш аккаунт заблокирован';
       } else if (code == 'FORBIDDEN') {
         msg = 'В архиве нельзя отправлять сообщения';
       } else {
-        msg = 'Не удалось отправить. Попробуйте ещё раз';
+        msg = userMessageFor(e,
+            fallback: 'Не удалось отправить. Попробуйте ещё раз');
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg),
@@ -721,12 +721,11 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
         msg = 'Голосовые может отправлять только ведущая клуба';
       } else if (code == 'VALIDATION') {
         msg = 'Запись не прошла проверку. Попробуйте записать ещё раз';
-      } else if (code == 'CLUB_BLOCKED') {
-        msg = 'Ваш аккаунт заблокирован';
       } else if (code == 'FORBIDDEN') {
         msg = 'В архиве нельзя отправлять сообщения';
       } else {
-        msg = 'Не удалось отправить голосовое. Попробуйте ещё раз';
+        msg = userMessageFor(e,
+            fallback: 'Не удалось отправить голосовое. Попробуйте ещё раз');
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg),
@@ -795,10 +794,8 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
         msg = 'Прошло больше 15 минут — сообщение нельзя изменить';
       } else if (code == 'FORBIDDEN') {
         msg = 'Это сообщение нельзя редактировать';
-      } else if (code == 'NOT_FOUND') {
-        msg = 'Сообщение не найдено';
       } else {
-        msg = 'Не удалось изменить сообщение';
+        msg = userMessageFor(e, fallback: 'Не удалось изменить сообщение');
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg),
@@ -924,7 +921,7 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
       final code = ClubApiService.errorCodeFromException(e);
       final msg = code == 'FORBIDDEN'
           ? 'Это сообщение нельзя удалить'
-          : 'Не удалось удалить сообщение';
+          : userMessageFor(e, fallback: 'Не удалось удалить сообщение');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg),
         backgroundColor: AppColors.error,
@@ -962,7 +959,7 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
       final code = ClubApiService.errorCodeFromException(e);
       final msg = code == 'FORBIDDEN'
           ? 'Закреплять может только ведущая клуба'
-          : 'Не удалось изменить закреп';
+          : userMessageFor(e, fallback: 'Не удалось изменить закреп');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg),
         backgroundColor: AppColors.error,
@@ -1015,10 +1012,8 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
       if (curIdx != -1) {
         setState(() => _messages[curIdx] = original);
       }
-      final code = ClubApiService.errorCodeFromException(e);
-      final msg = code == 'NOT_FOUND'
-          ? 'Сообщение не найдено'
-          : 'Не удалось поставить реакцию';
+      final msg =
+          userMessageFor(e, fallback: 'Не удалось поставить реакцию');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg),
         backgroundColor: AppColors.error,
@@ -1181,12 +1176,11 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
         msg = 'Ссылки в чате запрещены. Уберите ссылку из подписи';
       } else if (code == 'VALIDATION') {
         msg = 'Файл слишком большой или неподдерживаемый формат';
-      } else if (code == 'CLUB_BLOCKED') {
-        msg = 'Ваш аккаунт заблокирован';
       } else if (code == 'FORBIDDEN') {
         msg = 'В архиве нельзя отправлять сообщения';
       } else {
-        msg = 'Не удалось отправить фото. Попробуйте ещё раз';
+        msg = userMessageFor(e,
+            fallback: 'Не удалось отправить фото. Попробуйте ещё раз');
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg),
