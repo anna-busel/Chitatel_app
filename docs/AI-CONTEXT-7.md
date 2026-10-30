@@ -361,3 +361,105 @@ Google проверять до начала задачи; отчёт кажды�
   невозможный, хотя MASTER с самого начала предусматривал премиум с Zoom через
   покупку Apple, а правило 3.1.3(d) прямо требует продавать групповые встречи
   именно так. «Нельзя» оказалось «нельзя мимо Apple».
+
+## 6. Тариф 2 «Клуб + встречи» — сделано (28.10.2026)
+
+Задача UPDATES-PLAN M, решено делать сразу в обновление 1 (06.11), не дожидаясь
+цены от Анны. Залито сразу в `main` (сервер, админка, iOS) и в `android`
+(экраны клиента без пейвола), 28–30.10, коммиты ec2da50…8f922a8 и следующий.
+
+- **Доступ.** Новое поле `User.tier2MonthsEntitled` (ключи `YYYY-M`, как
+  `clubMonthsEntitled`). Пишут: `applyTransaction` при оплате `club.premium.*`
+  (+ месяц grace), снимает при возврате — правила в `nextTier2Months`;
+  админка (выдача подписки «Тариф 2», «Добавить Тариф 2» к месяцу, ×).
+  `computeClubAccess` НЕ менялся. Тариф 2 на клуб = доступ к клубу +
+  месяц в наборе (`hasTier2ForClub`); снятие клубного месяца снимает и Тариф 2.
+- **Встречи.** `ClubMonth.meetings[]` {title, startsAt, zoomUrl,
+  reminderSentAt}. `resolveClubAccess` вырезает их из `req.club` и кладёт в
+  `req.clubMeetings` (массив при Тарифе 2, иначе null) → поле `meetings` в
+  `/api/club/current` и `/:id`. Ссылка Zoom никогда не уходит без Тарифа 2.
+  Админка: «Встречи с Анной (Тариф 2)» в редакторе клуба,
+  `PUT /api/admin/club/:id/meetings`. Пуш за час: `jobs/meeting-reminders.js`
+  (cron */5, отметка reminderSentAt до рассылки — без дублей; тип `club_meeting`).
+- **Приложение.** `club.premium.monthly` в `clubProductIds` → карточка
+  «Месяц + встречи с Анной» на пейволе появляется сама, когда продукт есть в
+  App Store. В клубе — `ClubMeetingCard` под шапкой («Подключиться»),
+  basic-подписчице на iPhone — плашка «Живые встречи с Анной» → пейвол
+  (апгрейд в той же группе подписок).
+- **Правила.** Apple 3.1.3(d): встречи продаём подпиской Apple. Apple 3.1.3(b):
+  на iPhone встречу, выданную из админки, показываем, только если
+  `club.premium.monthly` реально продаётся (проверка через `storePricesProvider`).
+  Google: доступ, купленный вне приложения, показывать можно (без цен и ссылок).
+- **Тесты.** Впервые на сервере есть тесты: `server/tests/tier2.test.js`,
+  `tier2-access.test.js` — 23 шт. (`npx jest`). Модели подменяются jest.mock,
+  БД не нужна. ⚠️ Локально `npm install` падает на `apn` (тянет тарбол с
+  GitHub) — ставить без него, на сервере всё как было.
+- **Flutter не проверен компилятором** в этой сессии (SDK не скачать) —
+  первая сборка в Codemagic покажет ошибки, если есть.
+- **Осталось:** M1 — завести подписку в ASC (нужна цена от Анны, до 05.11);
+  M5 — демо-аккаунт с Тарифом 2 и встреча для ревью; M4 — в CRM (C1).
+
+
+## 7. Неделя 1 — сделано (30.10.2026)
+
+Всё из «Ближайшие две недели → неделя 1» обоих планов, в `main`; клиентские
+правки — сразу и в `android`. Заливалось через GitHub MCP (прямой push из
+облака отвечает 403), по коммиту на группу файлов.
+
+### 7.1. Что сделано
+
+- **CRM A1–A3, A7** (`server/src/crm/`): схемы раздела 2 CRM-PLAN без логики,
+  счётчик номеров заказов (`CrmCounter.nextOrderNum`, `setOrderNumAtLeast` для
+  импорта ГК); вход команды `POST /api/crm/auth/login` → `/auth/2fa` (TOTP,
+  otplib, грузится лениво) → пара токенов, `/auth/refresh` с ротацией,
+  `GET /api/crm/me`; JWT со `scope:'crm'` и своими секретами
+  (`CRM_JWT_SECRET`/`CRM_JWT_REFRESH_SECRET`, иначе производные от JWT_*);
+  токены CRM не проходят в приложение и в сокет, токены приложения — в CRM;
+  `requireCrm(perm)` по матрице `CAN` прототипа; журнал `CrmAudit` на каждое
+  изменяющее действие (пароли, коды, токены вырезаются); `ensureCrmSettings()`
+  при старте сервера (переводы без подтверждения, карт нет, курсы null,
+  комиссия стора 15%).
+- **UPDATES-PLAN B1–B2** (клиент, main + android): `userMessageFor()` в
+  `core/network/network_error.dart`, применён в чате (отправка, фото,
+  голосовое, правка, удаление, закреп, реакция). CLUB_BLOCKED в чате теперь
+  «Вы не можете писать в этом клубе». Dart здесь не компилировался — проверит
+  Codemagic.
+- **B3**: `middleware/request-log.js` — каждый 4xx по `/api` в лог
+  (метод, путь без query, статус, error.code, userId), без тел.
+- **C1–C2**: `models/Review.js`, `services/review.service.js` (пересчёт
+  `Book.rating/reviewCount` по видимым), `routes/reviews.js`
+  (монтируется в `books.js`), `POST /api/admin/reviews/:id/hide`;
+  `userHasBookAccess` вынесен без изменений в `services/book-access.service.js`
+  (его же зовут отзывы); `DELETE /api/auth/account` стирает отзывы.
+- **A1**: `Report.targetType` += review/profile/feed_post, `actionTaken` +=
+  hide_content; `POST /api/reports` (`routes/content-reports.js`, лимит
+  10/мин); в админских жалобах — текст отзыва, `hide_content`, бан/мьют автора.
+- **Тариф 2** доделан: встречи в ответе `/api/club/current` и `/:id`,
+  админка (выдача Тарифа 2, встречи клуба).
+- Тесты: `server/tests/` — 96 (tier2, crm-auth, crm-settings, reviews, reports).
+
+### 7.2. API отзывов (для C3 на неделе 2)
+
+- `GET /api/books/:id/reviews?page&limit` (логин не обязателен) →
+  `{items:[{id,rating,text,createdAt,updatedAt,isMine,author:{id,name,avatarUrl}}],
+  total,page,limit,hasMore,rating,reviewCount,myReview|null}`; без скрытых и без
+  заблокированных мной авторов; `myReview` отдаётся даже скрытый.
+- `POST /api/books/:id/reviews {rating 1..5, text ≤1000}` → `{review, rating,
+  reviewCount}`; 403 `PURCHASE_REQUIRED` без доступа к разбору, 403 `FORBIDDEN`
+  забаненной.
+- `DELETE /api/books/:id/reviews/mine` → `{deleted, rating, reviewCount}`.
+- `POST /api/reports {targetType:'review'|'profile', targetId, reason, comment?}`
+  → `{reported:true, reportId}` или `{reported:true, duplicate:true}`.
+
+### 7.3. Деплой и что проверить
+
+- После `git pull` на сервере: `cd server && npm install` (новая зависимость
+  otplib), `pm2 restart`. Без install API работает, падает только вход в CRM.
+- `package-lock.json` в репозитории без otplib (лок обновится при install;
+  в нём и так не было apn).
+- Первый отзыв/скрытие на разборе перезаписывает `Book.rating`/`reviewCount`
+  значениями по отзывам. Если где-то рейтинг выставлен руками — он уйдёт.
+- Участниц CRM заводить: `node src/scripts/crm-create-member.js <email> "<Имя>"
+  <owner|admin|marketing|manager> <пароль ≥10>`; потеряла телефон —
+  `--reset-2fa`. Почт команды ещё нет (A6).
+- CORS для `crm.chitatel.app` добавить вместе с A4/A5.
