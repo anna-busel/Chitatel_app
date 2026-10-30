@@ -8,6 +8,7 @@ const { setupSocket } = require('./socket');
 const { scheduleWeeklyReports, runWeeklyReports } = require('./jobs/weekly-report');
 const { scheduleMonthlyReports, runMonthlyReports } = require('./jobs/monthly-report');
 const { schedulePushJobs } = require('./jobs/push-scheduler');
+const { ensureCrmSettings } = require('./crm/services/settings.service');
 
 const server = http.createServer(app);
 
@@ -58,6 +59,12 @@ const start = async () => {
     // Cron push-уведомлений (задача 6.1). Тот же принцип: 1 инстанс.
     // Асинхронна: напоминание собирается из настройки в БД (ReminderSetting).
     await schedulePushJobs();
+
+    // Начальные настройки CRM (CRM-PLAN A7): создаются один раз, дальше не
+    // перезаписываются. Сбой не мешает запуску приложения.
+    await ensureCrmSettings().catch((err) =>
+      logger.error('CRM settings init error', { message: err.message })
+    );
 
     server.listen(config.port, () => {
       logger.info(`Server running on port ${config.port} [${config.nodeEnv}]`);

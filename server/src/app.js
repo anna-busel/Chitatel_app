@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const { errorHandler } = require('./middleware/error');
+const { logClientErrors } = require('./middleware/request-log');
 const {
   authLimiter,
   refreshLimiter,
@@ -26,6 +27,7 @@ const adminRoutes = require('./routes/admin');
 const quoteRoutes = require('./routes/quotes');
 const aiRoutes = require('./routes/ai');
 const reportRoutes = require('./routes/reports');
+const contentReportRoutes = require('./routes/content-reports');
 const profileRoutes = require('./routes/profile');
 const userRoutes = require('./routes/users');
 const notificationRoutes = require('./routes/notifications');
@@ -38,6 +40,7 @@ const adminNotificationsRoutes = require('./routes/admin-notifications');
 const adminReminderTextsRoutes = require('./routes/admin-reminder-texts');
 const adminAnalyticsRoutes = require('./routes/admin-analytics');
 const adminPaymentsRoutes = require('./routes/admin-payments');
+const crmRouter = require('./crm/routes');
 
 const app = express();
 
@@ -70,6 +73,9 @@ app.get('/api/health', (_req, res) => {
   return success(res, { status: 'ok' });
 });
 
+// Лог отказов 4xx по API: путь, код ошибки, id пользователя (UPDATES-PLAN B3).
+app.use('/api', logClientErrors);
+
 // Webhooks Apple — монтируем ДО общего apiLimiter, чтобы их не резать.
 app.use('/api/webhooks', webhookRoutes);
 
@@ -91,6 +97,7 @@ app.post('/api/profile/avatar', uploadLimiter);
 // Жалобы: на сообщение чата и на пользователя — 10/мин.
 app.post('/api/club/chat/:messageId/report', reportLimiter);
 app.post('/api/users/:id/report', reportLimiter);
+app.post('/api/reports', reportLimiter);
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -107,6 +114,8 @@ app.use('/api/quotes', quoteRoutes);
 // Жалоба на ИИ-разбор (F1 ANDROID-PLAN, требование Google R7).
 app.use('/api/ai', aiRoutes);
 app.use('/api/reports', reportRoutes);
+// Жалоба на отзыв/профиль: POST /api/reports (UPDATES-PLAN A1).
+app.use('/api/reports', contentReportRoutes);
 app.use('/api/profile', profileRoutes);
 
 // Пользователи (Фаза 6, A1): блокировка участника участником, список
@@ -156,6 +165,9 @@ app.use('/api/admin/analytics', adminAnalyticsRoutes);
 // кто/что/сколько/когда, с фильтром по платформе. Отдельный роут-файл;
 // requireAdmin внутри.
 app.use('/api/admin/payments', adminPaymentsRoutes);
+
+// CRM команды (CRM-PLAN A1): свой вход и JWT со scope:'crm', см. crm/routes.
+app.use('/api/crm', crmRouter);
 
 /* ------------------------------------------------------------------ *
  *              СТАТИКА: АДМИНКА И ЮРИДИЧЕСКИЕ СТРАНИЦЫ               *

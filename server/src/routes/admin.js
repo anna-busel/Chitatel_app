@@ -13,6 +13,8 @@ const ChatMessage = require('../models/ChatMessage');
 const QAQuestion = require('../models/QAQuestion');
 const Report = require('../models/Report');
 const Quote = require('../models/Quote');
+const Review = require('../models/Review');
+const { hideReview } = require('../services/review.service');
 const { runWeeklyReports } = require('../jobs/weekly-report');
 const { runMonthlyReports } = require('../jobs/monthly-report');
 const pushService = require('../services/push.service');
@@ -72,7 +74,7 @@ router.get(
             target = await ChatMessage.findById(r.targetId)
               .populate('userId', 'name avatarUrl email')
               .lean();
-          } else if (r.targetType === 'user') {
+          } else if (r.targetType === 'user' || r.targetType === 'profile') {
             target = await User.findById(r.targetId)
               .select('name avatarUrl email isBanned mutedUntil')
               .lean();
@@ -91,6 +93,19 @@ router.get(
                 text: `Цитата: ${quote.text}\n\nРазбор ИИ: ${insights}`,
               };
             }
+          } else if (r.targetType === 'review') {
+            // A1: жалоба на отзыв — текст, оценка, автор, разбор.
+            const review = await Review.findById(r.targetId)
+              .populate('userId', 'name avatarUrl email')
+              .populate('bookId', 'title')
+              .lean();
+            if (review) {
+              const title = review.bookId ? review.bookId.title : '';
+              target = {
+                ...review,
+                text: `Отзыв на «${title}» (${review.rating}★): ${review.text || ''}`,
+              };
+            }
           }
           return { ...r, target };
         })
@@ -107,6 +122,8 @@ router.get(
  * POST /api/admin/reports/:reportId/action
  * Разрешить жалобу. Действия:
  * - hide_message: ChatMessage.isHidden=true + Socket emit
+ * - hide_content: скрыть контент нового типа (A1) — сейчас отзыв:
+ *   Review.isHidden=true + пересчёт рейтинга книги
  * - warn_user: ничего на бекенде (только пометить жалобу как resolved, push отправит push-сервис в 6.1)
  * - mute_user: User.mutedUntil = now + N дней
  * - ban_user: User.isBanned=true
@@ -116,6 +133,7 @@ const reportActionSchema = z
   .object({
     action: z.enum([
       'hide_message',
+      'hide_content',
       'warn_user',
       'mute_user',
       'ban_user',
@@ -174,16 +192,35 @@ router.post(
             messageId: String(report.targetId),
           });
         }
+      } else if (action === 'hide_content') {
+        if (report.targetType !== 'review') {
+          throw new AppError(
+            'FORBIDDEN',
+            'hide_content пока применяется только к жалобам на отзыв',
+            400
+          );
+        }
+        const hidden = await hideReview(report.targetId);
+        if (!hidden) {
+          throw new AppError('NOT_FOUND', 'Отзыв не найден', 404);
+        }
       } else if (action === 'mute_user' || action === 'ban_user') {
         // Определяем целевого юзера — либо это target=user, либо автор сообщения.
         let targetUserId = null;
-        if (report.targetType === 'user') {
+        if (report.targetType === 'user' || report.targetType === 'profile') {
           targetUserId = report.targetId;
         } else if (report.targetType === 'message') {
           const msg = await ChatMessage.findById(report.targetId)
             .select('userId')
             .lean();
           if (msg) targetUserId = msg.userId;
+        } else if (report.targetType === 'review') {
+          const review = await Review.findById(report.targetId)
+            .select('userId')
+            .lean();
+          if (review) {
+            targetUserId = review.userId;
+          }
         }
         if (!targetUserId) {
           throw new AppError('NOT_FOUND', 'Целевой пользователь не найден', 404);
@@ -218,6 +255,34 @@ router.post(
     }
   }
 );
+
+/**
+ * POST /api/admin/reviews/:reviewId/hide
+ * Скрыть отзыв на разбор (UPDATES-PLAN C2): кнопка «Скрыть» у Анны в
+ * приложении — без жалобы. Пересчитывает Book.rating / reviewCount.
+ * Ответ: { review: { id, bookId, isHidden } }.
+ */
+router.post('/reviews/:reviewId/hide', async (req, res, next) => {
+  try {
+    const { reviewId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(reviewId)) {
+      throw new AppError('NOT_FOUND', 'Неверный id отзыва', 400);
+    }
+    const review = await hideReview(reviewId);
+    if (!review) {
+      throw new AppError('NOT_FOUND', 'Отзыв не найден', 404);
+    }
+    return success(res, {
+      review: {
+        id: String(review._id),
+        bookId: String(review.bookId),
+        isHidden: true,
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
 
 /* ------------------------------------------------------------------ *
  *                            Q&A ОТВЕТЫ                              *
