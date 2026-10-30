@@ -15,9 +15,16 @@ const mongoose = require('mongoose');
  *   внутри неё (Quote.aiAnalysis), отдельного документа у него нет.
  *   Действия модератора из списка ниже к нему не применяются — по такой
  *   жалобе Анна правит промпт или отклоняет её ('dismiss').
+ * - targetType='review' | 'profile' | 'feed_post' — пользовательский контент
+ *   (UPDATES-PLAN A1, 30.10.2026): отзыв на разбор (targetId — Review._id),
+ *   профиль участницы (targetId — User._id: фото, имя, «о себе»), пост ленты
+ *   (targetId — FeedPost._id, модель появится в R5). Создаются через
+ *   POST /api/reports (routes/content-reports.js).
  *
  * Действия по жалобе (выполняет Анна в админке, MASTER 9.4):
  * - hide_message — скрыть сообщение (ChatMessage.isHidden=true)
+ * - hide_content — скрыть пользовательский контент нового типа (сейчас —
+ *   отзыв: Review.isHidden=true + пересчёт рейтинга книги)
  * - warn_user — предупреждение пользователю (push + запись)
  * - mute_user — мьют на N дней (требует поле user.mutedUntil — добавим в 4.4)
  * - ban_user — бан совсем (user.isBanned=true — добавим в 4.4)
@@ -39,7 +46,7 @@ const reportSchema = new mongoose.Schema(
     // На что жалоба
     targetType: {
       type: String,
-      enum: ['message', 'user', 'ai_analysis'],
+      enum: ['message', 'user', 'ai_analysis', 'feed_post', 'review', 'profile'],
       required: true,
     },
     targetId: {
@@ -83,7 +90,15 @@ const reportSchema = new mongoose.Schema(
     // Действие модератора (заполняется при разрешении)
     actionTaken: {
       type: String,
-      enum: ['hide_message', 'warn_user', 'mute_user', 'ban_user', 'dismiss', null],
+      enum: [
+        'hide_message',
+        'hide_content',
+        'warn_user',
+        'mute_user',
+        'ban_user',
+        'dismiss',
+        null,
+      ],
       default: null,
     },
     resolvedByUserId: {
