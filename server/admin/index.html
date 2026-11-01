@@ -605,9 +605,12 @@ function tier2MonthsHtml(u){
 // Добавить Тариф 2 к уже выданному клубному месяцу (купила клуб, доплатила за встречи).
 function tier2AddHtml(u){
   var t2=(u.tier2MonthsEntitled||[]);
-  var free=(u.clubMonthsEntitled||[]).filter(function(m){ return t2.indexOf(m)<0; });
+  // Только текущий и будущие месяцы: Тариф 2 за прошедший клуб не нужен.
+  var now=new Date(), cur=now.getFullYear()*12+now.getMonth();
+  function mIdx(k){ var p=String(k).split('-'); return (+p[0])*12+(+p[1]-1); }
+  var free=(u.clubMonthsEntitled||[]).filter(function(m){ return t2.indexOf(m)<0 && mIdx(m)>=cur; });
   if(!free.length) return '';
-  return '<div class="fld" style="margin-top:10px"><label>Добавить встречи (Тариф 2) к месяцу клуба</label>'+
+  return '<div class="fld" style="margin-top:10px"><label>Доплата за Тариф 2 — выбрать оплаченный месяц клуба</label>'+
     '<select id="grT2Month">'+free.map(function(m){return '<option value="'+esc(m)+'">'+esc(m)+'</option>';}).join('')+'</select>'+
     '<button class="btn ghost" style="margin-top:6px" onclick="grantTier2Month()">Добавить Тариф 2</button></div>';
 }
@@ -920,11 +923,14 @@ function renderClub(){
 // Встречи Тарифа 2 (UPDATES-PLAN M). Карточку встречи со ссылкой видят в клубе
 // только участницы с Тарифом 2 этого месяца; за час до начала им уходит пуш.
 var _meetDraft=[];
-function toLocalDT(d){ if(!d) return ''; var x=new Date(d); if(isNaN(x.getTime())) return ''; x=new Date(x.getTime()-x.getTimezoneOffset()*60000); return x.toISOString().slice(0,16); }
+// Время встречи в админке всегда по Москве (UTC+3, без перехода на летнее),
+// чтобы у всех, кто заводит встречи, 19:00 значило одно и то же.
+function toLocalDT(d){ if(!d) return ''; var x=new Date(d); if(isNaN(x.getTime())) return ''; return new Date(x.getTime()+3*3600000).toISOString().slice(0,16); }
+function mskToISO(v){ var x=new Date(v+':00+03:00'); return isNaN(x.getTime())?'':x.toISOString(); }
 function readMeetings(){
   _meetDraft=_meetDraft.map(function(m,i){
     var t=document.getElementById('mtT'+i), d=document.getElementById('mtD'+i), u=document.getElementById('mtU'+i);
-    return { id:m.id, reminderSentAt:m.reminderSentAt, title:t?t.value:m.title, startsAt:d&&d.value?new Date(d.value).toISOString():'', zoomUrl:u?u.value.trim():m.zoomUrl };
+    return { id:m.id, reminderSentAt:m.reminderSentAt, title:t?t.value:m.title, startsAt:d&&d.value?mskToISO(d.value):'', zoomUrl:u?u.value.trim():m.zoomUrl };
   });
 }
 function renderMeetings(){
@@ -933,7 +939,7 @@ function renderMeetings(){
     _meetDraft.map(function(m,i){
       return '<div class="fld" style="border:1px solid var(--line,#e5ddd3);border-radius:10px;padding:10px;margin-bottom:8px">'+
         '<label>Название</label><input id="mtT'+i+'" value="'+esc(m.title||'Встреча с Анной')+'">'+
-        '<label style="margin-top:6px">Дата и время (по вашему часовому поясу)</label><input id="mtD'+i+'" type="datetime-local" value="'+toLocalDT(m.startsAt)+'">'+
+        '<label style="margin-top:6px">Дата и время (по Москве)</label><input id="mtD'+i+'" type="datetime-local" value="'+toLocalDT(m.startsAt)+'">'+
         '<label style="margin-top:6px">Ссылка Zoom</label><input id="mtU'+i+'" placeholder="https://us02web.zoom.us/j/…" value="'+esc(m.zoomUrl||'')+'">'+
         (m.reminderSentAt?'<div class="hint">Напоминание отправлено '+fmtDate(m.reminderSentAt)+'</div>':'')+
         '<button class="btn ghost sm" style="margin-top:6px" onclick="delMeeting('+i+')">Убрать встречу</button></div>';
