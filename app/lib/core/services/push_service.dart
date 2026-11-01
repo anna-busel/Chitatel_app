@@ -2,7 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../network/api_client.dart';
@@ -86,6 +86,9 @@ class PushService {
         // Тап по уведомлению, когда приложение было в фоне.
         FirebaseMessaging.onMessageOpenedApp
             .listen((message) => _handleTap(message.data));
+        // Приложение открыто: Android сам уведомление не показывает — показываем
+        // плашку внизу экрана с кнопкой «Открыть» (01.11.2026).
+        FirebaseMessaging.onMessage.listen(_showInApp);
       }
       // Тап, которым приложение запустили из закрытого состояния. Запуск идёт
       // после runApp — переходим на следующем кадре и сами его заказываем.
@@ -278,6 +281,40 @@ class PushService {
       );
     } catch (_) {
       // Не критично — повторим при следующем входе/запуске.
+    }
+  }
+
+  /// Пуш пришёл, пока приложение на экране: плашка с заголовком и текстом.
+  void _showInApp(RemoteMessage message) {
+    try {
+      final title =
+          message.notification?.title ?? message.data['title']?.toString() ?? '';
+      final body =
+          message.notification?.body ?? message.data['body']?.toString() ?? '';
+      if (title.isEmpty && body.isEmpty) return;
+      final ctx =
+          _ref.read(routerProvider).routerDelegate.navigatorKey.currentContext;
+      if (ctx == null) return;
+      final messenger = ScaffoldMessenger.maybeOf(ctx);
+      if (messenger == null) return;
+      final data = Map<String, dynamic>.from(message.data);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            [title, body].where((s) => s.isNotEmpty).join('\n'),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+          duration: const Duration(seconds: 6),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'Открыть',
+            onPressed: () => _handleTap(data),
+          ),
+        ),
+      );
+    } catch (_) {
+      // Плашка — удобство: если показать не вышло, пуш всё равно в ленте.
     }
   }
 

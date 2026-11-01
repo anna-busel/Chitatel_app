@@ -139,6 +139,9 @@ class NotificationsScreen extends ConsumerWidget {
         }
       case 'weekly_report':
         context.push(Routes.weeklyReport);
+      // Тариф 2: напоминание о встрече — в клуб, там карточка с «Подключиться».
+      case 'club_meeting':
+        context.go(Routes.club);
       default:
         // Остальные — просто помечаем прочитанными, остаёмся на экране.
         break;
@@ -158,6 +161,8 @@ class NotificationsScreen extends ConsumerWidget {
         return (Icons.edit_outlined, AppColors.gold);
       case 'weekly_report':
         return (Icons.insights_outlined, AppColors.terracotta);
+      case 'club_meeting':
+        return (Icons.videocam_outlined, AppColors.terracotta);
       default:
         return (Icons.notifications_none, AppColors.textSecondary);
     }
