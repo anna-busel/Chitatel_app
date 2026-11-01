@@ -240,7 +240,7 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
 
         if (showTier2Offer)
           _SeasonClubBanner(
-            text: 'Живые встречи с Анной в Zoom — подписка «Месяц + встречи»',
+            text: 'Групповая встреча с Анной в Zoom — подписка «Месяц + групповая встреча»',
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const PaywallScreen()),

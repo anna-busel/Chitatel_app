@@ -248,7 +248,7 @@ class _TariffCard extends StatelessWidget {
     if (product.id == PurchaseService.seasonId) return SeasonWindow.cardTitle();
     if (product.id == PurchaseService.monthlyId) return 'Месяц';
     if (product.id == PurchaseService.premiumMonthlyId) {
-      return 'Месяц + встречи с Анной';
+      return 'Месяц + групповая встреча';
     }
     return product.title;
   }
@@ -259,7 +259,7 @@ class _TariffCard extends StatelessWidget {
     }
     if (product.id == PurchaseService.premiumMonthlyId) {
       // Тариф 2 (UPDATES-PLAN M): честно, что внутри — Apple 3.1.3(d).
-      return 'Всё, что в клубе месяца, и живые встречи с Анной в Zoom — '
+      return 'Всё, что в клубе месяца, и групповая встреча с Анной в Zoom — '
           'ссылка появится в клубе. Продлевается автоматически, отменить '
           'можно в любой момент.';
     }
