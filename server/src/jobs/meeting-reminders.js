@@ -45,13 +45,12 @@ function dueMeetings(clubs, now = new Date()) {
   return out;
 }
 
-function timeLabel(date) {
-  // Время по Москве — как и остальные пуши клуба (аудитория РФ/РБ).
-  return new Date(date).toLocaleTimeString('ru-RU', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Europe/Moscow',
-  });
+// Без часов и поясов: участницы в разных странах, а «через час» понятно всем.
+function startsInLabel(date, now) {
+  const min = Math.round((new Date(date).getTime() - now.getTime()) / 60000);
+  if (min >= 50) return 'Начинаем через час.';
+  if (min <= 1) return 'Начинаем прямо сейчас.';
+  return `Начинаем через ${min} мин.`;
 }
 
 async function sendMeetingReminders(now = new Date()) {
@@ -95,7 +94,7 @@ async function sendMeetingReminders(now = new Date()) {
 
     const payload = {
       title: meeting.title || 'Встреча с Анной',
-      body: `Начинаем в ${timeLabel(meeting.startsAt)}. Ссылка — в клубе`,
+      body: `${startsInLabel(meeting.startsAt, now)} Ссылка — в клубе`,
       data: { type: 'club_meeting', clubMonthId: String(club._id) },
     };
 
