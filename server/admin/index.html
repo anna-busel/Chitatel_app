@@ -231,12 +231,20 @@
             <div class="seg" id="newsAud">
               <div class="opt on" data-v="all" onclick="pick(this)">Всем</div>
               <div class="opt" data-v="subscribers" onclick="pick(this)">Подписчикам</div>
+              <div class="opt" data-v="tier2" onclick="pick(this)">Тариф 2 (встреча)</div>
+            </div>
+          </div>
+          <div class="fld"><label>Устройства</label>
+            <div class="seg" id="newsPlat">
+              <div class="opt on" data-v="all" onclick="pick(this)">Все</div>
+              <div class="opt" data-v="ios" onclick="pick(this)">Только iPhone</div>
+              <div class="opt" data-v="android" onclick="pick(this)">Только Android</div>
             </div>
           </div>
           <input id="newsTitle" placeholder="Заголовок" maxlength="120">
           <textarea id="newsBody" placeholder="Текст новости…" maxlength="1000"></textarea>
           <button class="btn primary" onclick="sendNews()">Отправить новость</button>
-          <div class="hint">Пишется в ленту уведомлений (колокольчик) всем адресатам + push тем, у кого включён тип «Новости». «Всем» — включая без подписки; «Подписчикам» — только с активной.</div>
+          <div class="hint">Пишется в ленту уведомлений (колокольчик) всем адресатам + push тем, у кого включён тип «Новости». «Всем» — включая без подписки; «Подписчикам» — только с активной. «Тариф 2» — только у кого Тариф 2 на текущий месяц: приходит всегда (даже с выключенными «Новостями»), по нажатию открывается клуб с карточкой встречи. Ссылку Zoom вставляйте в «Клуб месяца» → встреча, в тексте пуша она не кликается. Напоминание за час уходит само. «Только iPhone» / «Только Android» — по устройству, на котором участница входила в приложение.</div>
         </div>
         <div class="lbl">Тексты системных уведомлений</div>
         <div id="notifTpls"><div class="empty">Загрузка…</div></div>
@@ -745,10 +753,13 @@ async function answerQa(id){
 async function sendNews(){
   var title=(document.getElementById('newsTitle').value||'').trim();
   var body=(document.getElementById('newsBody').value||'').trim();
-  var audience=segVal('newsAud');
+  var audience=segVal('newsAud'), platform=segVal('newsPlat')||'all';
   if(!title||!body){ toast('Заполните заголовок и текст'); return; }
-  try{ var d=await api('/admin/news',{method:'POST',body:JSON.stringify({title:title,body:body,audience:audience})});
-    toast('Новость отправлена'+(d&&d.sent!=null?' ('+d.sent+' push)':''));
+  var audTxt={all:'всем',subscribers:'подписчикам',tier2:'участницам с Тарифом 2'}[audience]||audience;
+  var platTxt={all:'',ios:' (только iPhone)',android:' (только Android)'}[platform]||'';
+  if(!confirm('Отправить уведомление '+audTxt+platTxt+'?')) return;
+  try{ var d=await api('/admin/news',{method:'POST',body:JSON.stringify({title:title,body:body,audience:audience,platform:platform})});
+    toast('Отправлено: '+(d&&d.total!=null?d.total:0)+' чел.'+(d&&d.sent!=null?' · push '+d.sent:''));
     document.getElementById('newsTitle').value=''; document.getElementById('newsBody').value='';
   }catch(e){ toast(e.message); }
 }
