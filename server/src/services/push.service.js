@@ -3,6 +3,7 @@ const logger = require('../config/logger');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const fcm = require('./fcm.service');
+const { hasTier2ForClub, clubMonthKey } = require('../middleware/subscription');
 
 /**
  * Отправка push: iOS — APNs (MASTER 7.9), token-based (.p8); Android — FCM
@@ -52,6 +53,11 @@ const PERSIST_TYPES = new Set([
 // Поля пользователя, нужные для отправки. pushToken — устаревший запасной
 // источник токена, см. комментарий в шапке.
 const PUSH_FIELDS = 'devices pushToken pushSettings isDeleted';
+
+// Поля для hasTier2ForClub (рассылка участницам Тарифа 2).
+const TIER2_FIELDS =
+  'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt ' +
+  'clubMonthsEntitled tier2MonthsEntitled role isBanned mutedUntil';
 
 // Условие «есть куда слать пуш»: любое устройство в devices (iOS или
 // Android) ИЛИ устаревшее iOS-поле pushToken.
@@ -380,25 +386,77 @@ const broadcast = async ({ audience = 'all' } = {}, payload, settingKey = null) 
 };
 
 /**
+ * Оставить у пользователя только устройства одной платформы — чтобы новость
+ * «только iPhone» не ушла на его же андроид (и наоборот). Чистая функция.
+ * platform: 'all' | 'ios' | 'android'.
+ */
+const onlyPlatform = (user, platform) => {
+  if (!platform || platform === 'all') return user;
+  return {
+    ...user,
+    devices: (user.devices || []).filter((d) => d && d.platform === platform),
+    // pushToken — устаревшее поле iOS-токена (см. iosTokensOf).
+    pushToken: platform === 'ios' ? user.pushToken : null,
+  };
+};
+
+/** Есть ли у пользователя устройство нужной платформы. Чистая функция. */
+const hasPlatform = (user, platform) => {
+  if (!platform || platform === 'all') return true;
+  if (platform === 'ios') return iosTokensOf(user).length > 0;
+  if (platform === 'android') return androidTokensOf(user).length > 0;
+  return false;
+};
+
+/**
  * Новости/анонсы (админ). В отличие от broadcast, ПИШЕТСЯ в ленту 4.30 всем
  * адресатам (лента = история, независимо от push-разрешения и токена), а push
  * шлётся только тем, у кого включена настройка news и есть токен.
  *
- * @param {{audience?: 'all'|'subscribers', title:string, body:string, data?:object}} opts
+ * Фильтры (03.11.2026):
+ * - audience 'tier2' — участницы с Тарифом 2 на клуб tier2Club (текущий месяц).
+ *   Это служебное сообщение по оплаченной услуге (ссылка на встречу), а не
+ *   реклама: уходит без оглядки на настройку «Новости», как и напоминание за
+ *   час, и с типом club_meeting — тап открывает клуб с карточкой встречи;
+ * - platform 'ios' | 'android' — только тем, у кого есть устройство этой
+ *   платформы, и push только на него. Без устройства этой платформы человек
+ *   в рассылку не попадает (и в ленту тоже).
+ *
+ * @param {{audience?: 'all'|'subscribers'|'tier2', platform?: 'all'|'ios'|'android',
+ *   tier2Club?: object, title:string, body:string, data?:object}} opts
  * @returns {Promise<{total:number, persisted:number, sent:number}>}
  */
-const sendNews = async ({ audience = 'all', title, body, data = {} } = {}) => {
+const sendNews = async ({
+  audience = 'all',
+  platform = 'all',
+  tier2Club = null,
+  title,
+  body,
+  data = {},
+} = {}) => {
+  const isTier2 = audience === 'tier2';
   const feedFilter = { isDeleted: { $ne: true } };
   if (audience === 'subscribers') {
     feedFilter.subscriptionStatus = { $in: ['basic', 'premium'] };
     feedFilter.subscriptionExpiresAt = { $gt: new Date() };
   }
+  if (isTier2) {
+    if (!tier2Club) return { total: 0, persisted: 0, sent: 0 };
+    feedFilter.tier2MonthsEntitled = clubMonthKey(tier2Club);
+    feedFilter.isBanned = { $ne: true };
+  }
 
-  const users = await User.find(feedFilter)
-    .select('_id ' + PUSH_FIELDS)
-    .lean();
+  const select = isTier2 ? '_id ' + PUSH_FIELDS + ' ' + TIER2_FIELDS : '_id ' + PUSH_FIELDS;
+  let users = await User.find(feedFilter).select(select).lean();
+  if (isTier2) {
+    users = users.filter((u) => hasTier2ForClub(u, tier2Club, new Date()));
+  }
+  users = users.filter((u) => hasPlatform(u, platform)).map((u) => onlyPlatform(u, platform));
 
-  const payloadData = { ...data, type: 'news' };
+  const type = isTier2 ? 'club_meeting' : 'news';
+  const payloadData = isTier2
+    ? { ...data, type, clubMonthId: String(tier2Club._id) }
+    : { ...data, type };
 
   // Пишем в ленту всем адресатам (история). ordered:false — один сбой не рушит пачку.
   if (users.length > 0) {
@@ -406,7 +464,7 @@ const sendNews = async ({ audience = 'all', title, body, data = {} } = {}) => {
       await Notification.insertMany(
         users.map((u) => ({
           userId: u._id,
-          type: 'news',
+          type,
           title,
           body,
           data: payloadData,
@@ -420,12 +478,13 @@ const sendNews = async ({ audience = 'all', title, body, data = {} } = {}) => {
     }
   }
 
-  // Push — только тем, у кого включена настройка news и есть токен.
-  const recipients = users.filter((u) => isAllowed(u, 'news'));
+  // Push — тем, у кого есть токен; обычные новости — ещё и с включённой настройкой news.
+  const recipients = users.filter((u) => isAllowed(u, isTier2 ? null : 'news'));
   const sent = await deliverMany(recipients, { title, body, data: payloadData });
 
   logger.info('Push news завершён', {
     audience,
+    platform,
     total: users.length,
     sent,
   });
@@ -448,4 +507,11 @@ const countBroadcastRecipients = async ({ audience = 'all' } = {}) => {
   return User.countDocuments(filter);
 };
 
-module.exports = { sendToUser, broadcast, sendNews, countBroadcastRecipients };
+module.exports = {
+  sendToUser,
+  broadcast,
+  sendNews,
+  countBroadcastRecipients,
+  onlyPlatform,
+  hasPlatform,
+};

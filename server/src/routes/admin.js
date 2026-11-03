@@ -553,21 +553,36 @@ router.post(
  *
  * Body:
  * - title, body — текст новости;
- * - audience ('all' | 'subscribers', default 'all');
+ * - audience ('all' | 'subscribers' | 'tier2', default 'all'); tier2 —
+ *   участницы с Тарифом 2 на текущий клуб (03.11.2026);
+ * - platform ('all' | 'ios' | 'android', default 'all');
  * - data (опц.) — полезная нагрузка для навигации по тапу.
  */
 const newsSchema = z.object({
   title: z.string().min(1).max(120).trim(),
   body: z.string().min(1).max(1000).trim(),
-  audience: z.enum(['all', 'subscribers']).default('all'),
+  audience: z.enum(['all', 'subscribers', 'tier2']).default('all'),
+  platform: z.enum(['all', 'ios', 'android']).default('all'),
   data: z.record(z.any()).optional(),
 });
 
 router.post('/news', validate(newsSchema), async (req, res, next) => {
   try {
-    const { title, body, audience } = req.body;
+    const { title, body, audience, platform } = req.body;
+    let tier2Club = null;
+    if (audience === 'tier2') {
+      const now = new Date();
+      tier2Club = await ClubMonth.findOne({ startsAt: { $lte: now }, endsAt: { $gte: now } })
+        .select('year month startsAt endsAt')
+        .lean();
+      if (!tier2Club) {
+        throw new AppError('NO_CURRENT_CLUB', 'Клуб текущего месяца не заведён — некому отправить', 400);
+      }
+    }
     const result = await pushService.sendNews({
       audience,
+      platform,
+      tier2Club,
       title,
       body,
       data: req.body.data || {},
