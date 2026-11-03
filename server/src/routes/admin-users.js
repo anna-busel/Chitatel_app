@@ -384,6 +384,13 @@ router.post('/:id/revoke-book', validate(bookSchema), async (req, res, next) => 
     await User.findByIdAndUpdate(req.params.id, {
       $pull: { purchasedBooks: book._id },
     });
+    // Ручная выдача пишет Purchase (platform 'web') — помечаем её отменённой,
+    // иначе разбор останется в «Мои покупки» и в «Оплатах» как выданный.
+    // Покупки из App Store / Google Play не трогаем (03.11.2026).
+    await Purchase.updateMany(
+      { userId: req.params.id, itemType: 'book', itemId: req.body.bookSlug, platform: 'web', status: 'active' },
+      { $set: { status: 'cancelled' } }
+    );
     return success(res, { ok: true });
   } catch (err) {
     return next(err);
@@ -614,6 +621,11 @@ router.post('/:id/revoke-package', validate(pkgSchema), async (req, res, next) =
     await User.findByIdAndUpdate(req.params.id, {
       $pull: { purchasedPackages: pkg._id },
     });
+    // См. revoke-book: ручную выдачу помечаем отменённой (03.11.2026).
+    await Purchase.updateMany(
+      { userId: req.params.id, itemType: 'package', itemId: req.body.packageSlug, platform: 'web', status: 'active' },
+      { $set: { status: 'cancelled' } }
+    );
     return success(res, { ok: true });
   } catch (err) {
     return next(err);
