@@ -491,8 +491,18 @@ async function openUser(id){
 }
 function renderUser(){
   var u=_curUser;
-  var books=(u.purchasedBooks||[]).map(function(b){return esc(b.title);}).join(', ')||'—';
-  var packs=(u.purchasedPackages||[]).map(function(p){return esc(p.title);}).join(', ')||'—';
+  // Купленные разборы и пакеты — с крестиком, как клубные месяцы: снять
+  // ошибочно выданный доступ (03.11.2026).
+  var books=(u.purchasedBooks||[]).map(function(b){
+    return '<span class="badge" style="margin:0 4px 4px 0;display:inline-block">'+esc(b.title)+
+      ' <a href="#" title="Убрать доступ к разбору" style="text-decoration:none;color:var(--danger,#C0392B)" '+
+      'onclick="revokeBook(\''+esc(b.bookSlug)+'\');return false;">×</a></span>';
+  }).join('')||'—';
+  var packs=(u.purchasedPackages||[]).map(function(p){
+    return '<span class="badge" style="margin:0 4px 4px 0;display:inline-block">'+esc(p.title)+
+      ' <a href="#" title="Убрать доступ к пакету" style="text-decoration:none;color:var(--danger,#C0392B)" '+
+      'onclick="revokePkg(\''+esc(p.packageSlug)+'\');return false;">×</a></span>';
+  }).join('')||'—';
   openModal(
     '<div style="display:flex;gap:12px;align-items:center"><div class="av" style="width:50px;height:50px">'+esc((u.name||u.email||'?')[0].toUpperCase())+'</div>'+
     '<div><h2 style="margin:0">'+esc(u.name||'Без имени')+'</h2><div class="muted">'+(u.email?esc(u.email):'почта скрыта провайдером входа')+'</div></div></div>'+
@@ -650,6 +660,20 @@ async function grantBook(){
   var bookSlug=(document.getElementById('grBook').value||'').trim(); if(!bookSlug) return;
   try{ var d=await api('/admin/users/'+_curUser._id+'/grant-book',{method:'POST',body:JSON.stringify({bookSlug:bookSlug})});
     toast('Открыт разбор: '+(d.book?d.book.title:bookSlug)); await openUser(_curUser._id);
+  }catch(e){ toast(e.message); }
+}
+async function revokeBook(slug){
+  var b=(_curUser.purchasedBooks||[]).filter(function(x){return x.bookSlug===slug;})[0]; var title=b?b.title:slug;
+  if(!confirm('Убрать доступ к разбору «'+title+'»?')) return;
+  try{ await api('/admin/users/'+_curUser._id+'/revoke-book',{method:'POST',body:JSON.stringify({bookSlug:slug})});
+    toast('Разбор убран'); await openUser(_curUser._id);
+  }catch(e){ toast(e.message); }
+}
+async function revokePkg(slug){
+  var p=(_curUser.purchasedPackages||[]).filter(function(x){return x.packageSlug===slug;})[0]; var title=p?p.title:slug;
+  if(!confirm('Убрать доступ к пакету «'+title+'»?')) return;
+  try{ await api('/admin/users/'+_curUser._id+'/revoke-package',{method:'POST',body:JSON.stringify({packageSlug:slug})});
+    toast('Пакет убран'); await openUser(_curUser._id);
   }catch(e){ toast(e.message); }
 }
 async function grantPkg(){
