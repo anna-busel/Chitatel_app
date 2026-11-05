@@ -195,7 +195,7 @@ async function assertClubAccessForMessage(userId, clubMonthId) {
   const [user, club] = await Promise.all([
     User.findById(userId)
       .select(
-        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled role isBanned mutedUntil'
+        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled clubChatForever role isBanned mutedUntil'
       )
       .lean(),
     ClubMonth.findById(clubMonthId).lean(),
@@ -264,7 +264,7 @@ router.get('/list', async (req, res, next) => {
   try {
     const user = await User.findById(req.user.userId)
       .select(
-        'subscriptionStatus subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled role isBanned'
+        'subscriptionStatus subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled clubChatForever role isBanned'
       )
       .lean();
 
@@ -337,6 +337,26 @@ router.get('/list', async (req, res, next) => {
     if (!isAdmin) {
       const archiveKeys = new Set(user.clubMonthsEntitled || []);
       archiveDocs = archiveDocs.filter((d) => archiveKeys.has(clubMonthKey(d)));
+
+      // «Чат остаётся» (CRM-PLAN B4, 05.11.2026): оплаченные клубы из
+      // user.clubChatForever открыты и после архивного окна (computeClubAccess),
+      // поэтому показываем их в списке архива — иначе в чат не попасть.
+      const chatKeys = (user.clubChatForever || []).filter((k) => archiveKeys.has(k));
+      if (chatKeys.length) {
+        const shown = new Set(archiveDocs.map((d) => clubMonthKey(d)));
+        const pairs = chatKeys
+          .filter((k) => !shown.has(k))
+          .map((k) => k.split('-').map(Number))
+          .map(([y, m]) => ({ year: y, month: m }));
+        if (pairs.length) {
+          const extra = await ClubMonth.find({ endsAt: { $lt: now }, $or: pairs })
+            .select(projection)
+            .lean();
+          archiveDocs = [...archiveDocs, ...extra].sort(
+            (a, b) => new Date(b.startsAt) - new Date(a.startsAt)
+          );
+        }
+      }
     }
 
     // — Будущие —
