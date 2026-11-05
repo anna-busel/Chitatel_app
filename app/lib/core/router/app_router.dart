@@ -21,6 +21,7 @@ import '../../features/home/screens/home_screen.dart';
 import '../../features/catalog/screens/catalog_screen.dart';
 import '../../features/club/screens/club_screen.dart';
 import '../../features/book/screens/book_screen.dart';
+import '../../features/book/screens/reviews_screen.dart';
 import '../../features/search/screens/search_screen.dart';
 import '../../features/catalog/screens/package_screen.dart';
 import '../../features/player/screens/player_screen.dart';
@@ -40,6 +41,7 @@ import '../../features/profile/screens/notification_settings_screen.dart';
 import '../../features/profile/screens/support_screen.dart';
 import '../../features/profile/screens/blocked_users_screen.dart';
 import '../../features/profile/screens/delete_account_screen.dart';
+import '../../features/profile/screens/change_password_screen.dart';
 
 // — Key для ShellRoute navigator —
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -128,7 +130,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: Routes.forgotPassword,
-        builder: (context, state) => const ForgotPasswordScreen(),
+        // P3 (05.11.2026): в extra — почта, уже введённая на экране входа.
+        builder: (context, state) => ForgotPasswordScreen(
+          initialEmail: state.extra is String ? state.extra as String : null,
+        ),
       ),
       // Онбординг после входа (задача 6.3): имя → опрос → страна/город/рассылка.
       GoRoute(
@@ -208,6 +213,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final id = state.pathParameters['id'] ?? '';
           return BookScreen(bookId: id);
+        },
+      ),
+      // «Все отзывы» о разборе (C3, 05.11.2026). Гостю открыт: отзывы видны всем.
+      GoRoute(
+        path: Routes.bookReviewsPath,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) {
+          final id = state.pathParameters['id'] ?? '';
+          return ReviewsScreen(bookId: id);
         },
       ),
       GoRoute(
@@ -326,6 +340,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const DeleteAccountScreen(),
       ),
+      // Смена пароля (P4, 05.11.2026) — пункт в профиле только для входа по почте.
+      GoRoute(
+        path: Routes.changePassword,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const ChangePasswordScreen(),
+      ),
     ],
   );
 });
@@ -346,6 +366,7 @@ bool _authRequiresAccount(String location) {
     Routes.support,
     Routes.blockedUsers,
     Routes.deleteAccount,
+    Routes.changePassword,
   ];
   if (authOnly.contains(location)) return true;
   // Анализ цитаты — с path-параметром (/analysis/:quoteId).
