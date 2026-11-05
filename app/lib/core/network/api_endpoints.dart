@@ -91,6 +91,10 @@ class ApiEndpoints {
 
   // — Home & Catalog —
   static const String home = '/home';
+
+  /// GET /api/home/banners?platform=ios|android — карусель на главной
+  /// (UPDATES-PLAN T, 05.11.2026). Без platform сервер отдаёт пусто.
+  static const String homeBanners = '/home/banners';
   static const String books = '/books';
   static const String booksFeatured = '/books/featured';
   static const String booksSearch = '/books/search';

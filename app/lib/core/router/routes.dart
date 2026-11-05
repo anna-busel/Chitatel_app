@@ -56,6 +56,10 @@ class Routes {
 
   // — Контент —
   static String book(String id) => '/book/$id';
+
+  /// Подборка разборов из баннера на главной (UPDATES-PLAN T). Данные
+  /// передаются через `extra` (BannerBooksArgs).
+  static const String bannerBooks = '/banner-books';
   static const String bookPath = '/book/:id';
 
   /// «Все отзывы» о разборе (C3, 05.11.2026). Отдельный префикс, а не
