@@ -14,8 +14,25 @@ const router = Router();
 
 router.use(requireAuth);
 
-// Поля, которые НИКОГДА не уходят клиенту.
+// Поля, которые НИКОГДА не уходят клиенту. passwordReset (код восстановления
+// пароля) скрыт в схеме (select:false) и сюда не попадает.
 const HIDDEN_FIELDS = '-passwordHash -refreshTokens';
+
+/**
+ * Профиль для приложения: lean-документ без дефолтов схемы, поэтому поля,
+ * которых нет у старых аккаунтов, отдаём явным null (05.11.2026):
+ * - ugcRulesAcceptedAt — приняты ли правила сообщества (A3), до этого
+ *   приложение показывает экран-согласие перед первой публикацией;
+ * - authProvider — 'email' | 'apple' | 'google': «Сменить пароль» (P4)
+ *   показывается только при входе по почте.
+ */
+function forClient(user) {
+  return {
+    ...user,
+    authProvider: user.authProvider || null,
+    ugcRulesAcceptedAt: user.ugcRulesAcceptedAt || null,
+  };
+}
 
 // Аватар грузим в память, потом пишем на диск (как картинки чата).
 const upload = multer({
@@ -40,7 +57,7 @@ router.get('/', async (req, res, next) => {
       throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
     }
 
-    return success(res, { user });
+    return success(res, { user: forClient(user) });
   } catch (err) {
     return next(err);
   }
@@ -93,7 +110,7 @@ router.patch('/', validate(updateSchema), async (req, res, next) => {
       throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
     }
 
-    return success(res, { user });
+    return success(res, { user: forClient(user) });
   } catch (err) {
     return next(err);
   }
@@ -169,7 +186,7 @@ router.post('/avatar', upload.single('avatar'), async (req, res, next) => {
       // Не критично: не смогли подчистить — аватар всё равно обновлён.
     }
 
-    return success(res, { user });
+    return success(res, { user: forClient(user) });
   } catch (err) {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
@@ -226,7 +243,7 @@ router.patch(
         throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
       }
 
-      return success(res, { user });
+      return success(res, { user: forClient(user) });
     } catch (err) {
       return next(err);
     }
@@ -268,7 +285,7 @@ router.post('/survey', validate(surveySchema), async (req, res, next) => {
       throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
     }
 
-    return success(res, { user });
+    return success(res, { user: forClient(user) });
   } catch (err) {
     return next(err);
   }
@@ -301,7 +318,32 @@ router.patch('/ai-consent', validate(consentSchema), async (req, res, next) => {
       throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
     }
 
-    return success(res, { user });
+    return success(res, { user: forClient(user) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/profile/ugc-rules
+ * Участница приняла правила сообщества (UPDATES-PLAN A3, Google UGC policy,
+ * 05.11.2026). Тела нет. Ставит User.ugcRulesAcceptedAt; повторный вызов
+ * дату первого согласия не меняет.
+ * Ответ: { ugcRulesAcceptedAt }.
+ */
+router.post('/ugc-rules', async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    // { ugcRulesAcceptedAt: null } совпадает и с отсутствующим полем.
+    await User.updateOne(
+      { _id: userId, isDeleted: { $ne: true }, ugcRulesAcceptedAt: null },
+      { $set: { ugcRulesAcceptedAt: new Date() } }
+    );
+    const user = await User.findById(userId).select('ugcRulesAcceptedAt isDeleted').lean();
+    if (!user || user.isDeleted) {
+      throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
+    }
+    return success(res, { ugcRulesAcceptedAt: user.ugcRulesAcceptedAt || null });
   } catch (err) {
     return next(err);
   }

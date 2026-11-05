@@ -122,6 +122,8 @@ router.get('/', optionalAuth, validate(listSchema, 'query'), async (req, res, ne
  * Body: { rating: 1..5, text?: string ≤1000 }
  * Upsert своего отзыва (один на разбор). Скрытый Анной отзыв правкой
  * не открывается — isHidden не трогаем.
+ * 403: FORBIDDEN (бан), PURCHASE_REQUIRED (нет доступа к разбору),
+ * UGC_RULES_REQUIRED (не приняты правила сообщества, 05.11.2026).
  */
 const upsertSchema = z.object({
   rating: z.number().int().min(1).max(5),
@@ -144,6 +146,17 @@ router.post('/', requireAuth, validate(upsertSchema), async (req, res, next) => 
     const hasAccess = !!book.isFree || (await userHasBookAccess(book, user));
     if (!hasAccess) {
       throw new AppError('PURCHASE_REQUIRED', 'Отзыв могут оставить только слушатели разбора', 403);
+    }
+
+    // Правила сообщества (UPDATES-PLAN A3, Google UGC policy, 05.11.2026):
+    // без согласия публиковать нельзя. Приложение показывает экран правил и
+    // вызывает POST /api/profile/ugc-rules, потом повторяет отправку.
+    if (!user.ugcRulesAcceptedAt) {
+      throw new AppError(
+        'UGC_RULES_REQUIRED',
+        'Перед публикацией примите правила сообщества',
+        403
+      );
     }
 
     const { rating, text } = req.body;

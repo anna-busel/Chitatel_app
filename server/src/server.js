@@ -9,6 +9,7 @@ const { scheduleWeeklyReports, runWeeklyReports } = require('./jobs/weekly-repor
 const { scheduleMonthlyReports, runMonthlyReports } = require('./jobs/monthly-report');
 const { schedulePushJobs } = require('./jobs/push-scheduler');
 const { ensureCrmSettings } = require('./crm/services/settings.service');
+const { scheduleCrmTermExpiry } = require('./crm/jobs/term-expiry');
 
 const server = http.createServer(app);
 
@@ -65,6 +66,8 @@ const start = async () => {
     await ensureCrmSettings().catch((err) =>
       logger.error('CRM settings init error', { message: err.message })
     );
+    // Срок доступа по заказам CRM (B2, 05.11.2026): раз в день.
+    scheduleCrmTermExpiry();
 
     server.listen(config.port, () => {
       logger.info(`Server running on port ${config.port} [${config.nodeEnv}]`);
