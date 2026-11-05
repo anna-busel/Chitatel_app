@@ -553,7 +553,7 @@ function renderUser(){
     '<div class="fld" style="margin-top:10px"><label>Новый пароль</label>'+
       '<input id="edPass" type="text" placeholder="не короче 8 символов" autocomplete="off">'+
       '<button class="btn ghost" style="margin-top:6px" onclick="setPassword()">Задать пароль</button>'+
-      '<div class="hint">Нужен, когда человек не может войти: пароля у аккаунтов через Apple и Google нет, а восстановления по письму в приложении пока не существует. Задайте пароль и передайте его участнице — войдёт по почте. Вход через Apple и Google при этом продолжит работать.</div></div>'+
+      '<div class="hint">С версии 1.0.4 участница, которая входит по почте, восстанавливает пароль сама: на экране входа «Забыли пароль?» — код приходит на почту. Задавать пароль вручную — если письмо не доходит, или чтобы дать вход по почте аккаунту через Apple / Google (у них пароля нет). Задайте пароль и передайте его участнице — войдёт по почте. Вход через Apple и Google при этом продолжит работать.</div></div>'+
     '<div class="divider"></div>'+
     '<div class="btnrow">'+
       '<button class="btn ghost sm" onclick="setRole()">'+(u.role==='admin'?'Снять админа':'Сделать админом')+'</button>'+
@@ -708,21 +708,57 @@ async function loadReports(){
   try{
     var d=await api('/admin/reports?status=pending&limit=50');
     if(!d.reports.length){ el.innerHTML='<div class="empty">Жалоб нет</div>'; return; }
-    el.innerHTML=d.reports.map(function(r){
-      var who=r.reporterUserId?esc(r.reporterUserId.name||r.reporterUserId.email||''):'—';
-      var txt=r.target&&r.target.text?esc(r.target.text):(r.targetType||'объект');
-      return '<div class="card"><div style="font-size:14px;margin-bottom:4px">«'+txt.slice(0,200)+'»</div>'+
-        '<div class="muted">жалоба от '+who+' · причина: '+esc(r.reason||'—')+'</div>'+
-        '<div class="btnrow" style="margin-top:10px">'+
-        '<button class="btn danger sm" onclick="repAct(\''+r._id+'\',\'hide_message\')">Скрыть</button>'+
-        '<button class="btn danger sm" onclick="repAct(\''+r._id+'\',\'mute_user\',7)">Мьют 7д</button>'+
-        '<button class="btn danger sm" onclick="repAct(\''+r._id+'\',\'ban_user\')">Бан</button>'+
-        '<button class="btn ghost sm" onclick="repAct(\''+r._id+'\',\'dismiss\')">Отклонить</button>'+
-        '</div></div>';
-    }).join('');
+    el.innerHTML=d.reports.map(reportCardHtml).join('');
   }catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
 }
+// Карточка жалобы (A2, 05.11.2026). Отзыв: книга, оценка, текст, автор;
+// профиль (и старая жалоба на пользователя): имя и почта участницы — у них
+// нет кнопки «Скрыть». Сообщение чата и прочее — как было.
+var REPORT_KIND={message:'Сообщение в чате',review:'Отзыв на разбор',profile:'Профиль участницы',user:'Участница',ai_analysis:'Разбор ИИ',feed_post:'Пост'};
+function reportAuthorLink(u){
+  if(!u||!u._id) return '—';
+  var label=esc(u.name||u.email||'без имени')+(u.email&&u.name?' · '+esc(u.email):'');
+  return '<a href="#" onclick="openUser(\''+esc(u._id)+'\');return false;">'+label+'</a>';
+}
+function reportCardHtml(r){
+  var who=r.reporterUserId?esc(r.reporterUserId.name||r.reporterUserId.email||''):'—';
+  var t=r.target, type=r.targetType, id=r._id;
+  var head='<div class="muted" style="margin-bottom:4px">'+esc(REPORT_KIND[type]||type||'объект')+' · '+fmtDate(r.createdAt)+'</div>';
+  var body, btns;
+  if(type==='review'){
+    // Сервер (admin.js) кладёт в target.text «Отзыв на «Книга» (N★): текст».
+    if(t){
+      body='<div style="font-size:14px;margin-bottom:4px;white-space:pre-wrap">'+esc(String(t.text||'').slice(0,1200))+
+        (t.isHidden?' <span class="badge b-exp">уже скрыт</span>':'')+'</div>'+
+        '<div class="muted">автор: '+reportAuthorLink(t.userId)+'</div>';
+    } else body='<div class="muted">Отзыв уже удалён</div>';
+    btns='<button class="btn danger sm" onclick="repAct(\''+id+'\',\'hide_content\')">Скрыть отзыв</button>'+
+      '<button class="btn danger sm" onclick="repAct(\''+id+'\',\'mute_user\',7)">Мьют 7д</button>'+
+      '<button class="btn danger sm" onclick="repAct(\''+id+'\',\'ban_user\')">Бан автора</button>'+
+      '<button class="btn ghost sm" onclick="repAct(\''+id+'\',\'dismiss\')">Отклонить</button>';
+  } else if(type==='profile'||type==='user'){
+    body=t?'<div style="font-size:14px;display:flex;align-items:center;gap:10px">'+
+        (t.avatarUrl?'<a href="'+esc(t.avatarUrl)+'" target="_blank" rel="noopener" title="Фото профиля"><img src="'+esc(t.avatarUrl)+'" alt="" style="width:44px;height:44px;border-radius:50%;object-fit:cover"></a>':'')+
+        '<span>'+reportAuthorLink(t)+(t.isBanned?' <span class="badge b-ban">бан</span>':'')+'</span></div>'
+      :'<div class="muted">Аккаунт не найден</div>';
+    btns='<button class="btn danger sm" onclick="repAct(\''+id+'\',\'mute_user\',7)">Мьют 7д</button>'+
+      '<button class="btn danger sm" onclick="repAct(\''+id+'\',\'ban_user\')">Бан автора</button>'+
+      '<button class="btn ghost sm" onclick="repAct(\''+id+'\',\'dismiss\')">Отклонить</button>';
+  } else {
+    var txt=t&&t.text?esc(t.text):(type||'объект');
+    body='<div style="font-size:14px">«'+txt.slice(0,200)+'»</div>';
+    btns='<button class="btn danger sm" onclick="repAct(\''+id+'\',\'hide_message\')">Скрыть</button>'+
+      '<button class="btn danger sm" onclick="repAct(\''+id+'\',\'mute_user\',7)">Мьют 7д</button>'+
+      '<button class="btn danger sm" onclick="repAct(\''+id+'\',\'ban_user\')">Бан</button>'+
+      '<button class="btn ghost sm" onclick="repAct(\''+id+'\',\'dismiss\')">Отклонить</button>';
+  }
+  var why='жалоба от '+who+' · причина: '+esc(r.reason||'—')+(r.comment?' · «'+esc(r.comment)+'»':'');
+  return '<div class="card">'+head+body+
+    '<div class="muted" style="margin-top:6px">'+why+'</div>'+
+    '<div class="btnrow" style="margin-top:10px">'+btns+'</div></div>';
+}
 async function repAct(id,action,muteDays){
+  if(action==='ban_user' && !confirm('Заблокировать автора? Участница не сможет входить в приложение и писать.')) return;
   var body={action:action}; if(muteDays) body.muteDays=muteDays;
   try{ await api('/admin/reports/'+id+'/action',{method:'POST',body:JSON.stringify(body)});
     toast('Готово'); loadReports(); loadDash();
