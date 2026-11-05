@@ -18,6 +18,7 @@ import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/auth/screens/ai_consent_screen.dart';
 import '../../features/auth/screens/push_permission_screen.dart';
 import '../../features/home/screens/home_screen.dart';
+import '../../features/home/screens/banner_books_screen.dart';
 import '../../features/catalog/screens/catalog_screen.dart';
 import '../../features/club/screens/club_screen.dart';
 import '../../features/book/screens/book_screen.dart';
@@ -213,6 +214,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final id = state.pathParameters['id'] ?? '';
           return BookScreen(bookId: id);
+        },
+      ),
+      // Подборка из баннера на главной (UPDATES-PLAN T, 05.11.2026). Список
+      // разборов приходит в extra вместе с баннером. Гостю открыт, как каталог.
+      GoRoute(
+        path: Routes.bannerBooks,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) {
+          final extra = state.extra;
+          return BannerBooksScreen(
+            args: extra is BannerBooksArgs ? extra : null,
+          );
         },
       ),
       // «Все отзывы» о разборе (C3, 05.11.2026). Гостю открыт: отзывы видны всем.
