@@ -137,6 +137,7 @@
       <button data-tab="club" onclick="tab('club')">Клуб месяца</button>
       <button data-tab="thoughts" onclick="tab('thoughts')">Мысль дня</button>
       <button data-tab="mod" onclick="tab('mod')">Модерация</button>
+      <button data-tab="banners" onclick="tab('banners')">Баннеры на главной</button>
       <button data-tab="push" onclick="tab('push')">Уведомления</button>
       <button data-tab="payments" onclick="tab('payments')">Оплаты</button>
     </div>
@@ -213,6 +214,14 @@
         <div id="reportList"><div class="empty">Загрузка…</div></div>
         <div class="lbl">Вопросы Анне (Q&amp;A)</div>
         <div id="qaList"><div class="empty">Загрузка…</div></div>
+      </div>
+
+      <div class="page" data-page="banners">
+        <div class="btnrow" style="margin-bottom:12px">
+          <button class="btn primary sm" onclick="newBanner()">+ Новый баннер</button>
+        </div>
+        <div class="banner">Карусель на главной приложения: первой всегда идёт карточка «Клуб месяца», за ней — активные баннеры по порядку. Баннер виден, пока сейчас между «с» и «по» (время московское). Изменения применяются сразу — без пересборки приложения. Баннеры видны начиная с версии 1.0.4.</div>
+        <div id="bannerList"><div class="empty">Загрузка…</div></div>
       </div>
 
       <div class="page" data-page="push">
@@ -347,6 +356,7 @@ function tab(name){
   if(name==='catalog' && !_loaded.catalog){ _loaded.catalog=true; loadCatalog(); }
   if(name==='club' && !_loaded.club){ _loaded.club=true; loadClubs(); }
   if(name==='thoughts' && !_loaded.thoughts){ _loaded.thoughts=true; loadThoughts(); }
+  if(name==='banners' && !_loaded.banners){ _loaded.banners=true; loadBanners(); }
   if(name==='push' && !_loaded.push){ _loaded.push=true; loadReminder(); loadRemTexts(); loadNotifTpls(); }
   if(name==='payments' && !_loaded.payments){ _loaded.payments=true; loadPayments(); }
 }
@@ -1392,6 +1402,127 @@ async function togglePackagePublish(){
 async function delPackage(){
   try{ await api('/admin/catalog/packages/'+_curPackage.id,{method:'DELETE'}); toast('Пакет удалён'); closeModal(); loadPackages(); }
   catch(e){ toast(e.message); }
+}
+
+
+/* ==================================================================
+ *                     БАННЕРЫ НА ГЛАВНОЙ (UPDATES-PLAN T)
+ * ================================================================== */
+var _banners=[], _curBanner=null, _bnBookIds=[];
+function fmtMsk(d){ var s=toLocalDT(d); return s?s.replace('T',' ').replace(/^(\d{4})-(\d\d)-(\d\d)/,'$3.$2.$1'):'—'; }
+function bannerPlatforms(b){ return (b.platforms||['ios']).map(function(p){ return p==='ios'?'iPhone':'Android'; }).join(' + '); }
+function bannerActionText(b){
+  var a=b.action||{};
+  if(a.kind==='book'){ var bk=_books.filter(function(x){return x.id===a.bookId;})[0]; return 'Разбор: '+(bk?bk.title:'—'); }
+  if(a.kind==='books') return 'Подборка «'+(a.listTitle||'')+'» · '+((a.bookIds||[]).length)+' разб.';
+  return 'Без действия';
+}
+function bannerState(b){
+  var now=Date.now(), s=new Date(b.startsAt).getTime(), e=new Date(b.endsAt).getTime();
+  if(!b.isActive) return '<span class="badge b-free">выключен</span>';
+  if(now<s) return '<span class="badge b-exp">ещё не начался</span>';
+  if(now>=e) return '<span class="badge b-free">закончился</span>';
+  return '<span class="badge b-basic">показывается</span>';
+}
+async function loadBanners(){
+  try{ await ensureBooks(); var d=await api('/admin/home-banners'); _banners=d.items||[]; renderBanners(); }
+  catch(e){ document.getElementById('bannerList').innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+function renderBanners(){
+  var el=document.getElementById('bannerList');
+  if(!_banners.length){ el.innerHTML='<div class="empty">Баннеров нет</div>'; return; }
+  el.innerHTML=_banners.map(function(b){
+    return '<div class="card"'+(b.isActive?'':' style="opacity:.55"')+'>'+
+      (b.imageUrl?'<img src="'+esc(b.imageUrl)+'" style="width:100%;max-width:360px;aspect-ratio:2/1;object-fit:cover;border-radius:12px;display:block;margin-bottom:8px" onerror="this.style.display=\'none\'">':'')+
+      '<div style="font-weight:650">'+esc(b.title||'Без названия')+' '+bannerState(b)+'</div>'+
+      '<div class="muted" style="margin:4px 0">'+fmtMsk(b.startsAt)+' — '+fmtMsk(b.endsAt)+' (МСК) · '+bannerPlatforms(b)+' · порядок '+(b.order||0)+'</div>'+
+      '<div class="muted" style="margin-bottom:8px">'+esc(bannerActionText(b))+'</div>'+
+      '<div class="btnrow"><button class="btn ghost sm" onclick="openBanner(\''+b.id+'\')">Изменить</button>'+
+      '<button class="btn ghost sm" onclick="toggleBanner(\''+b.id+'\','+(!b.isActive)+')">'+(b.isActive?'Выключить':'Включить')+'</button>'+
+      '<button class="btn danger sm" onclick="delBanner(\''+b.id+'\')">Удалить</button></div></div>';
+  }).join('');
+}
+function newBanner(){
+  var nextOrder=_banners.reduce(function(m,b){ return Math.max(m,(b.order||0)+1); },0);
+  _curBanner={ id:null, title:'', imageUrl:'', startsAt:'', endsAt:'', platforms:['ios'], action:{kind:'none',bookId:null,bookIds:[],listTitle:''}, order:nextOrder, isActive:true };
+  renderBanner();
+}
+function openBanner(id){ var b=_banners.filter(function(x){return x.id===id;})[0]; if(!b) return; _curBanner=JSON.parse(JSON.stringify(b)); renderBanner(); }
+function renderBanner(){
+  var b=_curBanner, a=b.action||{kind:'none'}, pl=b.platforms||['ios'];
+  _bnBookIds=(a.bookIds||[]).slice();
+  var pub=_books.filter(function(x){ return x.isPublished!==false; });
+  var bookOpts='<option value="">— выберите разбор —</option>'+pub.map(function(x){ return '<option value="'+x.id+'"'+(a.bookId===x.id?' selected':'')+'>'+esc(x.title)+'</option>'; }).join('');
+  openModal(
+    '<h2>'+(b.id?'Изменить баннер':'Новый баннер')+'</h2>'+
+    '<div class="fld"><label>Название (только для админки)</label><input id="bnTitle" value="'+esc(b.title)+'" maxlength="200" placeholder="Чёрная пятница — скидки"></div>'+
+    '<div class="fld"><label>Картинка'+(b.id?'':' *')+'</label>'+
+      (b.imageUrl?'<img src="'+esc(b.imageUrl)+'" style="width:100%;max-width:360px;aspect-ratio:2/1;object-fit:cover;border-radius:12px;display:block;margin-bottom:8px" onerror="this.style.display=\'none\'">':'')+
+      '<input id="bnFile" type="file" accept="image/jpeg,image/png">'+
+      '<div class="hint">1200×600 или 1280×640, 2:1. JPG или PNG, до 8 МБ. Текст держите подальше от краёв — на узких экранах края могут немного обрезаться.</div></div>'+
+    '<div class="fld"><label>Показывать с (по Москве)</label><input id="bnStart" type="datetime-local" value="'+toLocalDT(b.startsAt)+'"></div>'+
+    '<div class="fld"><label>по (по Москве)</label><input id="bnEnd" type="datetime-local" value="'+toLocalDT(b.endsAt)+'"></div>'+
+    '<div class="fld"><label>Где показывать</label>'+
+      '<label style="display:flex;gap:8px;align-items:center;font-weight:500"><input id="bnIos" type="checkbox" style="width:auto"'+(pl.indexOf('ios')>=0?' checked':'')+'> iPhone</label>'+
+      '<label style="display:flex;gap:8px;align-items:center;font-weight:500"><input id="bnAndroid" type="checkbox" style="width:auto"'+(pl.indexOf('android')>=0?' checked':'')+'> Android</label>'+
+      '<div class="hint">На Android покупок нет — не ставьте туда акции и скидки.</div></div>'+
+    '<div class="fld"><label>По нажатию</label><div class="seg" id="bnKind">'+
+      '<div class="opt'+(a.kind==='none'?' on':'')+'" data-v="none" onclick="pickBnKind(this)">Ничего</div>'+
+      '<div class="opt'+(a.kind==='book'?' on':'')+'" data-v="book" onclick="pickBnKind(this)">Разбор</div>'+
+      '<div class="opt'+(a.kind==='books'?' on':'')+'" data-v="books" onclick="pickBnKind(this)">Подборка</div></div></div>'+
+    '<div id="bnBookBox" class="fld" style="display:'+(a.kind==='book'?'':'none')+'"><label>Разбор</label><select id="bnBook">'+bookOpts+'</select></div>'+
+    '<div id="bnBooksBox" style="display:'+(a.kind==='books'?'':'none')+'">'+
+      '<div class="fld"><label>Заголовок подборки</label><input id="bnListTitle" value="'+esc(a.listTitle||'')+'" maxlength="120" placeholder="Скидки Чёрной пятницы"></div>'+
+      '<div class="fld"><label>Разборы (порядок — как отмечали)</label><div id="bnBooks" style="max-height:240px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:6px"></div></div>'+
+    '</div>'+
+    '<div class="fld"><label>Порядок в карусели</label><input id="bnOrder" type="number" step="1" value="'+(b.order||0)+'"></div>'+
+    '<div class="hint">Меньше — раньше. Карточка «Клуб месяца» всегда первая. Баннер ведёт только внутрь приложения — никаких ссылок на сайт и оплату.</div>'+
+    '<div class="btnrow" style="margin-top:6px"><button class="btn primary" onclick="saveBanner()">Сохранить</button></div>'
+  );
+  renderBnBooks();
+}
+function pickBnKind(el){
+  pick(el); var k=el.dataset.v;
+  document.getElementById('bnBookBox').style.display=k==='book'?'':'none';
+  document.getElementById('bnBooksBox').style.display=k==='books'?'':'none';
+}
+function renderBnBooks(){
+  var box=document.getElementById('bnBooks'); if(!box) return;
+  var pub=_books.filter(function(x){ return x.isPublished!==false || _bnBookIds.indexOf(x.id)>=0; });
+  box.innerHTML=pub.map(function(x){ var i=_bnBookIds.indexOf(x.id); return '<div class="opt'+(i>=0?' on':'')+'" onclick="toggleBnBook(\''+x.id+'\')" style="display:block;margin:3px 0">'+(i>=0?(i+1)+'. ':'')+esc(x.title)+'</div>'; }).join('');
+}
+function toggleBnBook(id){ var i=_bnBookIds.indexOf(id); if(i>=0) _bnBookIds.splice(i,1); else _bnBookIds.push(id); renderBnBooks(); }
+async function saveBanner(){
+  var b=_curBanner;
+  var startV=val('bnStart'), endV=val('bnEnd');
+  if(!startV||!endV){ toast('Укажите даты «с» и «по»'); return; }
+  var startsAt=mskToISO(startV), endsAt=mskToISO(endV);
+  if(!startsAt||!endsAt){ toast('Неверная дата'); return; }
+  if(new Date(endsAt)<=new Date(startsAt)){ toast('«По» должно быть позже «с»'); return; }
+  var platforms=[]; if(document.getElementById('bnIos').checked) platforms.push('ios'); if(document.getElementById('bnAndroid').checked) platforms.push('android');
+  if(!platforms.length){ toast('Отметьте хотя бы одну платформу'); return; }
+  var kind=segVal('bnKind')||'none', action={kind:kind};
+  if(kind==='book'){ action.bookId=val('bnBook'); if(!action.bookId){ toast('Выберите разбор'); return; } }
+  if(kind==='books'){ action.bookIds=_bnBookIds.slice(); action.listTitle=val('bnListTitle'); if(!action.bookIds.length){ toast('Отметьте разборы'); return; } if(!action.listTitle){ toast('Введите заголовок подборки'); return; } }
+  var order=parseInt(val('bnOrder'),10); if(isNaN(order)) order=0;
+  var data={ title:val('bnTitle'), startsAt:startsAt, endsAt:endsAt, platforms:platforms, action:action, order:order };
+  var f=document.getElementById('bnFile'), file=f&&f.files.length?f.files[0]:null;
+  if(!b.id && !file){ toast('Загрузите картинку'); return; }
+  if(file && !/^image\/(jpeg|png)$/.test(file.type)){ toast('Картинка должна быть JPG или PNG'); return; }
+  try{
+    toast('Сохранение…');
+    var opts;
+    if(file){ var fd=new FormData(); fd.append('image',file); fd.append('data',JSON.stringify(data)); opts={method:b.id?'PATCH':'POST',body:fd}; }
+    else opts={method:'PATCH',body:JSON.stringify(data)};
+    await api('/admin/home-banners'+(b.id?'/'+b.id:''),opts);
+    toast('Сохранено'); closeModal(); loadBanners();
+  }catch(e){ toast(e.message); }
+}
+async function toggleBanner(id,active){ try{ await api('/admin/home-banners/'+id,{method:'PATCH',body:JSON.stringify({isActive:active})}); loadBanners(); }catch(e){ toast(e.message); } }
+async function delBanner(id){
+  var b=_banners.filter(function(x){return x.id===id;})[0];
+  if(!confirm('Удалить баннер «'+((b&&b.title)||'без названия')+'»? Картинка удалится насовсем.')) return;
+  try{ await api('/admin/home-banners/'+id,{method:'DELETE'}); toast('Удалён'); loadBanners(); }catch(e){ toast(e.message); }
 }
 
 
