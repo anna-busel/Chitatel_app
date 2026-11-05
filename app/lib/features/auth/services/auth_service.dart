@@ -82,11 +82,41 @@ class AuthService {
   }
 
   /// POST /api/auth/forgot-password
-  /// {email} → {message}
+  /// {email} → {sent: true} — всегда, есть такая почта или нет (P3, 05.11.2026).
+  /// На почту уходит 6-значный код, он действует 15 минут.
   Future<void> forgotPassword({required String email}) async {
     await _apiClient.dio.post(
       ApiEndpoints.forgotPassword,
       data: {'email': email},
+    );
+  }
+
+  /// POST /api/auth/reset-password (P3, 05.11.2026)
+  /// {email, code, newPassword} → {ok: true}. Токенов не возвращает — после
+  /// успеха входим обычным login с новым паролем.
+  /// Ошибки error.code: CODE_INVALID, CODE_EXPIRED, TOO_MANY_ATTEMPTS,
+  /// VALIDATION_ERROR.
+  Future<void> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    await _apiClient.dio.post(
+      ApiEndpoints.resetPassword,
+      data: {'email': email, 'code': code, 'newPassword': newPassword},
+    );
+  }
+
+  /// POST /api/auth/change-password (P4, 05.11.2026), с токеном.
+  /// {currentPassword, newPassword} → {ok: true}.
+  /// Ошибки: WRONG_PASSWORD, NOT_EMAIL_ACCOUNT, VALIDATION_ERROR.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _apiClient.dio.post(
+      ApiEndpoints.changePassword,
+      data: {'currentPassword': currentPassword, 'newPassword': newPassword},
     );
   }
 
