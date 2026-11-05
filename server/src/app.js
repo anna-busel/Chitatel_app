@@ -43,6 +43,7 @@ const adminNotificationsRoutes = require('./routes/admin-notifications');
 const adminReminderTextsRoutes = require('./routes/admin-reminder-texts');
 const adminAnalyticsRoutes = require('./routes/admin-analytics');
 const adminPaymentsRoutes = require('./routes/admin-payments');
+const adminHomeBannersRoutes = require('./routes/admin-home-banners');
 const crmRouter = require('./crm/routes');
 
 const app = express();
@@ -158,6 +159,10 @@ app.use('/api/admin/club', adminClubRoutes);
 // Мысль дня из админки (6.6): список фраз в БД (DailyThought), CRUD, показ
 // текущей. Ротация та же (thought.service). Отдельный роут-файл; requireAdmin.
 app.use('/api/admin/thoughts', adminThoughtsRoutes);
+
+// Баннеры на главной (UPDATES-PLAN T, 05.11.2026): CRUD + загрузка картинки.
+// Публичная отдача — GET /api/home/banners (routes/home.js).
+app.use('/api/admin/home-banners', adminHomeBannersRoutes);
 
 // Уведомления из админки (6.6): настройка напоминания «Запишите цитату»
 // (текст, время, дни, вкл/выкл). Отдельный роут-файл; requireAdmin внутри.
