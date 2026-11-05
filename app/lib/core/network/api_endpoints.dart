@@ -31,6 +31,11 @@ class ApiEndpoints {
   static const String forgotPassword = '/auth/forgot-password';
   static const String resetPassword = '/auth/reset-password';
 
+  /// POST /api/auth/change-password — смена пароля из профиля (P4, 05.11.2026).
+  /// Body: { currentPassword, newPassword }. Только вход по почте.
+  /// Ошибки: WRONG_PASSWORD, NOT_EMAIL_ACCOUNT, VALIDATION_ERROR.
+  static const String changePassword = '/auth/change-password';
+
   /// DELETE /api/auth/account — удаление аккаунта (Apple 5.1.1(v), экран 4.34).
   /// Body: { confirm: 'УДАЛИТЬ' }. Аккаунт помечается удалённым, PII стирается,
   /// цитаты/отчёты/прогресс удаляются, сообщения чата анонимизируются.
@@ -44,6 +49,10 @@ class ApiEndpoints {
   static const String profileAiConsent = '/profile/ai-consent';
   static const String profileSurvey = '/profile/survey';
   static const String profileReferral = '/profile/referral';
+
+  /// POST /api/profile/ugc-rules — принять правила сообщества перед первой
+  /// публикацией (A3, 05.11.2026). Ответ: { ugcRulesAcceptedAt }.
+  static const String profileUgcRules = '/profile/ugc-rules';
 
   // — Пользователи: блокировка и жалобы (Фаза 6, A1 — Apple Guideline 1.2) —
 
@@ -62,6 +71,11 @@ class ApiEndpoints {
   /// clubChatReport.
   static String userReport(String userId) => '/users/$userId/report';
 
+  /// POST /api/reports — жалоба на контент (A1/A3, 05.11.2026).
+  /// Body: { targetType: 'review' | 'profile', targetId, reason, comment? }.
+  /// Ответ: { reported: true } или { reported: true, duplicate: true }.
+  static const String contentReports = '/reports';
+
   // — Админ (роль admin — аккаунт Анны) —
 
   /// POST /api/admin/qa/:questionId/answer — ответить на вопрос Q&A.
@@ -70,6 +84,10 @@ class ApiEndpoints {
   /// чтобы отвечать прямо из приложения, а не только из веб-админки.
   static String adminQaAnswer(String questionId) =>
       '/admin/qa/$questionId/answer';
+
+  /// POST /api/admin/reviews/:id/hide — Анна скрывает отзыв (C3, 05.11.2026).
+  static String adminReviewHide(String reviewId) =>
+      '/admin/reviews/$reviewId/hide';
 
   // — Home & Catalog —
   static const String home = '/home';
@@ -80,6 +98,13 @@ class ApiEndpoints {
 
   /// GET /api/books/:id — детальная информация о книге.
   static String bookById(String id) => '/books/$id';
+
+  /// GET /api/books/:id/reviews?page&limit — отзывы о разборе (C3, 05.11.2026).
+  /// POST — оставить/изменить свой отзыв { rating 1..5, text ≤1000 }.
+  static String bookReviews(String bookId) => '/books/$bookId/reviews';
+
+  /// DELETE /api/books/:id/reviews/mine — удалить свой отзыв.
+  static String bookMyReview(String bookId) => '/books/$bookId/reviews/mine';
 
   /// GET /api/books/:id/audio/:partNumber — signed URL для аудио (задача 2.3/2.7).
   /// Ответ: { audioUrl, duration, partNumber, title, isPreview }
