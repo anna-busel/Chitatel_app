@@ -292,7 +292,7 @@ describe('POST /api/books/:id/reviews', () => {
 
   test('без доступа к разбору — 403, отзыв не создаётся', async () => {
     Book.findOne.mockReturnValue(chain(paidBook()));
-    User.findById.mockReturnValue(chain({ _id: ME, role: 'user' }));
+    User.findById.mockReturnValue(chain({ _id: ME, role: 'user', ugcRulesAcceptedAt: new Date() }));
     userHasBookAccess.mockResolvedValue(false);
 
     const res = await call('POST', `/api/books/${BOOK_ID}/reviews`, {
@@ -308,7 +308,7 @@ describe('POST /api/books/:id/reviews', () => {
 
   test('с доступом — upsert своего отзыва, isHidden не трогаем, рейтинг пересчитан', async () => {
     Book.findOne.mockReturnValue(chain(paidBook()));
-    User.findById.mockReturnValue(chain({ _id: ME, role: 'user' }));
+    User.findById.mockReturnValue(chain({ _id: ME, role: 'user', ugcRulesAcceptedAt: new Date() }));
     userHasBookAccess.mockResolvedValue(true);
     Review.aggregate.mockResolvedValue([{ avg: 4, count: 3 }]);
     mockUpsert({
@@ -340,7 +340,7 @@ describe('POST /api/books/:id/reviews', () => {
 
   test('бесплатный разбор — доступ без userHasBookAccess', async () => {
     Book.findOne.mockReturnValue(chain(paidBook({ isFree: true })));
-    User.findById.mockReturnValue(chain({ _id: ME, role: 'user' }));
+    User.findById.mockReturnValue(chain({ _id: ME, role: 'user', ugcRulesAcceptedAt: new Date() }));
     mockUpsert({ _id: 'r1', rating: 5, text: '', userId: { _id: ME, name: 'Я' } });
 
     const res = await call('POST', `/api/books/${BOOK_ID}/reviews`, {
@@ -380,6 +380,49 @@ describe('POST /api/books/:id/reviews', () => {
   test('без авторизации — 401', async () => {
     const res = await call('POST', `/api/books/${BOOK_ID}/reviews`, { body: { rating: 5 } });
     expect(res.status).toBe(401);
+  });
+
+  // A3 (05.11.2026): правила сообщества — после проверки доступа к разбору.
+  test('правила сообщества не приняты — 403 UGC_RULES_REQUIRED, отзыв не создаётся', async () => {
+    Book.findOne.mockReturnValue(chain(paidBook()));
+    User.findById.mockReturnValue(chain({ _id: ME, role: 'user', ugcRulesAcceptedAt: null }));
+    userHasBookAccess.mockResolvedValue(true);
+
+    const res = await call('POST', `/api/books/${BOOK_ID}/reviews`, {
+      user: ME,
+      body: { rating: 5, text: 'Отлично' },
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('UGC_RULES_REQUIRED');
+    expect(Review.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('у старого аккаунта поля нет — тоже UGC_RULES_REQUIRED', async () => {
+    Book.findOne.mockReturnValue(chain(paidBook({ isFree: true })));
+    User.findById.mockReturnValue(chain({ _id: ME, role: 'user' }));
+
+    const res = await call('POST', `/api/books/${BOOK_ID}/reviews`, {
+      user: ME,
+      body: { rating: 4 },
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('UGC_RULES_REQUIRED');
+  });
+
+  test('нет доступа и нет согласия — сначала PURCHASE_REQUIRED', async () => {
+    Book.findOne.mockReturnValue(chain(paidBook()));
+    User.findById.mockReturnValue(chain({ _id: ME, role: 'user' }));
+    userHasBookAccess.mockResolvedValue(false);
+
+    const res = await call('POST', `/api/books/${BOOK_ID}/reviews`, {
+      user: ME,
+      body: { rating: 4 },
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('PURCHASE_REQUIRED');
   });
 });
 
