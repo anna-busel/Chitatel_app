@@ -40,6 +40,22 @@ const userSchema = new mongoose.Schema(
     googleUserId: { type: String, unique: true, sparse: true },
     passwordHash: String,
 
+    // Код восстановления пароля (UPDATES-PLAN P1, 05.11.2026), только для
+    // authProvider 'email'. codeHash — HMAC-SHA256 от кода, сам код не
+    // хранится; срок 15 мин, attempts — неверные вводы (максимум 5), sentAt —
+    // для паузы 60 с между письмами. select:false — поле не попадает ни в
+    // один ответ, читается только явно (routes/password.js).
+    passwordReset: {
+      type: {
+        codeHash: String,
+        expiresAt: Date,
+        attempts: { type: Number, default: 0 },
+        sentAt: Date,
+      },
+      select: false,
+      default: undefined,
+    },
+
     subscriptionStatus: {
       type: String,
       enum: ['free', 'basic', 'premium', 'expired'],
@@ -87,6 +103,12 @@ const userSchema = new mongoose.Schema(
     // Ссылку на встречу клуба сервер отдаёт только тем, у кого месяц клуба
     // есть в этом наборе (см. hasTier2ForClub в middleware/subscription.js).
     tier2MonthsEntitled: { type: [String], default: [] },
+
+    // «Чат остаётся» (CRM-PLAN B4, 05.11.2026): ключи 'YYYY-M' клубов, чат
+    // которых остаётся открытым и после архивного окна (продукт CRM с
+    // chatForever). Работает только вместе с ключом в clubMonthsEntitled —
+    // см. computeClubAccess. Пишет только entitlement.service (CRM).
+    clubChatForever: { type: [String], default: [] },
 
     hasArchiveAccess: { type: Boolean, default: false },
     purchasedBooks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Book' }],
@@ -156,6 +178,11 @@ const userSchema = new mongoose.Schema(
     // и reply-снапшоты; на клиенте — входящие сообщения по WebSocket.
     // Заблокировать администратора (автора клуба) нельзя — см. routes/users.js.
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+
+    // Когда участница приняла правила сообщества (UPDATES-PLAN A3, Google UGC
+    // policy, 05.11.2026). Без отметки публиковать нельзя: отзыв на разбор
+    // отвечает 403 UGC_RULES_REQUIRED. Ставится POST /api/profile/ugc-rules.
+    ugcRulesAcceptedAt: { type: Date, default: null },
 
     isDeleted: { type: Boolean, default: false },
     deletionRequestedAt: Date,

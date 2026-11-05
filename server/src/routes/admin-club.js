@@ -8,6 +8,8 @@ const { success } = require('../utils/response');
 const { AppError } = require('../middleware/error');
 const Book = require('../models/Book');
 const ClubMonth = require('../models/ClubMonth');
+const logger = require('../config/logger');
+const { materialsForClubMonth } = require('../crm/services/access.service');
 
 const router = Router();
 
@@ -242,6 +244,16 @@ router.post('/', validate(clubSchema), async (req, res, next) => {
     });
 
     await markBookInClub(book._id, year, month);
+
+    // Тариф 3 (CRM-PLAN B3, 05.11.2026): у кого в CRM оплачен этот месяц с
+    // «материалы навсегда» — разбор клуба в purchasedBooks. В фоне: создание
+    // клуба от CRM не зависит, ошибка — только в лог.
+    materialsForClubMonth(club).catch((err) =>
+      logger.error('CRM materialsForClubMonth error', {
+        clubMonthId: String(club._id),
+        message: err.message,
+      })
+    );
 
     return success(res, { club: serializeClub(club, book) }, 201);
   } catch (err) {
