@@ -23,6 +23,7 @@ import '../../player/providers/player_provider.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../providers/book_provider.dart';
 import '../widgets/book_parts_list.dart';
+import '../widgets/reviews_section.dart';
 
 /// Экран детальной информации о книге.
 /// MASTER секции 4.12 (бесплатная), 4.13 (платная), 4.14 (купленная).
@@ -133,6 +134,10 @@ class _BookContent extends StatelessWidget {
                     onPartTap: (part) => _onPartTap(context, part),
                   ),
                 ],
+                // C3 (05.11.2026): отзывы — отдельным виджетом, код покупки
+                // выше не трогаем (ветка android отличается там на ~107 строк).
+                const SizedBox(height: 28),
+                ReviewsSection(book: book),
                 const SizedBox(height: 40),
               ],
             ),
