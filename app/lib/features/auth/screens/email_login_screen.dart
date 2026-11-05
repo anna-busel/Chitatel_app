@@ -8,12 +8,14 @@ import '../../../core/router/routes.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_text_field.dart';
 import '../../../shared/widgets/app_top_bar.dart';
+import '../post_login_navigation.dart';
 import '../providers/auth_provider.dart';
 
 /// Экран Email-входа (MASTER 4.3).
 ///
 /// Заголовок «Вход», email, пароль, кнопка «Войти».
-/// Ссылки: «Забыли пароль?», «Нет аккаунта? Зарегистрироваться».
+/// Ссылки: «Забыли пароль?» (P3, 05.11.2026 — код на почту),
+/// «Нет аккаунта? Зарегистрироваться».
 class EmailLoginScreen extends ConsumerStatefulWidget {
   const EmailLoginScreen({super.key});
 
@@ -55,7 +57,8 @@ class _EmailLoginScreenState extends ConsumerState<EmailLoginScreen> {
 
     ref.listen<AuthState>(authProvider, (prev, next) {
       if (next.status == AuthStatus.authenticated) {
-        context.go(Routes.home);
+        // Q1 (05.11.2026): онбординг / однократный экран уведомлений / главная.
+        goAfterLogin(context, ref, next);
       }
       if (next.status == AuthStatus.error && next.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -107,10 +110,27 @@ class _EmailLoginScreenState extends ConsumerState<EmailLoginScreen> {
                       onPressed: isLoading ? null : _login,
                       isLoading: isLoading,
                     ),
-                    const SizedBox(height: 12),
-                    // P2: ссылка «Забыли пароль?» временно скрыта — серверного
-                    // endpoint сброса пароля нет. Экран forgot_password и
-                    // Routes.forgotPassword оставлены; вернуть после реализации.
+                    const SizedBox(height: 4),
+                    // P3 (05.11.2026): восстановление пароля кодом из письма.
+                    // Почту, если уже введена, передаём на экран восстановления.
+                    Center(
+                      child: GestureDetector(
+                        onTap: () => context.push(
+                          Routes.forgotPassword,
+                          extra: _emailController.text.trim().toLowerCase(),
+                        ),
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: Text(
+                            'Забыли пароль?',
+                            style: AppTypography.caption.copyWith(
+                              color: AppColors.terracotta,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                     Center(
                       child: GestureDetector(
                         onTap: () => context.push(Routes.register),

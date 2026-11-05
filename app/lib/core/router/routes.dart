@@ -39,6 +39,9 @@ class Routes {
   /// блокировку — Apple требует, чтобы она была обратимой.
   static const String blockedUsers = '/blocked-users';
 
+  /// Смена пароля (P4, 05.11.2026) — только для входа по почте.
+  static const String changePassword = '/change-password';
+
   // — Дневник (Фаза 5) —
 
   /// Экран анализа цитаты (4.25). Открывается из дневника.
@@ -54,6 +57,11 @@ class Routes {
   // — Контент —
   static String book(String id) => '/book/$id';
   static const String bookPath = '/book/:id';
+
+  /// «Все отзывы» о разборе (C3, 05.11.2026). Отдельный префикс, а не
+  /// /book/:id/reviews — чтобы не пересекаться с маршрутом книги.
+  static String bookReviews(String bookId) => '/book-reviews/$bookId';
+  static const String bookReviewsPath = '/book-reviews/:id';
   static String player(String bookId) => '/player/$bookId';
   static const String playerPath = '/player/:bookId';
   static String package(String id) => '/package/$id';
