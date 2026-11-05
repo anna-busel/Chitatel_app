@@ -643,3 +643,15 @@ Google проверять до начала задачи; отчёт кажды�
 - На VPS для сборки нужен Node 20+ (есть), Vite 6.
 - `nginx -t` локально не прогонялся — проверить на VPS.
 - Этот файл перевалил за 60 КБ — следующий итог писать в `AI-CONTEXT-8.md`.
+
+## 12. Баннеры на главной (05.11)
+
+UPDATES-PLAN T, ветка `banners` (от `main`) + `w2-android` (клиент). В сборку 1.0.4.
+
+- **API.** `GET /api/home/banners?platform=ios|android` (optionalAuth): `{items:[{id, imageUrl, action}]}`. `action`: `{kind:'none'}` | `{kind:'book', bookId}` | `{kind:'books', listTitle, books:[…]}` — книги те же поля, что в `/api/home` (`BOOK_CARD_FIELDS`), только опубликованные, с `isOwned` для вошедших (`ownedBookIdsFor`/`markOwned` из `routes/books.js`). Снятый с публикации разбор → `none`. Без `platform` или с неизвестной — пусто (клиенты до 1.0.4 не шлют). Отбор: `isActive`, `startsAt <= now < endsAt`, платформа в `platforms` (пустой список = только iOS), сортировка `order`, затем `createdAt` (`services/home-banner.service.js`).
+- **Модель** `HomeBanner`: `title` (только для админки), `imageStoragePath` (`home-banners/<uuid>.jpg|png` под `AUDIO_BASE_PATH`, URL подписывается при отдаче, exp 2099 — кэшируется), `startsAt`, `endsAt`, `platforms` (по умолчанию `['ios']`), `action {kind, bookId, bookIds, listTitle}`, `order`, `isActive`.
+- **Админ-API** `/api/admin/home-banners`: `GET`, `POST` (multipart: `image` + `data` = JSON-строка), `PATCH /:id` (JSON или multipart с новой картинкой — старый файл удаляется), `DELETE /:id` (вместе с файлом). JPG/PNG, 8 МБ.
+- **Админка**: вкладка «Баннеры на главной». Даты «с — по» по Москве (те же `toLocalDT`/`mskToISO`, что у встреч Тарифа 2). Подсказка размера «1200×600 или 1280×640, 2:1». Подборка — порядок разборов = порядок, в котором их отметили.
+- **Приложение**: `homeBannersProvider` (ошибка → `[]`), `HomeCarousel` вместо `ClubMonthCard` на главной; нет баннеров — как раньше. Страница 1 — клуб, высота страницы = max((ширина − 40)/2, естественная высота карточки клуба). Автолистание 4 с: одноразовый таймер, пауза на касание, сброс при ручной смене страницы, стоп когда главная перекрыта (`TickerMode`), в фоне и при dispose; круг через бесконечный индекс (`index % N`). Картинки — `CachedNetworkImage` (как картинки чата/аватары). Подборка — `Routes.bannerBooks` с `extra: BannerBooksArgs`, карточки `BookGridCard`.
+- **Правила.** Apple 3.1.1: действие только внутри приложения, ссылок наружу нет. Google: на Android по умолчанию баннеров нет; в админке подсказка «На Android покупок нет — не ставьте туда акции и скидки». На Android карточки подборки без цен (`kPurchasesEnabled`).
+- **Проверить на сборке**: высота карусели при крупном шрифте; что автолистание останавливается под экраном разбора; pull-to-refresh при смене числа баннеров.
