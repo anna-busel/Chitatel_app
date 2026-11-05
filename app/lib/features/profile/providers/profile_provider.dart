@@ -98,6 +98,18 @@ class ProfileNotifier extends StateNotifier<AsyncValue<UserProfile>> {
     if (!mounted) return;
     state = AsyncValue.data(updated);
   }
+
+  /// Принять правила сообщества (A3, 05.11.2026). Бросает исключение
+  /// наверх — шторка покажет ошибку. Профиль не перезагружаем: ставим дату
+  /// в уже загруженный.
+  Future<void> acceptUgcRules() async {
+    final at = await _service.acceptUgcRules();
+    if (!mounted) return;
+    final current = state.valueOrNull;
+    if (current != null) {
+      state = AsyncValue.data(current.withUgcRulesAccepted(at));
+    }
+  }
 }
 
 /// Статистика прослушивания (экран 4.45). За всё время.
