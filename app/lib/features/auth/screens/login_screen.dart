@@ -9,6 +9,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/router/routes.dart';
+import '../post_login_navigation.dart';
 import '../providers/auth_provider.dart';
 
 /// Экран входа (MASTER 4.2).
@@ -96,14 +97,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // onboardingCompleted нет → не true) → в онбординг с экрана «Имя».
         // Иначе — сразу на главную. Резервно ту же развилку страхует редирект
         // роутера по флагу onboarding_pending.
-        final user = next.user;
-        final completed = user != null && user['onboardingCompleted'] == true;
         // Если на вход привёл редирект с защищённого экрана (?from=...),
         // возвращаемся туда после успешного входа (6.5). Иначе — на главную.
         final from = GoRouterState.of(context).uri.queryParameters['from'];
         final target =
             (from != null && from.startsWith('/')) ? from : Routes.home;
-        context.go(completed ? target : Routes.onboardingName);
+        // Q1 (05.11.2026): развилка онбординга и однократный экран
+        // уведомлений после входа — в goAfterLogin.
+        goAfterLogin(context, ref, next, target: target);
       }
       if (next.status == AuthStatus.error && next.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
