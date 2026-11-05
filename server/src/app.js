@@ -59,10 +59,12 @@ app.set('trust proxy', 1);
 // Security
 app.use(helmet());
 
-// CORS
+// CORS. crm.chitatel.app — интерфейс CRM (CRM-PLAN A4/A5): в продакшене он
+// ходит в /api своего же домена через nginx, origin нужен для запросов
+// напрямую на api.chitatel.app (VITE_API_URL).
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
-    ? ['https://chitatel.app', 'https://admin.chitatel.app']
+    ? ['https://chitatel.app', 'https://admin.chitatel.app', 'https://crm.chitatel.app']
     : '*',
   credentials: true,
 }));
