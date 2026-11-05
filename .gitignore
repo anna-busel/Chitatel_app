@@ -47,3 +47,7 @@ coverage/
 
 # Misc
 *.tgz
+
+# CRM (Vite)
+crm/node_modules/
+crm/dist/
