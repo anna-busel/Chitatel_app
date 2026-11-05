@@ -235,8 +235,9 @@ const requireAdmin = async (req, _res, next) => {
  * (раньше сокет пускал любого подписчика/архивника в любой клуб).
  *
  * user — lean User с полями subscriptionStatus, subscriptionPlan,
- *   subscriptionExpiresAt, gracePeriodExpiresAt, clubMonthsEntitled, role,
- *   mutedUntil. Бан (isBanned) здесь НЕ проверяется — это делает вызывающий.
+ *   subscriptionExpiresAt, gracePeriodExpiresAt, clubMonthsEntitled,
+ *   clubChatForever (B4, 05.11.2026), role, mutedUntil. Бан (isBanned)
+ *   здесь НЕ проверяется — это делает вызывающий.
  * club — lean ClubMonth (month, year, startsAt, endsAt).
  * now — Date (по умолчанию текущее время).
  *
@@ -316,7 +317,13 @@ function computeClubAccess(user, club, now = new Date()) {
   // сентябрь, забирал АВГУСТОВСКИЙ клуб даром — и чат, и разбор. Это тот же
   // класс бага, что чинили 30.07 для текущего клуба, только в другую сторону.
   // Клуб, которого нет в clubMonthsEntitled, не открывается никогда.
-  if (isInArchiveWindow && isPaidClub) {
+  // «Чат остаётся» (CRM-PLAN B4, 05.11.2026): месяцы из user.clubChatForever
+  // (продукт CRM с chatForever) не закрываются и после архивного окна —
+  // тот же режим archive, писать можно. Месяц обязан быть и в оплаченном
+  // наборе: возврат снимает клубный месяц — с ним уходит и чат.
+  const isChatForever =
+    club.endsAt < now && (user.clubChatForever || []).includes(clubMonthKey(club));
+  if ((isInArchiveWindow || isChatForever) && isPaidClub) {
     return {
       kind: 'archive',
       tier: user.subscriptionStatus,
@@ -409,7 +416,7 @@ const resolveClubAccess = async (req, _res, next) => {
 
     const user = await User.findById(req.user.userId)
       .select(
-        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled tier2MonthsEntitled role isBanned mutedUntil'
+        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled tier2MonthsEntitled clubChatForever role isBanned mutedUntil'
       )
       .lean();
 
