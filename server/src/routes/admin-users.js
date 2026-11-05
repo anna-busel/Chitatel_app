@@ -4,18 +4,15 @@ const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const { validate } = require('../middleware/validate');
 const { requireAuth } = require('../middleware/auth');
-const {
-  requireAdmin,
-  planDurationMonths,
-  clubMonthKeysForPurchase,
-} = require('../middleware/subscription');
+const { requireAdmin } = require('../middleware/subscription');
 const { success } = require('../utils/response');
 const { AppError } = require('../middleware/error');
 const logger = require('../config/logger');
 const User = require('../models/User');
 const Book = require('../models/Book');
 const Package = require('../models/Package');
-const Purchase = require('../models/Purchase');
+const entitlement = require('../services/entitlement.service');
+const { linkUserSafe } = require('../crm/services/access.service');
 
 /**
  * Админ: управление пользователями (задача 6.6).
@@ -38,11 +35,9 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Синтетический transactionId для ручной операции (Purchase.transactionId
-// уникален и sparse — коллизий не будет).
-function manualTxId(prefix, userId, tail) {
-  return `manual-${prefix}-${userId}-${tail}-${Date.now()}`;
-}
+// 05.11.2026 (CRM-PLAN B1): выдача и снятие прав (подписка, месяцы, Тариф 2,
+// разборы, пакеты) и записи Purchase — в services/entitlement.service.js,
+// общем с CRM. Роуты ниже только проверяют ввод и отвечают как раньше.
 
 /* ------------------------------------------------------------------ *
  *                       СПИСОК / ПОИСК                               *
@@ -180,30 +175,6 @@ router.get('/:id', async (req, res, next) => {
  *                     ВЫДАЧА / СНЯТИЕ ПОДПИСКИ                       *
  * ------------------------------------------------------------------ */
 
-/**
- * Ключи клубных месяцев 'YYYY-M' (БЕЗ ведущего нуля — как clubMonthKey в
- * middleware/subscription.js: `${club.year}-${club.month}`) от from до to
- * включительно (UTC). Нужны при
- * выдаче подписки с ПРОИЗВОЛЬНОЙ датой окончания (перенос уже оплаченных
- * абонементов): по этим месяцам открывается книга клуба.
- */
-function clubMonthKeysBetween(from, to) {
-  const keys = [];
-  let y = from.getUTCFullYear();
-  let m = from.getUTCMonth();
-  const ey = to.getUTCFullYear();
-  const em = to.getUTCMonth();
-  while (y < ey || (y === ey && m <= em)) {
-    keys.push(`${y}-${m + 1}`);
-    m += 1;
-    if (m > 11) {
-      m = 0;
-      y += 1;
-    }
-  }
-  return keys;
-}
-
 const subSchema = z.object({
   status: z.enum(['basic', 'premium', 'free']),
   plan: z
@@ -240,69 +211,18 @@ router.post(
       const { status, plan } = data;
 
       if (status === 'free') {
-        user.subscriptionStatus = 'free';
-        user.subscriptionPlan = null;
-        user.subscriptionExpiresAt = null;
-        await user.save();
+        await entitlement.clearSubscription(user);
         return success(res, { ok: true, subscriptionStatus: 'free' });
       }
 
-      const now = new Date();
-
       // Срок: либо ПРОИЗВОЛЬНАЯ дата (перенос уже оплаченных абонементов),
-      // либо длительность плана от текущего момента.
-      let expiresAt;
-      if (data.expiresAt) {
-        expiresAt = data.expiresAt;
-        if (expiresAt.getTime() <= now.getTime()) {
-          throw new AppError(
-            'VALIDATION_ERROR',
-            'Дата окончания должна быть в будущем',
-            400
-          );
-        }
-      } else {
-        const months = planDurationMonths(plan);
-        expiresAt = new Date(now);
-        expiresAt.setMonth(expiresAt.getMonth() + months);
-      }
-
-      user.subscriptionStatus = status;
-      user.subscriptionPlan = plan;
-      user.subscriptionExpiresAt = expiresAt;
-
-      // Клубные месяцы, по которым открывается книга клуба. Для произвольной
-      // даты — все месяцы от сейчас до даты включительно; иначе — по плану.
-      const keys = data.expiresAt
-        ? clubMonthKeysBetween(now, expiresAt)
-        : clubMonthKeysForPurchase(now, plan);
-      const set = new Set([...(user.clubMonthsEntitled || []), ...keys]);
-      user.clubMonthsEntitled = [...set];
-      // Тариф 2 (status=premium, UPDATES-PLAN M): те же месяцы — в набор
-      // Тарифа 2, по нему участнице видна встреча с Анной в клубе.
-      if (status === 'premium') {
-        const t2 = new Set([...(user.tier2MonthsEntitled || []), ...keys]);
-        user.tier2MonthsEntitled = [...t2];
-      }
-
-      await user.save();
-
-      // История (best-effort).
-      Purchase.create({
-        userId: user._id,
-        itemType: 'subscription',
-        itemId: plan,
-        platform: 'web',
-        appleProductId: null,
-        transactionId: manualTxId('sub', user._id, plan),
-        purchasedAt: now,
-        expiresAt,
-        status: 'active',
-      }).catch((e) =>
-        logger.warn('manual subscription Purchase не записан', {
-          message: e.message,
-        })
-      );
+      // либо длительность плана от текущего момента; клубные месяцы, Тариф 2
+      // (status=premium) и запись Purchase — в entitlement.service.
+      const { expiresAt } = await entitlement.grantManualSubscription(user, {
+        status,
+        plan,
+        expiresAt: data.expiresAt,
+      });
 
       return success(res, {
         ok: true,
@@ -337,28 +257,11 @@ router.post('/:id/grant-book', validate(bookSchema), async (req, res, next) => {
     if (!book) {
       throw new AppError('NOT_FOUND', 'Разбор с таким slug не найден', 404);
     }
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { $addToSet: { purchasedBooks: book._id } },
-      { new: true }
-    ).select('_id');
+    const user = await User.findById(req.params.id).select('purchasedBooks');
     if (!user) {
       throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
     }
-
-    Purchase.create({
-      userId: user._id,
-      itemType: 'book',
-      itemId: book.bookSlug,
-      platform: 'web',
-      appleProductId: `book.${book.bookSlug}`,
-      transactionId: manualTxId('book', user._id, book.bookSlug),
-      priceUsd: book.priceUsd || 0,
-      purchasedAt: new Date(),
-      status: 'active',
-    }).catch((e) =>
-      logger.warn('manual book Purchase не записан', { message: e.message })
-    );
+    await entitlement.grantBooks(user, [book]);
 
     return success(res, { ok: true, book: { title: book.title, bookSlug: book.bookSlug } });
   } catch (err) {
@@ -376,21 +279,15 @@ router.post('/:id/revoke-book', validate(bookSchema), async (req, res, next) => 
       throw new AppError('NOT_FOUND', 'Неверный id пользователя', 400);
     }
     const book = await Book.findOne({ bookSlug: req.body.bookSlug })
-      .select('_id')
+      .select('_id bookSlug')
       .lean();
     if (!book) {
       throw new AppError('NOT_FOUND', 'Разбор с таким slug не найден', 404);
     }
-    await User.findByIdAndUpdate(req.params.id, {
-      $pull: { purchasedBooks: book._id },
-    });
-    // Ручная выдача пишет Purchase (platform 'web') — помечаем её отменённой,
-    // иначе разбор останется в «Мои покупки» и в «Оплатах» как выданный.
+    // Ручная выдача пишет Purchase (platform 'web') — сервис помечает её
+    // отменённой, иначе разбор останется в «Мои покупки» и в «Оплатах».
     // Покупки из App Store / Google Play не трогаем (03.11.2026).
-    await Purchase.updateMany(
-      { userId: req.params.id, itemType: 'book', itemId: req.body.bookSlug, platform: 'web', status: 'active' },
-      { $set: { status: 'cancelled' } }
-    );
+    await entitlement.revokeBook(req.params.id, book);
     return success(res, { ok: true });
   } catch (err) {
     return next(err);
@@ -403,7 +300,7 @@ router.post('/:id/revoke-book', validate(bookSchema), async (req, res, next) => 
 
 const clubMonthSchema = z.object({
   // Ключ месяца 'YYYY-M' БЕЗ ведущего нуля — как clubMonthKey в
-  // middleware/subscription.js и как их пишет clubMonthKeysBetween выше.
+  // middleware/subscription.js и как их пишет entitlement.clubMonthKeysBetween.
   month: z.string().trim().regex(/^\d{4}-(1[0-2]|[1-9])$/, 'Формат месяца: 2026-10'),
 });
 
@@ -429,17 +326,8 @@ router.post(
       if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
         throw new AppError('NOT_FOUND', 'Неверный id пользователя', 400);
       }
-      const user = await User.findByIdAndUpdate(
-        req.params.id,
-        // Тариф 2 без клуба не бывает — снимаем и его месяц (UPDATES-PLAN M).
-        {
-          $pull: {
-            clubMonthsEntitled: req.body.month,
-            tier2MonthsEntitled: req.body.month,
-          },
-        },
-        { new: true }
-      ).select('clubMonthsEntitled');
+      // Тариф 2 и «чат остаётся» без клуба не бывают — снимаются вместе с ним.
+      const user = await entitlement.revokeClubMonth(req.params.id, req.body.month);
       if (!user) {
         throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
       }
@@ -478,36 +366,7 @@ router.post(
         throw new AppError('NOT_FOUND', 'Неверный id пользователя', 400);
       }
       const { month } = req.body;
-      const user = await User.findById(req.params.id).select(
-        'clubMonthsEntitled tier2MonthsEntitled'
-      );
-      if (!user) {
-        throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
-      }
-      if (!(user.clubMonthsEntitled || []).includes(month)) {
-        throw new AppError(
-          'VALIDATION_ERROR',
-          `Клуба за ${month} у участницы нет. Сначала выдайте подписку (можно сразу «Тариф 2»)`,
-          400
-        );
-      }
-      if (!(user.tier2MonthsEntitled || []).includes(month)) {
-        user.tier2MonthsEntitled = [...(user.tier2MonthsEntitled || []), month];
-        await user.save();
-      }
-
-      Purchase.create({
-        userId: user._id,
-        itemType: 'subscription',
-        itemId: 'tier2',
-        platform: 'web',
-        appleProductId: null,
-        transactionId: manualTxId('tier2', user._id, month),
-        purchasedAt: new Date(),
-        status: 'active',
-      }).catch((e) =>
-        logger.warn('manual tier2 Purchase не записан', { message: e.message })
-      );
+      const user = await entitlement.grantTier2Month(req.params.id, month);
 
       logger.info('Tier2 month granted', { userId: req.params.id, month });
       return success(res, {
@@ -532,11 +391,7 @@ router.post(
       if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
         throw new AppError('NOT_FOUND', 'Неверный id пользователя', 400);
       }
-      const user = await User.findByIdAndUpdate(
-        req.params.id,
-        { $pull: { tier2MonthsEntitled: req.body.month } },
-        { new: true }
-      ).select('tier2MonthsEntitled');
+      const user = await entitlement.revokeTier2Month(req.params.id, req.body.month);
       if (!user) {
         throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
       }
@@ -575,28 +430,11 @@ router.post('/:id/grant-package', validate(pkgSchema), async (req, res, next) =>
     if (!pkg) {
       throw new AppError('NOT_FOUND', 'Пакет с таким slug не найден', 404);
     }
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { $addToSet: { purchasedPackages: pkg._id } },
-      { new: true }
-    ).select('_id');
+    const user = await User.findById(req.params.id).select('purchasedPackages');
     if (!user) {
       throw new AppError('NOT_FOUND', 'Пользователь не найден', 404);
     }
-
-    Purchase.create({
-      userId: user._id,
-      itemType: 'package',
-      itemId: pkg.packageSlug,
-      platform: 'web',
-      appleProductId: `package.${pkg.packageSlug}`,
-      transactionId: manualTxId('pkg', user._id, pkg.packageSlug),
-      priceUsd: pkg.priceUsd || 0,
-      purchasedAt: new Date(),
-      status: 'active',
-    }).catch((e) =>
-      logger.warn('manual package Purchase не записан', { message: e.message })
-    );
+    await entitlement.grantPackage(user, pkg);
 
     return success(res, { ok: true, package: { title: pkg.title, packageSlug: pkg.packageSlug } });
   } catch (err) {
@@ -613,19 +451,13 @@ router.post('/:id/revoke-package', validate(pkgSchema), async (req, res, next) =
       throw new AppError('NOT_FOUND', 'Неверный id пользователя', 400);
     }
     const pkg = await Package.findOne({ packageSlug: req.body.packageSlug })
-      .select('_id')
+      .select('_id packageSlug')
       .lean();
     if (!pkg) {
       throw new AppError('NOT_FOUND', 'Пакет с таким slug не найден', 404);
     }
-    await User.findByIdAndUpdate(req.params.id, {
-      $pull: { purchasedPackages: pkg._id },
-    });
     // См. revoke-book: ручную выдачу помечаем отменённой (03.11.2026).
-    await Purchase.updateMany(
-      { userId: req.params.id, itemType: 'package', itemId: req.body.packageSlug, platform: 'web', status: 'active' },
-      { $set: { status: 'cancelled' } }
-    );
+    await entitlement.revokePackage(req.params.id, pkg);
     return success(res, { ok: true });
   } catch (err) {
     return next(err);
@@ -810,6 +642,9 @@ router.post('/:id/email', validate(emailSchema), async (req, res, next) => {
     }
 
     logger.info('Admin changed email', { userId: String(req.params.id) });
+    // CRM B5 (05.11.2026): заказы, оплаченные на эту почту, открываются сразу.
+    // Ошибка CRM смену почты не ломает (linkUserSafe ловит и пишет в лог).
+    await linkUserSafe(user, 'admin-email');
     return success(res, { ok: true, email: user.email });
   } catch (err) {
     return next(err);
