@@ -5,6 +5,11 @@ const Book = require('../models/Book');
 const ClubMonth = require('../models/ClubMonth');
 const Progress = require('../models/Progress');
 const { thoughtForDate } = require('../services/thought.service');
+const {
+  BOOK_CARD_FIELDS,
+  listActiveBanners,
+} = require('../services/home-banner.service');
+const { ownedBookIdsFor, markOwned } = require('./books');
 
 const router = Router();
 
@@ -42,10 +47,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
     // appleProductId обязателен: с 1.0.1 карточки «Популярного» берут живую
     // цену StoreKit по productId, без него клиент падал на статичный priceUsd
     // из БД (01.09.2026 — на главной были «старые» цены, в каталоге верные).
-    const bookFields =
-      'title author coverImageUrl coverGradientColors coverLabel bookSlug ' +
-      'durationTotal rating reviewCount priceUsd priceRub priceByn isFree isPartOfClub ' +
-      'appleProductId categories parts';
+    const bookFields = BOOK_CARD_FIELDS;
 
     // Бесплатные разборы
     const freeBooks = await Book.find({ isPublished: true, isFree: true })
@@ -136,6 +138,28 @@ router.get('/', optionalAuth, async (req, res, next) => {
       popularBooks,
       continueListening,
     });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * GET /api/home/banners?platform=ios|android — карусель на главной
+ * (UPDATES-PLAN T, 05.11.2026). Логин не обязателен.
+ *
+ * Отдаёт активные баннеры (isActive, startsAt <= now < endsAt, платформа
+ * подходит) по order: { items: [{ id, imageUrl, action }] }.
+ * action: { kind: 'none' } | { kind: 'book', bookId } |
+ *         { kind: 'books', listTitle, books: [карточки как в /api/home] }.
+ * Без platform (клиенты до 1.0.4) — пустой список.
+ * Авторизованным у разборов подборки есть isOwned (как в каталоге).
+ */
+router.get('/banners', optionalAuth, async (req, res, next) => {
+  try {
+    const items = await listActiveBanners(req.query.platform, {
+      markOwned: async (books) => markOwned(books, await ownedBookIdsFor(req)),
+    });
+    return success(res, { items });
   } catch (err) {
     return next(err);
   }

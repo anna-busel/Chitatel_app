@@ -344,3 +344,7 @@ async function checkPartAccess(book, part, userPayload) {
 router.use('/:id/reviews', reviewRoutes);
 
 module.exports = router;
+// Для карусели на главной (routes/home.js, подборки баннеров) — «Куплено»
+// на карточках считается тем же способом, что в каталоге.
+module.exports.ownedBookIdsFor = ownedBookIdsFor;
+module.exports.markOwned = markOwned;
