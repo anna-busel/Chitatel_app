@@ -4,6 +4,9 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const config = require('../config');
 const { AppError } = require('../middleware/error');
+// CRM B5 (05.11.2026): после входа/регистрации — заказы CRM, оплаченные на
+// эту почту, открываются сразу. Ошибка CRM вход не ломает (try/catch + лог).
+const { linkUserForAuth } = require('../crm/services/access.service');
 
 // Аудитория (`aud`) проверяется отдельно на каждый вызов verifyIdToken, потому
 // что допустимых клиентов два — iOS и Web (см. config.google.clientIds).
@@ -124,11 +127,12 @@ const authenticateWithGoogle = async ({ idToken }) => {
     const newTokens = generateTokens(user._id);
     user.refreshTokens = [newTokens.refreshToken];
     await user.save();
+    const linkedNew = await linkUserForAuth(user, 'google');
 
     return {
       accessToken: newTokens.accessToken,
       refreshToken: newTokens.refreshToken,
-      user: sanitizeUser(user),
+      user: sanitizeUser(linkedNew),
       isNewUser: true,
     };
   }
@@ -143,11 +147,12 @@ const authenticateWithGoogle = async ({ idToken }) => {
     user.refreshTokens = user.refreshTokens.slice(-5);
   }
   await user.save();
+  const linked = await linkUserForAuth(user, 'google');
 
   return {
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
-    user: sanitizeUser(user),
+    user: sanitizeUser(linked),
     isNewUser: false,
   };
 };

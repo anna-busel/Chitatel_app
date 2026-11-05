@@ -4,6 +4,9 @@ const crypto = require('crypto');
 const User = require('../models/User');
 const config = require('../config');
 const { AppError } = require('../middleware/error');
+// CRM B5 (05.11.2026): после входа/регистрации — заказы CRM, оплаченные на
+// эту почту, открываются сразу. Ошибка CRM вход не ломает (try/catch + лог).
+const { linkUserForAuth } = require('../crm/services/access.service');
 
 const BCRYPT_ROUNDS = 12;
 
@@ -68,11 +71,12 @@ const register = async ({ email, password, name }) => {
 
   user.refreshTokens = [tokens.refreshToken];
   await user.save();
+  const linked = await linkUserForAuth(user, 'register');
 
   return {
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
-    user: sanitizeUser(user),
+    user: sanitizeUser(linked),
   };
 };
 
@@ -104,11 +108,12 @@ const login = async ({ email, password }) => {
     user.refreshTokens = user.refreshTokens.slice(-5);
   }
   await user.save();
+  const linked = await linkUserForAuth(user, 'login');
 
   return {
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
-    user: sanitizeUser(user),
+    user: sanitizeUser(linked),
   };
 };
 

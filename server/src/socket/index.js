@@ -74,7 +74,7 @@ const checkClubAccess = async (userId, clubMonthId) => {
   const [user, club] = await Promise.all([
     User.findById(userId)
       .select(
-        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled role isBanned mutedUntil'
+        'subscriptionStatus subscriptionPlan subscriptionExpiresAt gracePeriodExpiresAt clubMonthsEntitled clubChatForever role isBanned mutedUntil'
       )
       .lean(),
     ClubMonth.findById(clubMonthId).lean(),
