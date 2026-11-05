@@ -13,9 +13,10 @@ import '../../auth/providers/auth_provider.dart';
 import '../../diary/widgets/quote_sheet.dart';
 import '../../payments/screens/paywall_screen.dart';
 import '../../payments/season_window.dart';
+import '../providers/home_banners_provider.dart';
 import '../providers/home_provider.dart';
 import '../widgets/home_header.dart';
-import '../widgets/club_month_card.dart';
+import '../widgets/home_carousel.dart';
 import '../widgets/continue_listening_card.dart';
 import '../widgets/daily_quote_card.dart';
 import '../widgets/free_books_section.dart';
@@ -24,7 +25,7 @@ import '../widgets/popular_books_section.dart';
 /// Главная страница. MASTER 4.9.
 ///
 /// Структура (сверху вниз):
-///   Шапка → Клуб месяца → [Полоска сезона] → Мысль дня → Бесплатные разборы →
+///   Шапка → Клуб месяца [+ баннеры каруселью] → [Полоска сезона] → Мысль дня → Бесплатные разборы →
 ///   [Продолжить слушать] → Популярные
 ///
 /// ⚠️ 13.07.2026 — «МОЙ ПРОГРЕСС» ЗАМЕНЁН НА «ПРОДОЛЖИТЬ СЛУШАТЬ».
@@ -52,7 +53,11 @@ import '../widgets/popular_books_section.dart';
 /// `Icons.edit_outlined` (карандаш, как в дневнике). Живёт только на главной
 /// и в дневнике — там, где есть текст, который может зацепить.
 ///
-/// Обновление: pull-to-refresh (invalidate homeProvider).
+/// Баннеры (UPDATES-PLAN T, 05.11.2026): если в админке есть активные
+/// баннеры для этой платформы, карточка клуба становится первой страницей
+/// карусели (HomeCarousel). Баннеров нет или сеть упала — как раньше.
+///
+/// Обновление: pull-to-refresh (invalidate homeProvider и homeBannersProvider).
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -63,6 +68,9 @@ class HomeScreen extends ConsumerWidget {
     // (анонс и окно покупки) не показываем (store_policy.dart).
     final seasonText =
         kPurchasesEnabled ? SeasonWindow.clubBannerText() : null;
+    // Ошибка баннеров не ломает главную — провайдер отдаёт [] вместо ошибки;
+    // при обновлении остаётся прошлый список (valueOrNull), без мигания.
+    final banners = ref.watch(homeBannersProvider).valueOrNull ?? const [];
 
     return Container(
       color: AppColors.background,
@@ -76,7 +84,11 @@ class HomeScreen extends ConsumerWidget {
                   data: (data) => RefreshIndicator(
                     onRefresh: () async {
                       ref.invalidate(homeProvider);
-                      await ref.read(homeProvider.future);
+                      ref.invalidate(homeBannersProvider);
+                      await Future.wait<Object?>([
+                        ref.read(homeProvider.future),
+                        ref.read(homeBannersProvider.future),
+                      ]);
                     },
                     color: AppColors.terracotta,
                     child: ListView(
@@ -85,9 +97,10 @@ class HomeScreen extends ConsumerWidget {
                       // перекрывал последний блок ленты.
                       padding: const EdgeInsets.only(top: 8, bottom: 96),
                       children: [
-                        ClubMonthCard(
-                          book: data.clubBook,
-                          monthLabel: data.clubMonthLabel,
+                        HomeCarousel(
+                          clubBook: data.clubBook,
+                          clubMonthLabel: data.clubMonthLabel,
+                          banners: banners,
                         ),
                         if (seasonText != null) ...[
                           const SizedBox(height: 10),
@@ -123,11 +136,17 @@ class HomeScreen extends ConsumerWidget {
                   // Первый холодный старт без сети приходит именно сюда.
                   error: (err, _) => isConnectionError(err)
                       ? NoConnection(
-                          onRetry: () => ref.invalidate(homeProvider),
+                          onRetry: () {
+                            ref.invalidate(homeProvider);
+                            ref.invalidate(homeBannersProvider);
+                          },
                         )
                       : ErrorView(
                           message: 'Не удалось загрузить главную',
-                          onRetry: () => ref.invalidate(homeProvider),
+                          onRetry: () {
+                            ref.invalidate(homeProvider);
+                            ref.invalidate(homeBannersProvider);
+                          },
                         ),
                 ),
               ),
