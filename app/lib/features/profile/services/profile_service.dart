@@ -19,6 +19,7 @@ class UserProfile {
     required this.aiConsent,
     required this.pushSettings,
     required this.isAdmin,
+    this.ugcRulesAcceptedAt,
   });
 
   final String id;
@@ -40,6 +41,33 @@ class UserProfile {
   final bool aiConsent;
   final Map<String, bool> pushSettings;
   final bool isAdmin;
+
+  /// Когда приняты правила сообщества (A3, 05.11.2026). null — ещё не
+  /// принимала: перед первой публикацией (отзыв и т. п.) покажем шторку.
+  final DateTime? ugcRulesAcceptedAt;
+
+  /// Вход по почте — только таким аккаунтам показываем «Сменить пароль» (P4).
+  bool get isEmailAccount => authProvider == 'email';
+
+  /// Тот же профиль с отметкой о принятых правилах (A3, 05.11.2026) — чтобы
+  /// не перезагружать профиль целиком после POST /api/profile/ugc-rules.
+  UserProfile withUgcRulesAccepted(DateTime at) {
+    return UserProfile(
+      id: id,
+      name: name,
+      email: email,
+      avatarUrl: avatarUrl,
+      city: city,
+      authProvider: authProvider,
+      subscriptionStatus: subscriptionStatus,
+      subscriptionPlan: subscriptionPlan,
+      subscriptionExpiresAt: subscriptionExpiresAt,
+      aiConsent: aiConsent,
+      pushSettings: pushSettings,
+      isAdmin: isAdmin,
+      ugcRulesAcceptedAt: at,
+    );
+  }
 
   /// Есть ли действующий доступ к клубу.
   bool get hasSubscription =>
@@ -72,6 +100,7 @@ class UserProfile {
       aiConsent: j['aiConsent'] == true,
       pushSettings: push,
       isAdmin: (j['role'] ?? 'user').toString() == 'admin',
+      ugcRulesAcceptedAt: parseDate(j['ugcRulesAcceptedAt']),
     );
   }
 }
@@ -318,6 +347,16 @@ class ProfileService {
       data: settings,
     );
     return _userFrom(response);
+  }
+
+  /// Принять правила сообщества (A3, 05.11.2026).
+  /// POST /api/profile/ugc-rules → { ugcRulesAcceptedAt }.
+  Future<DateTime> acceptUgcRules() async {
+    final response = await _api.dio.post(ApiEndpoints.profileUgcRules);
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'];
+    final raw = data is Map ? data['ugcRulesAcceptedAt'] : null;
+    return (raw is String ? DateTime.tryParse(raw) : null) ?? DateTime.now();
   }
 
   /// Ответы опроса (4.6, онбординг).
