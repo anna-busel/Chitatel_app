@@ -20,7 +20,7 @@ import '../services/profile_service.dart';
 /// - шапка: аватар + имя + почта, тап → редактирование (4.46);
 /// - карточка подписки: статус и дата, тап → управление (4.33) либо paywall;
 /// - меню: Мой дневник, Мой прогресс, Мои покупки, Уведомления,
-///   Заблокированные (A1), Поддержка;
+///   Сменить пароль (P4, только вход по почте), Заблокированные (A1), Поддержка;
 /// - тумблер «ИИ-анализ» (4.27, под меню): включение показывает модалку
 ///   согласия (4.42) — без явного согласия ни одна цитата не уходит в OpenAI;
 /// - выход и удаление аккаунта (4.34, Apple 5.1.1(v)).
@@ -168,6 +168,14 @@ class _ProfileBody extends ConsumerWidget {
                 title: 'Уведомления',
                 onTap: () => context.push(Routes.notificationSettings),
               ),
+              // P4 (05.11.2026): только вход по почте — у Apple / Google
+              // пароля нет.
+              if (profile.isEmailAccount)
+                _MenuItem(
+                  icon: Icons.lock_outline,
+                  title: 'Сменить пароль',
+                  onTap: () => context.push(Routes.changePassword),
+                ),
               _MenuItem(
                 icon: Icons.block_outlined,
                 title: 'Заблокированные',
