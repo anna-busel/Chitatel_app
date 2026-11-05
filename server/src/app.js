@@ -10,9 +10,12 @@ const {
   apiLimiter,
   uploadLimiter,
   reportLimiter,
+  forgotPasswordLimiter,
+  passwordLimiter,
 } = require('./middleware/rate-limit');
 const { success } = require('./utils/response');
 const authRoutes = require('./routes/auth');
+const passwordRoutes = require('./routes/password');
 const bookRoutes = require('./routes/books');
 const packageRoutes = require('./routes/packages');
 const homeRoutes = require('./routes/home');
@@ -90,6 +93,10 @@ app.post('/api/auth/register', authLimiter);
 app.post('/api/auth/apple', authLimiter);
 app.post('/api/auth/google', authLimiter);
 app.post('/api/auth/refresh', refreshLimiter);
+// Восстановление и смена пароля (UPDATES-PLAN P1/P2, 05.11.2026).
+app.post('/api/auth/forgot-password', forgotPasswordLimiter);
+app.post('/api/auth/reset-password', passwordLimiter);
+app.post('/api/auth/change-password', passwordLimiter);
 // Загрузки: картинка/голосовое в чат клуба, аватар — 20/мин.
 app.post('/api/club/:clubMonthId/chat/image', uploadLimiter);
 app.post('/api/club/:clubMonthId/chat/voice', uploadLimiter);
@@ -101,6 +108,8 @@ app.post('/api/reports', reportLimiter);
 
 // API Routes
 app.use('/api/auth', authRoutes);
+// forgot/reset/change-password — отдельный файл, тот же префикс (P1/P2).
+app.use('/api/auth', passwordRoutes);
 app.use('/api/books', bookRoutes);
 app.use('/api/packages', packageRoutes);
 app.use('/api/home', homeRoutes);

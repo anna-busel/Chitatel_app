@@ -115,5 +115,7 @@ crmOrderSchema.index({ deadline: 1 });
 crmOrderSchema.index({ purchaseId: 1 }, { sparse: true });
 crmOrderSchema.index({ 'payments.extId': 1 }, { sparse: true });
 crmOrderSchema.index({ 'gift.recipientClientId': 1 }, { sparse: true });
+// Подарки по почте получательницы — ищутся при входе в приложение (B5, 05.11.2026).
+crmOrderSchema.index({ 'gift.email': 1 }, { sparse: true });
 
 module.exports = mongoose.model('CrmOrder', crmOrderSchema);

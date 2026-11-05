@@ -119,6 +119,19 @@ const config = {
   admin: {
     email: process.env.ADMIN_EMAIL || 'anna@chitatel.app',
   },
+
+  // Почта: код восстановления пароля (UPDATES-PLAN P1, 05.11.2026).
+  // Ящик support.chitatel@gmail.com, SMTP_PASS — пароль приложения Google
+  // (не пароль от ящика). Пока SMTP_USER/SMTP_PASS не заданы, письма не
+  // уходят (warn в лог), сервер и остальные ручки работают как прежде.
+  // Порт 465 — SSL сразу (secure), 587 — STARTTLS.
+  smtp: {
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT, 10) || 465,
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.MAIL_FROM || 'ЧИТАТЕЛЬ <support.chitatel@gmail.com>',
+  },
 };
 
 // В production секрет, не заданный или равный dev-дефолту, недопустим —

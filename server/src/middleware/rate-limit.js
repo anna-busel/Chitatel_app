@@ -43,10 +43,18 @@ const uploadLimiter = makeLimiter(20);
 // Жалобы (на сообщение / на пользователя) — от спама жалобами.
 const reportLimiter = makeLimiter(10);
 
+// Пароль (UPDATES-PLAN P1/P2, 05.11.2026): запрос кода на почту — 5/мин с IP
+// (плюс пауза 60 с на одну почту внутри ручки), ввод кода и смена пароля —
+// 10/мин с IP, против перебора 6-значного кода.
+const forgotPasswordLimiter = makeLimiter(5);
+const passwordLimiter = makeLimiter(10);
+
 module.exports = {
   authLimiter,
   refreshLimiter,
   apiLimiter,
   uploadLimiter,
   reportLimiter,
+  forgotPasswordLimiter,
+  passwordLimiter,
 };
