@@ -17,6 +17,8 @@ const { emitToClub } = require('../socket');
 const imageService = require('../services/image.service');
 const voiceService = require('../services/voice.service');
 const pushService = require('../services/push.service');
+const clubChatPush = require('../services/club-chat-push.service');
+const logger = require('../config/logger');
 const User = require('../models/User');
 const ClubMonth = require('../models/ClubMonth');
 const ChatMessage = require('../models/ChatMessage');
@@ -759,6 +761,23 @@ async function sanitizeMentions(rawMentions) {
   return admins.map((u) => u._id);
 }
 
+// Пуш «Анна написала в чате клуба» (решение Анны 07.11.2026). Без await:
+// ответ на отправку не ждёт рассылку; ошибки — только в лог. Для не-админа
+// сервис сразу выходит. excludeUserIds — кому уже ушёл reply/mention.
+function notifyAnnaMessageAsync(club, author, message, excludeUserIds = []) {
+  if (!author || author.role !== 'admin') {
+    return;
+  }
+  clubChatPush
+    .notifyAnnaMessage({ club, author, message, excludeUserIds })
+    .catch((err) => {
+      logger.error('Club chat Anna push error', {
+        clubMonthId: String(club._id),
+        message: err.message,
+      });
+    });
+}
+
 router.post(
   '/:clubMonthId/chat',
   validate(chatCreateSchema),
@@ -876,6 +895,8 @@ router.post(
             )
             .catch(() => {});
         }
+
+        notifyAnnaMessageAsync(req.club, author, message, [...targets.keys()]);
       }
 
       return success(res, { message: populated }, 201);
@@ -1011,6 +1032,8 @@ router.post(
 
       const io = req.app.get('io');
       emitToClub(io, req.club._id, 'chat:new_message', { message: populated });
+
+      notifyAnnaMessageAsync(req.club, author, message);
 
       return success(res, { message: populated }, 201);
     } catch (err) {
@@ -1181,6 +1204,8 @@ router.post(
 
       const io = req.app.get('io');
       emitToClub(io, req.club._id, 'chat:new_message', { message: populated });
+
+      notifyAnnaMessageAsync(req.club, author, message);
 
       return success(res, { message: populated }, 201);
     } catch (err) {
