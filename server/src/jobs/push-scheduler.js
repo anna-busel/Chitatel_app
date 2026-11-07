@@ -6,6 +6,7 @@ const { getReminderSetting, reminderCron } = require('../services/reminder.servi
 const { takeNextText } = require('../services/reminder-text.service');
 const { getNotif } = require('../services/notification-setting.service');
 const { scheduleMeetingReminders } = require('./meeting-reminders');
+const { sendDailyDigest } = require('../services/club-chat-push.service');
 
 /**
  * Планировщик push по расписанию (MASTER 7.9).
@@ -139,6 +140,24 @@ async function reloadDailyQuote() {
   await scheduleDailyQuote();
 }
 
+/**
+ * Вечерняя сводка чата клуба (решение Анны 07.11.2026): 21:00 по Москве,
+ * «За сегодня в чате N новых сообщений» всем, кто читает текущий клуб.
+ * N = 0 → не шлём. Повтор при рестарте отсекает ClubMonth.lastDigestAt.
+ */
+function scheduleClubChatDigest() {
+  cron.schedule(
+    '0 21 * * *',
+    () => {
+      sendDailyDigest().catch((err) => {
+        logger.error('Club chat digest cron error', { message: err.message });
+      });
+    },
+    { timezone: 'Europe/Moscow' }
+  );
+  logger.info('Club chat digest cron scheduled: "0 21 * * *" Europe/Moscow');
+}
+
 const schedulePushJobs = async () => {
   // Напоминание записать цитату — из настройки БД (редактируется в админке).
   try {
@@ -160,6 +179,13 @@ const schedulePushJobs = async () => {
     scheduleMeetingReminders();
   } catch (err) {
     logger.error('Meeting reminders schedule error', { message: err.message });
+  }
+
+  // Вечерняя сводка чата клуба (UPDATES-PLAN U).
+  try {
+    scheduleClubChatDigest();
+  } catch (err) {
+    logger.error('Club chat digest schedule error', { message: err.message });
   }
 
   logger.info(

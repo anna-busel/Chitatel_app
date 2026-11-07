@@ -213,6 +213,9 @@ const pushSettingsSchema = z.object({
   reports: z.boolean().optional(),
   news: z.boolean().optional(),
   reminders: z.boolean().optional(),
+  // Пуши чата клуба (07.11.2026), см. services/club-chat-push.service.js.
+  clubAnna: z.boolean().optional(),
+  clubDigest: z.boolean().optional(),
 });
 
 router.patch(
