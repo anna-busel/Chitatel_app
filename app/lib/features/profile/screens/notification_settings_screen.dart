@@ -64,6 +64,19 @@ class NotificationSettingsScreen extends ConsumerWidget {
       title: 'Ответы в клубе',
       subtitle: 'Ответ на ваше сообщение или вопрос',
     ),
+    // Пуши чата клуба (решение Анны 07.11.2026). Сервер шлёт их, только если
+    // включены и этот тумблер, и «Ответы в клубе» (chatMessages). Нет поля в
+    // профиле — считаем включённым (?? true ниже).
+    _Setting(
+      key: 'clubAnna',
+      title: 'Сообщения Анны в чате',
+      subtitle: 'Когда Анна пишет в чат клуба',
+    ),
+    _Setting(
+      key: 'clubDigest',
+      title: 'Вечерняя сводка чата',
+      subtitle: 'Сколько новых сообщений за день, в 21:00 по Москве',
+    ),
     _Setting(
       key: 'reminders',
       title: 'Напоминания',
