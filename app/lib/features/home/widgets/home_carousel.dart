@@ -95,8 +95,10 @@ class _HomeCarouselState extends State<HomeCarousel>
     WidgetsBinding.instance.addObserver(this);
     final lifecycle = WidgetsBinding.instance.lifecycleState;
     _appResumed = lifecycle == null || lifecycle == AppLifecycleState.resumed;
+    // Есть баннеры — первой показываем первую картинку, клуб месяца следом.
     if (_pageCount > 1) {
-      _controller = _createController(_pageCount, 0);
+      _current = 1;
+      _controller = _createController(_pageCount, 1);
     }
   }
 
@@ -126,7 +128,10 @@ class _HomeCarouselState extends State<HomeCarousel>
     final newCount = _pageCount;
     if (oldCount == newCount) return;
 
-    _current = math.min(_current, newCount - 1);
+    // Баннеры только что появились (были 0) — начинаем с первой картинки.
+    _current = oldCount <= 1 && newCount > 1
+        ? 1
+        : math.min(_current, newCount - 1);
     final old = _controller;
     _controller = newCount > 1 ? _createController(newCount, _current) : null;
     if (newCount <= 1) _current = 0;
