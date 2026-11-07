@@ -88,6 +88,12 @@ const clubMonthSchema = new mongoose.Schema(
 
     // Встречи Тарифа 2 этого месяца (см. meetingSchema выше).
     meetings: { type: [meetingSchema], default: [] },
+
+    // Пуши чата клуба (решение Анны 07.11.2026, services/club-chat-push):
+    // когда ушёл последний пуш «Анна написала в чате» — антиспам 30 минут;
+    // когда ушла вечерняя сводка — чтобы рестарт в 21:00 её не задвоил.
+    lastAnnaPushAt: { type: Date, default: null },
+    lastDigestAt: { type: Date, default: null },
   },
   {
     timestamps: true,

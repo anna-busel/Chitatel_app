@@ -386,6 +386,20 @@ const broadcast = async ({ audience = 'all' } = {}, payload, settingKey = null) 
 };
 
 /**
+ * Пуш уже выбранному списку пользователей (в ленту НЕ пишется — как
+ * broadcast). Каждому — с проверкой isAllowed(settingKey), доставка пачками
+ * (deliverMany: APNs по 100 токенов, FCM своим пулом). Пуши чата клуба
+ * (services/club-chat-push.service.js, решение Анны 07.11.2026).
+ * @param {Array<{_id, devices, pushToken, pushSettings, isDeleted}>} users
+ * @returns {Promise<{total:number, sent:number}>}
+ */
+const sendToUsers = async (users, payload, settingKey = null) => {
+  const recipients = (users || []).filter((u) => isAllowed(u, settingKey));
+  const sent = await deliverMany(recipients, payload);
+  return { total: recipients.length, sent };
+};
+
+/**
  * Оставить у пользователя только устройства одной платформы — чтобы новость
  * «только iPhone» не ушла на его же андроид (и наоборот). Чистая функция.
  * platform: 'all' | 'ios' | 'android'.
@@ -510,6 +524,7 @@ const countBroadcastRecipients = async ({ audience = 'all' } = {}) => {
 module.exports = {
   sendToUser,
   broadcast,
+  sendToUsers,
   sendNews,
   countBroadcastRecipients,
   onlyPlatform,

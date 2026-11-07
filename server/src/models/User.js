@@ -142,6 +142,11 @@ const userSchema = new mongoose.Schema(
       reports: { type: Boolean, default: true },
       news: { type: Boolean, default: true },
       reminders: { type: Boolean, default: true },
+      // Пуши чата клуба (07.11.2026): «Анна написала в чате» и вечерняя
+      // сводка. Работают только вместе с chatMessages — старые версии
+      // приложения знают лишь его, выключив его, участница глушит всё про чат.
+      clubAnna: { type: Boolean, default: true },
+      clubDigest: { type: Boolean, default: true },
     },
     surveyAnswers: mongoose.Schema.Types.Mixed,
     // Флаг прохождения персонализации (онбординг-опрос, задача 6.3). Ставится
