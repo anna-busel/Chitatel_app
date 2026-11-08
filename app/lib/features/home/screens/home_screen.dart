@@ -118,11 +118,9 @@ class HomeScreen extends ConsumerWidget {
                         ],
                         FreeBooksSection(books: data.freeBooks),
                         if (data.freeBooks.isNotEmpty) const SizedBox(height: 24),
-                        // Показывается только если есть начатый разбор.
-                        if (data.continueListening != null) ...[
-                          ContinueListeningCard(item: data.continueListening),
-                          const SizedBox(height: 24),
-                        ],
+                        // Сама решает, показываться ли: играющий в плеере
+                        // разбор или начатый по данным сервера (отступ внутри).
+                        ContinueListeningCard(item: data.continueListening),
                         PopularBooksSection(books: data.popularBooks),
                       ],
                     ),
