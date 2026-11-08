@@ -7,6 +7,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../shared/utils/part_labels.dart';
 import '../../../shared/widgets/book_cover_image.dart';
+import '../../../shared/models/book_model.dart';
 import '../../player/providers/player_provider.dart';
 import '../services/home_service.dart';
 
@@ -36,32 +37,39 @@ class ContinueListeningCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final data = item;
-    if (data == null) return const SizedBox.shrink();
 
-    final book = data.book;
-
-    // Живое состояние плеера, если играет эта же книга.
+    // 08.11.2026: если в плеере загружен разбор (не превью) — карточка
+    // показывает ИМЕННО его, живьём. Раньше при включении другой книги
+    // карточка держала серверную (старую) до перезапуска / pull-to-refresh.
     final player = ref.watch(playerUiStateProvider).valueOrNull;
-    final bool live =
-        player != null && player.hasContent && player.book?.id == book.id;
+    final playerBook = player?.book;
+    final bool live = player != null &&
+        playerBook != null &&
+        !ref.read(audioHandlerProvider).isPreviewMode;
 
-    final int partNumber = live ? player.partNumber : data.currentPartNumber;
+    final BookModel? shownBook = live ? playerBook : data?.book;
+    if (shownBook == null) return const SizedBox.shrink();
+    final BookModel book = shownBook;
+
+    // live == false → данные сервера (data точно не null: книга из data).
+    final int partNumber = live ? player!.partNumber : data!.currentPartNumber;
     final int positionSeconds =
-        live ? player.position.inSeconds : data.positionSeconds;
+        live ? player!.position.inSeconds : data!.positionSeconds;
 
     final double progress;
     final int? minutesLeft;
     if (live) {
-      progress = player.progress;
-      final durSec = player.duration.inSeconds;
+      final pl = player!;
+      progress = pl.progress;
+      final durSec = pl.duration.inSeconds;
       if (durSec > 0) {
-        final leftSec = durSec - player.position.inSeconds;
+        final leftSec = durSec - pl.position.inSeconds;
         minutesLeft = leftSec > 0 ? (leftSec / 60).ceil() : 0;
       } else {
         minutesLeft = null;
       }
     } else {
-      progress = data.progress;
+      progress = data!.progress;
       minutesLeft = data.minutesLeft;
     }
 
@@ -75,7 +83,7 @@ class ContinueListeningCard extends ConsumerWidget {
         .toList(growable: false);
     final partLabelText = parts.isNotEmpty
         ? partLabelInBook(number: partNumber, parts: parts)
-        : ((!live && data.partTitle != null && data.partTitle!.isNotEmpty)
+        : ((!live && data!.partTitle != null && data.partTitle!.isNotEmpty)
             ? data.partTitle!
             : 'Часть $partNumber');
     final subtitle = minutesLeft != null
@@ -93,8 +101,10 @@ class ContinueListeningCard extends ConsumerWidget {
     }
 
     return Padding(
-      padding:
-          const EdgeInsets.symmetric(horizontal: AppSpacing.screenPadding),
+      // Отступ снизу 24 — раньше его ставила главная, теперь карточка сама
+      // решает, показываться ли (может появиться без серверных данных).
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.screenPadding, 0, AppSpacing.screenPadding, 24),
       child: Material(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
