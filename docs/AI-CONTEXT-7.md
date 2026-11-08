@@ -667,3 +667,6 @@ UPDATES-PLAN U, ветка `chatpush` (от `main`) + клиент в `w2-androi
 - **Проверить после деплоя**: `pm2 logs | grep "Club chat"` — после сообщения Анны строка `Club chat: Anna push` с `recipients`; второе сообщение в течение 30 мин — без строки; в 21:00 МСК — `Club chat: daily digest` (если сообщения были). У старых пользователей полей `lastAnnaPushAt`/`clubAnna` нет — это норма.
 - ⚠️ Файл перевалил за 60 КБ — следующий раздел начинать в `AI-CONTEXT-8.md`.
 
+---
+
+Дальше — `AI-CONTEXT-8.md` (с 07.11.2026).
