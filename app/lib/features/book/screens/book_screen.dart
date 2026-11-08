@@ -146,13 +146,13 @@ class _BookContent extends StatelessWidget {
   }
 
   /// Тап по части в списке → открыть плеер с этой части.
-  /// Передаём startPart явно, чтобы перезаписать прогресс сервера если он есть.
+  /// Та часть, на которой остановились, продолжается с сохранённого места,
+  /// другая — с начала (логика в AudioService.loadBook).
   void _onPartTap(BuildContext context, BookPart part) {
     context.push(
       Routes.player(book.id),
       extra: {
         'startPart': part.number,
-        'startPosition': 0,
       },
     );
   }
