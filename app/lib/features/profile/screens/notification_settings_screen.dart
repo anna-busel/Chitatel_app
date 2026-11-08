@@ -67,7 +67,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
     _Setting(
       key: 'clubDigest',
       title: 'Вечерняя сводка чата',
-      subtitle: 'Сколько новых сообщений за день, в 21:00 по Москве',
+      subtitle: 'Сколько новых сообщений за день',
     ),
     _Setting(
       key: 'reminders',
