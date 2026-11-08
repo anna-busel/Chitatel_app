@@ -168,7 +168,7 @@ class ClubAboutTab extends StatelessWidget {
                 listenedPartNumbers: const <int>{},
                 onPartTap: (part) => context.push(
                   Routes.player(bookId),
-                  extra: {'startPart': part.number, 'startPosition': 0},
+                  extra: {'startPart': part.number},
                 ),
               ),
             ],

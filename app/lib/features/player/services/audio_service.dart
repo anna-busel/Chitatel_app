@@ -169,6 +169,15 @@ class ChitatelAudioHandler extends BaseAudioHandler with SeekHandler {
     // Если стартовая часть/позиция не заданы — запрашиваем прогресс с сервера.
     int targetPart = startPartNumber ?? 1;
     int targetPosition = startPositionSeconds ?? 0;
+    // Тап по части без позиции: если это та часть, на которой остановились,
+    // продолжаем с сохранённого места (иначе одно длинное аудио каждый раз
+    // начиналось сначала); другая часть — с начала.
+    if (startPartNumber != null && startPositionSeconds == null) {
+      final progress = await _progressService.fetchProgress(book.id);
+      if (progress.currentPartNumber == startPartNumber) {
+        targetPosition = progress.positionSeconds;
+      }
+    }
     if (startPartNumber == null && startPositionSeconds == null) {
       final progress = await _progressService.fetchProgress(book.id);
       targetPart = progress.currentPartNumber;
