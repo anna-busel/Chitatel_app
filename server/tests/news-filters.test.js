@@ -61,6 +61,17 @@ describe('onlyPlatform / hasPlatform', () => {
 });
 
 describe('sendNews', () => {
+  test('Сезон: фильтр по плану season и активной подписке, тип news', async () => {
+    mockUsers([{ _id: 's1', devices: [ios('i1')], pushSettings: {} }]);
+    const r = await push.sendNews({ audience: 'season', title: 't', body: 'b' });
+    const filter = User.find.mock.calls[User.find.mock.calls.length - 1][0];
+    expect(filter.subscriptionPlan).toBe('season');
+    expect(filter.subscriptionStatus).toEqual({ $in: ['basic', 'premium'] });
+    expect(filter.subscriptionExpiresAt.$gt).toBeInstanceOf(Date);
+    expect(r.total).toBe(1);
+    expect(Notification.insertMany.mock.calls[Notification.insertMany.mock.calls.length - 1][0][0].type).toBe('news');
+  });
+
   test('только Android: iPhone-пользователь не попадает, push только на андроид', async () => {
     mockUsers([
       { _id: 'u1', devices: [ios('i1')] },

@@ -436,7 +436,7 @@ const hasPlatform = (user, platform) => {
  *   платформы, и push только на него. Без устройства этой платформы человек
  *   в рассылку не попадает (и в ленту тоже).
  *
- * @param {{audience?: 'all'|'subscribers'|'tier2', platform?: 'all'|'ios'|'android',
+ * @param {{audience?: 'all'|'subscribers'|'season'|'tier2', platform?: 'all'|'ios'|'android',
  *   tier2Club?: object, title:string, body:string, data?:object}} opts
  * @returns {Promise<{total:number, persisted:number, sent:number}>}
  */
@@ -450,9 +450,14 @@ const sendNews = async ({
 } = {}) => {
   const isTier2 = audience === 'tier2';
   const feedFilter = { isDeleted: { $ne: true } };
-  if (audience === 'subscribers') {
+  if (audience === 'subscribers' || audience === 'season') {
     feedFilter.subscriptionStatus = { $in: ['basic', 'premium'] };
     feedFilter.subscriptionExpiresAt = { $gt: new Date() };
+  }
+  // 09.11.2026: участницы текущего сезона — активная подписка с планом season
+  // (покупка club.basic.season или выдача сезона из админки/CRM ставят план).
+  if (audience === 'season') {
+    feedFilter.subscriptionPlan = 'season';
   }
   if (isTier2) {
     if (!tier2Club) return { total: 0, persisted: 0, sent: 0 };

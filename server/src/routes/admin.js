@@ -561,7 +561,7 @@ router.post(
 const newsSchema = z.object({
   title: z.string().min(1).max(120).trim(),
   body: z.string().min(1).max(1000).trim(),
-  audience: z.enum(['all', 'subscribers', 'tier2']).default('all'),
+  audience: z.enum(['all', 'subscribers', 'season', 'tier2']).default('all'),
   platform: z.enum(['all', 'ios', 'android']).default('all'),
   data: z.record(z.any()).optional(),
 });
