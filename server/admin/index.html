@@ -240,6 +240,7 @@
             <div class="seg" id="newsAud">
               <div class="opt on" data-v="all" onclick="pick(this)">Всем</div>
               <div class="opt" data-v="subscribers" onclick="pick(this)">Подписчикам</div>
+              <div class="opt" data-v="season" onclick="pick(this)">Сезон (текущий)</div>
               <div class="opt" data-v="tier2" onclick="pick(this)">Тариф 2 (встреча)</div>
             </div>
           </div>
@@ -801,7 +802,7 @@ async function sendNews(){
   var body=(document.getElementById('newsBody').value||'').trim();
   var audience=segVal('newsAud'), platform=segVal('newsPlat')||'all';
   if(!title||!body){ toast('Заполните заголовок и текст'); return; }
-  var audTxt={all:'всем',subscribers:'подписчикам',tier2:'участницам с Тарифом 2'}[audience]||audience;
+  var audTxt={all:'всем',subscribers:'подписчикам',season:'участницам текущего сезона',tier2:'участницам с Тарифом 2'}[audience]||audience;
   var platTxt={all:'',ios:' (только iPhone)',android:' (только Android)'}[platform]||'';
   if(!confirm('Отправить уведомление '+audTxt+platTxt+'?')) return;
   try{ var d=await api('/admin/news',{method:'POST',body:JSON.stringify({title:title,body:body,audience:audience,platform:platform})});
