@@ -13,10 +13,15 @@ class AppBottomBar extends StatelessWidget {
     super.key,
     required this.currentIndex,
     required this.onTap,
+    this.clubHasUnread = false,
   });
 
   final int currentIndex;
   final ValueChanged<int> onTap;
+
+  /// V4 (1.0.5): маленькая красная точка на «Клубе» — в чатах клубов есть
+  /// непрочитанные (clubUnreadProvider.total > 0). Без числа.
+  final bool clubHasUnread;
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +60,7 @@ class AppBottomBar extends StatelessWidget {
             activeIcon: Icons.menu_book,
             label: 'Клуб',
             isActive: currentIndex == 2,
+            showDot: clubHasUnread,
             onTap: () => onTap(2),
           ),
           _TabItem(
@@ -79,6 +85,7 @@ class _TabItem extends StatelessWidget {
     required this.label,
     required this.isActive,
     required this.onTap,
+    this.showDot = false,
   });
 
   final int index;
@@ -87,6 +94,7 @@ class _TabItem extends StatelessWidget {
   final String label;
   final bool isActive;
   final VoidCallback onTap;
+  final bool showDot;
 
   @override
   Widget build(BuildContext context) {
@@ -97,12 +105,34 @@ class _TabItem extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              isActive ? activeIcon : icon,
-              size: 24,
-              color: isActive
-                  ? AppColors.terracotta
-                  : AppColors.textPrimary.withOpacity(0.35),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  isActive ? activeIcon : icon,
+                  size: 24,
+                  color: isActive
+                      ? AppColors.terracotta
+                      : AppColors.textPrimary.withOpacity(0.35),
+                ),
+                if (showDot)
+                  Positioned(
+                    top: -1,
+                    right: -3,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: AppColors.error,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppColors.background,
+                          width: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 3),
             Text(
