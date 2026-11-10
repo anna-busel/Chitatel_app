@@ -18,6 +18,7 @@ const imageService = require('../services/image.service');
 const voiceService = require('../services/voice.service');
 const pushService = require('../services/push.service');
 const clubChatPush = require('../services/club-chat-push.service');
+const chatUnread = require('../services/chat-unread.service');
 const logger = require('../config/logger');
 const User = require('../models/User');
 const ClubMonth = require('../models/ClubMonth');
@@ -412,6 +413,27 @@ router.get('/current', resolveClubAccess, async (req, res, next) => {
 });
 
 /**
+ * GET /api/club/unread
+ * Непрочитанные в чатах клубов (UPDATES-PLAN V1, 10.11.2026).
+ *
+ * { items: [{ clubMonthId, unread }], total } — по клубам, чат которых
+ * пользователь может читать (computeClubAccess: текущий, архивное окно,
+ * «чат остаётся»). Не считаются свои, скрытые, удалённые и от заблокированных.
+ * unread и total — не больше 99. Без записи о прочитанном — за 7 дней.
+ *
+ * ⚠️ Объявлен ДО '/:clubMonthId' — иначе 'unread' уйдёт туда как id.
+ * Бан / нет доступа — пустой ответ, не ошибка (точка в меню просто не горит).
+ */
+router.get('/unread', async (req, res, next) => {
+  try {
+    const result = await chatUnread.unreadForUser(req.user.userId, new Date());
+    return success(res, result);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
  * GET /api/club/:clubMonthId
  * Конкретный клуб по ID (для архивных или будущих).
  */
@@ -556,10 +578,28 @@ router.get(
         }
       }
 
+      // V1 (10.11.2026): «прочитано до» текущего пользователя — только на
+      // первой странице, для разделителя «Новые сообщения». Старые клиенты
+      // поле игнорируют.
+      let lastReadAt = null;
+      let lastReadMessageId = null;
+      if (!before) {
+        const readState = await chatUnread.getReadState(
+          req.user.userId,
+          req.club._id
+        );
+        if (readState) {
+          lastReadAt = readState.lastReadAt;
+          lastReadMessageId = readState.lastReadMessageId;
+        }
+      }
+
       return success(res, {
         messages,
         hasMore: messages.length === limit,
         pinnedMessage,
+        lastReadAt,
+        lastReadMessageId,
       });
     } catch (err) {
       return next(err);
@@ -1679,7 +1719,13 @@ router.post(
  * POST /api/club/:clubMonthId/chat/read
  * Отметить сообщения прочитанными (задача 4.11).
  *
- * Body: { messageIds: [string] } — id сообщений которые юзер увидел.
+ * Body: { messageIds?: [string], messageId?: string } — хотя бы одно.
+ * - messageIds — id сообщений, которые юзер увидел (readBy, как раньше).
+ * - messageId (V1, 10.11.2026, клиент 1.0.5+) — последнее видимое сообщение:
+ *   «прочитано до» (ChatReadState) сдвигается до него, монотонно.
+ *   Без messageId (клиенты 1.0.4) «прочитано до» сдвигается до самого нового
+ *   из messageIds — они отмечают всё загруженное при открытии.
+ * Ответ: { ok, lastReadAt, lastReadMessageId }.
  *
  * Логика: добавляем userId в readBy каждого сообщения ($addToSet — без
  * дублей). Используется в основном Анной — она видит сколько участниц
@@ -1690,16 +1736,19 @@ router.post(
  * Доступ — любой кто видит клуб (resolveClubAccess), включая архив (read-only
  * чтение всё равно «прочтение»). Бан/без доступа не пройдёт middleware.
  */
-const readSchema = z.object({
-  messageIds: z
-    .array(
-      z.string().refine((s) => mongoose.Types.ObjectId.isValid(s), {
-        message: 'messageId должен быть валидным ObjectId',
-      })
-    )
-    .min(1)
-    .max(100),
-});
+const objectIdString = z
+  .string()
+  .refine((s) => mongoose.Types.ObjectId.isValid(s), {
+    message: 'messageId должен быть валидным ObjectId',
+  });
+const readSchema = z
+  .object({
+    messageIds: z.array(objectIdString).min(1).max(100).optional(),
+    messageId: objectIdString.optional(),
+  })
+  .refine((b) => Boolean(b.messageId) || Boolean(b.messageIds), {
+    message: 'Нужен messageId или messageIds',
+  });
 
 router.post(
   '/:clubMonthId/chat/read',
@@ -1707,15 +1756,26 @@ router.post(
   resolveClubAccess,
   async (req, res, next) => {
     try {
-      const { messageIds } = req.body;
-      await ChatMessage.updateMany(
-        {
-          _id: { $in: messageIds },
-          clubMonthId: req.club._id,
-        },
-        { $addToSet: { readBy: req.user.userId } }
+      const { messageIds, messageId } = req.body;
+      if (messageIds && messageIds.length) {
+        await ChatMessage.updateMany(
+          {
+            _id: { $in: messageIds },
+            clubMonthId: req.club._id,
+          },
+          { $addToSet: { readBy: req.user.userId } }
+        );
+      }
+      const state = await chatUnread.markRead(
+        req.user.userId,
+        req.club._id,
+        messageId ? [messageId] : messageIds
       );
-      return success(res, { ok: true });
+      return success(res, {
+        ok: true,
+        lastReadAt: state ? state.lastReadAt : null,
+        lastReadMessageId: state ? state.lastReadMessageId : null,
+      });
     } catch (err) {
       return next(err);
     }
