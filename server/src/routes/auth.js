@@ -11,6 +11,7 @@ const User = require('../models/User');
 const Quote = require('../models/Quote');
 const WeeklyReport = require('../models/WeeklyReport');
 const Progress = require('../models/Progress');
+const ChatReadState = require('../models/ChatReadState');
 const { deleteUserReviews } = require('../services/review.service');
 
 const router = Router();
@@ -201,6 +202,7 @@ router.delete(
       await Quote.deleteMany({ userId });
       await WeeklyReport.deleteMany({ userId });
       await Progress.deleteMany({ userId });
+      await ChatReadState.deleteMany({ userId }); // V1: «прочитано до» в чатах
       await deleteUserReviews(userId);
 
       // 3-6. Обезличиваем аккаунт и закрываем вход.
