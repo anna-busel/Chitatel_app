@@ -13,6 +13,7 @@ import '../../payments/services/purchase_service.dart';
 import '../models/club_access.dart';
 import '../models/club_summary.dart';
 import '../providers/club_provider.dart';
+import '../providers/club_unread_provider.dart';
 import '../services/club_api_service.dart';
 import '../widgets/club_about_tab.dart';
 import '../widgets/club_meeting_card.dart';
@@ -61,16 +62,45 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
   /// Идёт попытка подобрать архивный клуб — вместо paywall показываем лоадер.
   bool _resolvingArchive = false;
 
+  /// Индекс вкладки «Чат» в TabBar (Разборы / Чат / Q&A).
+  static const int _chatTabIndex = 1;
+
+  /// Счётчики непрочитанных (V2). Ссылка на notifier сохранена заранее —
+  /// в dispose() ref уже не читаем.
+  late final ClubUnreadNotifier _unread;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_syncChatOpen);
+    _unread = ref.read(clubUnreadProvider.notifier);
+    // V2: открыли клуб — перечитать счётчики. Если клуб уже в кеше,
+    // ref.listen ниже не сработает, поэтому зовём здесь (после кадра).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncChatOpen();
+      final loaded = ref.read(currentClubProvider).valueOrNull != null;
+      _unread.refresh(force: loaded);
+    });
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_syncChatOpen);
+    _unread.releaseChatOpen(this);
     _tabController.dispose();
     super.dispose();
+  }
+
+  /// Сообщить счётчику, открыт ли сейчас чат клуба: пока он открыт,
+  /// новые сообщения из сокета не добавляют +1 (их видно в ленте).
+  void _syncChatOpen() {
+    if (!mounted) return;
+    final clubId = ref.read(currentClubProvider).valueOrNull?.club.id;
+    final open = !_tabController.indexIsChanging &&
+        _tabController.index == _chatTabIndex;
+    _unread.setChatOpen(this, open ? clubId : null);
   }
 
   @override
@@ -78,7 +108,14 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
     // 403 обрабатываем в слушателе, а не в build: нужно сходить за /club/list
     // и, возможно, поменять выбранный клуб (в build менять провайдеры нельзя).
     ref.listen<AsyncValue<CurrentClubResult>>(currentClubProvider, (_, next) {
-      next.whenOrNull(error: (err, __) => _handleClubError(err));
+      next.whenOrNull(
+        error: (err, __) => _handleClubError(err),
+        // V2: клуб открылся (или сменился в переключателе) — счётчики заново.
+        data: (_) {
+          _syncChatOpen();
+          _unread.refresh(force: true);
+        },
+      );
     });
 
     final clubAsync = ref.watch(currentClubProvider);
@@ -191,6 +228,11 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
     final club = result.club;
     final access = result.access;
 
+    // V2: новые сообщения в чате ЭТОГО клуба — бейдж на вкладке «Чат».
+    final chatUnread = ref.watch(
+      clubUnreadProvider.select((s) => s.forClub(club.id)),
+    );
+
     // Плашка сезона для тех, кто УЖЕ в клубе (подписчицы месяца):
     // анонс и окно покупки сезона — тап ведёт на paywall. Не показываем:
     // админу и тем, у кого сезон уже оформлен (plan=='season', 12.07) —
@@ -284,10 +326,10 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
             unselectedLabelColor: AppColors.textSecondary,
             labelStyle: AppTypography.bodyMedium,
             unselectedLabelStyle: AppTypography.body,
-            tabs: const [
-              Tab(text: 'Разборы'),
-              Tab(text: 'Чат'),
-              Tab(text: 'Q&A'),
+            tabs: [
+              const Tab(text: 'Разборы'),
+              Tab(child: _ChatTabLabel(unread: chatUnread)),
+              const Tab(text: 'Q&A'),
             ],
           ),
         ),
@@ -297,7 +339,12 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
             controller: _tabController,
             children: [
               ClubAboutTab(club: club, bookJson: result.bookJson),
-              ChatTab(club: club, access: access),
+              ChatTab(
+                club: club,
+                access: access,
+                tabController: _tabController,
+                tabIndex: _chatTabIndex,
+              ),
               QATab(club: club, access: access),
             ],
           ),
@@ -360,6 +407,44 @@ String clubMonthGenitive(int month) {
     12: 'декабря',
   };
   return months[month] ?? 'месяца';
+}
+
+/// Подпись вкладки «Чат» с красным бейджем непрочитанных (V2, 1.0.5):
+/// «Чат 12», «Чат 99+». Без новых — просто «Чат».
+class _ChatTabLabel extends StatelessWidget {
+  const _ChatTabLabel({required this.unread});
+  final int unread;
+
+  @override
+  Widget build(BuildContext context) {
+    if (unread <= 0) return const Text('Чат');
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text('Чат'),
+        const SizedBox(width: 6),
+        Container(
+          constraints: const BoxConstraints(minWidth: 18),
+          height: 18,
+          padding: const EdgeInsets.symmetric(horizontal: 5),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.error,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Text(
+            unreadBadgeLabel(unread),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Плашка сезона внутри клуба (анонс или окно покупки).
