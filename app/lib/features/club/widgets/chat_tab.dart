@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
@@ -14,6 +15,7 @@ import '../models/chat_message.dart';
 import '../models/club_access.dart';
 import '../models/club_month.dart';
 import '../providers/club_provider.dart';
+import '../providers/club_unread_provider.dart';
 import '../services/block_service.dart';
 import '../services/club_api_service.dart';
 import '../services/club_socket_service.dart';
@@ -95,13 +97,34 @@ class _ReportResult {
 /// памяти). Теперь экран слушает жизненный цикл и на `paused`/`detached`
 /// дожимает отложенное удаление немедленно.
 ///
+/// V3 (1.0.5) — ОТКРЫТИЕ С МЕСТА, ГДЕ ОСТАНОВИЛАСЬ. Сервер хранит «прочитано
+/// до» (ChatReadState, первая страница истории отдаёт lastReadAt). При входе:
+/// если есть новые — догружаем до 2 страниц вверх, чтобы дойти до первого
+/// непрочитанного, ставим над ним плашку «Новые сообщения» и прокручиваем к
+/// нему; не дошли — плашка над самым старым загруженным. Новых нет — вниз,
+/// как раньше. Прочитанным отмечается САМОЕ НОВОЕ ВИДИМОЕ сообщение (по
+/// раскладке ленты, `_newestVisibleMessage`) — с дебаунсом 1 с после
+/// прокрутки/открытия, только пока вкладка «Чат» открыта. После отметки
+/// счётчик вкладки (clubUnreadProvider) = сколько новых осталось ниже.
+///
 /// Real-time через Socket.io (singleton; виджет не рвёт сокет — урок #16).
 /// ПРОИЗВОДИТЕЛЬНОСТЬ: RepaintBoundary на каждом элементе, cacheExtent 600,
 /// пузыри без теней (рамка), клипы hardEdge — см. chat_message_bubble.
 class ChatTab extends ConsumerStatefulWidget {
-  const ChatTab({super.key, required this.club, required this.access});
+  const ChatTab({
+    super.key,
+    required this.club,
+    required this.access,
+    this.tabController,
+    this.tabIndex = 1,
+  });
   final ClubMonth club;
   final ClubAccess access;
+
+  /// TabBar экрана клуба (V3): прочитанное отмечаем, только пока выбрана
+  /// вкладка [tabIndex]. null — считаем, что чат всегда на экране.
+  final TabController? tabController;
+  final int tabIndex;
 
   @override
   ConsumerState<ChatTab> createState() => _ChatTabState();
@@ -119,6 +142,17 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
   final Set<String> _adminIds = {};
   final Set<String> _readSent = {};
   Timer? _readDebounce;
+
+  /// V3: «прочитано до» — с сервера при входе, дальше двигаем сами.
+  DateTime? _lastReadAt;
+  String? _lastReadMessageId;
+
+  /// V3: над этим сообщением — плашка «Новые сообщения» (до выхода из чата).
+  String? _firstUnreadId;
+
+  /// Ключ на ВСЮ ленту (один, не на элементы) — чтобы найти раскладку и
+  /// понять, какое сообщение сейчас видно внизу экрана.
+  final GlobalKey _listKey = GlobalKey();
 
   Timer? _deleteTimer;
   ChatMessage? _pendingDeleteMessage;
@@ -167,7 +201,32 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _pinnedMessageId = widget.club.pinnedMessageId;
     _scrollController.addListener(_onScroll);
+    widget.tabController?.addListener(_onTabChanged);
     _bootstrap();
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tabController != widget.tabController) {
+      oldWidget.tabController?.removeListener(_onTabChanged);
+      widget.tabController?.addListener(_onTabChanged);
+    }
+  }
+
+  /// Вкладка «Чат» открыта и приложение на экране.
+  bool get _isChatVisible {
+    final tc = widget.tabController;
+    if (tc != null && (tc.indexIsChanging || tc.index != widget.tabIndex)) {
+      return false;
+    }
+    final life = WidgetsBinding.instance.lifecycleState;
+    return life == null || life == AppLifecycleState.resumed;
+  }
+
+  void _onTabChanged() {
+    if (!mounted) return;
+    if (_isChatVisible) _scheduleMarkRead();
   }
 
   @override
@@ -183,6 +242,7 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
     super.didChangeAppLifecycleState(lifecycleState);
+    if (lifecycleState == AppLifecycleState.resumed) _scheduleMarkRead();
     final leaving = lifecycleState == AppLifecycleState.paused ||
         lifecycleState == AppLifecycleState.detached;
     if (!leaving || _pendingDeleteMessage == null) return;
@@ -193,6 +253,7 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.tabController?.removeListener(_onTabChanged);
     _highlightTimer?.cancel();
     _readDebounce?.cancel();
     if (_deleteTimer != null && _deleteTimer!.isActive) {
@@ -294,14 +355,48 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
       );
       if (!mounted) return;
 
+      // V3: первое непрочитанное старше загруженной страницы — догружаем
+      // вверх (до 2 страниц по 50), чтобы открыть чат с того места.
+      final lastReadAt = history.lastReadAt;
+      final loaded = <ChatMessage>[..._visible(history.messages)];
+      var hasMoreBefore = history.hasMore;
+      if (lastReadAt != null) {
+        for (var page = 0; page < 2; page++) {
+          if (!hasMoreBefore || history.messages.isEmpty) break;
+          final oldest = loaded.isNotEmpty
+              ? loaded.last.createdAt
+              : history.messages.last.createdAt;
+          if (!oldest.isAfter(lastReadAt)) break;
+          try {
+            final older = await api.fetchChatHistory(
+              clubMonthId: widget.club.id,
+              limit: 50,
+              before: oldest,
+            );
+            if (!mounted) return;
+            final known = loaded.map((m) => m.id).toSet();
+            loaded.addAll(
+              _visible(older.messages).where((m) => !known.contains(m.id)),
+            );
+            hasMoreBefore = older.hasMore;
+            if (older.messages.isEmpty) break;
+          } catch (_) {
+            break; // не догрузили — плашка встанет над верхом загруженного
+          }
+        }
+      }
+
       final mentionable = await api.fetchMentionable(widget.club.id);
 
       if (!mounted) return;
       setState(() {
         _messages
           ..clear()
-          ..addAll(_visible(history.messages));
-        _hasMoreBefore = history.hasMore;
+          ..addAll(loaded);
+        _hasMoreBefore = hasMoreBefore;
+        _lastReadAt = lastReadAt;
+        _lastReadMessageId = history.lastReadMessageId;
+        _firstUnreadId = _findFirstUnreadId();
         _hasMoreAfter = false;
         _pinnedMessage = history.pinnedMessage;
         _pinnedMessageId = history.pinnedMessage?.id ?? _pinnedMessageId;
@@ -313,6 +408,13 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
             _currentUserId != null && _adminIds.contains(_currentUserId);
         _isLoading = false;
       });
+
+      // V3: есть новые — к первому непрочитанному; нет — лента и так внизу.
+      if (_firstUnreadId != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToFirstUnread();
+        });
+      }
 
       _socketService = ref.read(clubSocketServiceProvider);
       _socketSub = _socketService!.events.listen(_onSocketEvent);
@@ -441,18 +543,163 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
     }
   }
 
+  /// V3: самое старое НЕ своё сообщение новее «прочитано до» — над ним
+  /// плашка «Новые сообщения». Если до него не догрузили — это самое старое
+  /// из загруженных новых (плашка у верха ленты). Без «прочитано до» (первый
+  /// вход / старый сервер) плашки нет — открываем внизу, как раньше.
+  String? _findFirstUnreadId() {
+    final lastReadAt = _lastReadAt;
+    if (lastReadAt == null) return null;
+    String? id;
+    for (final m in _messages) {
+      // _messages — от новых к старым: последнее подходящее и есть первое.
+      if (!m.createdAt.isAfter(lastReadAt)) break;
+      if (!m.isMine(_currentUserId)) id = m.id;
+    }
+    return id;
+  }
+
+  /// Прокрутка к плашке «Новые сообщения» (V3). Как `_scrollToTarget`, но
+  /// без подсветки, плашка — у верхнего края экрана.
+  Future<void> _scrollToFirstUnread() async {
+    final id = _firstUnreadId;
+    if (id == null || !mounted) return;
+    final idx = _messages.indexWhere((m) => m.id == id);
+    if (idx == -1) return;
+
+    setState(() => _jumpTargetId = id);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    if (_scrollController.hasClients) {
+      final max = _scrollController.position.maxScrollExtent;
+      final frac =
+          _messages.length <= 1 ? 0.0 : idx / (_messages.length - 1);
+      _scrollController.jumpTo((max * frac).clamp(0.0, max));
+    }
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      final ctx = _jumpKey.currentContext;
+      if (ctx == null) continue;
+      // reverse: true — 1.0 = у ВЕРХНЕГО края (ось ленты идёт снизу вверх).
+      await Scrollable.ensureVisible(ctx, alignment: 0.95);
+    }
+
+    if (!mounted) return;
+    if (_jumpTargetId == id && _highlightedMessageId == null) {
+      setState(() => _jumpTargetId = null);
+    }
+    _scheduleMarkRead();
+  }
+
+  /// RenderSliver ленты (для `_newestVisibleMessage`).
+  RenderSliverMultiBoxAdaptor? _findListSliver() {
+    final root = _listKey.currentContext?.findRenderObject();
+    if (root == null) return null;
+    RenderSliverMultiBoxAdaptor? found;
+    void visit(RenderObject o) {
+      if (found != null) return;
+      if (o is RenderSliverMultiBoxAdaptor) {
+        found = o;
+        return;
+      }
+      o.visitChildren(visit);
+    }
+
+    visit(root);
+    return found;
+  }
+
+  /// V3: самое новое сообщение, которое сейчас видно (хотя бы наполовину)
+  /// у нижнего края ленты. Лента reverse: индекс 0 — внизу, смещения
+  /// элементов растут вверх. Не вышло посчитать — если лента внизу, это
+  /// самое новое, иначе null (ничего не отмечаем).
+  ChatMessage? _newestVisibleMessage() {
+    if (_messages.isEmpty || !_scrollController.hasClients) return null;
+    try {
+      final sliver = _findListSliver();
+      if (sliver != null) {
+        final visibleFrom = sliver.constraints.scrollOffset;
+        int? best;
+        RenderBox? child = sliver.firstChild;
+        while (child != null) {
+          final index = sliver.indexOf(child);
+          final offset = sliver.childScrollOffset(child);
+          if (offset != null && index < _messages.length && child.hasSize) {
+            final middle = offset + child.size.height / 2;
+            if (middle >= visibleFrom && (best == null || index < best)) {
+              best = index;
+            }
+          }
+          child = sliver.childAfter(child);
+        }
+        if (best != null) return _messages[best];
+      }
+    } catch (_) {
+      // Раскладка ещё не готова — ниже запасной путь.
+    }
+    final pos = _scrollController.position;
+    if (pos.pixels <= pos.minScrollExtent + 40) return _messages.first;
+    return null;
+  }
+
+  /// Отметить прочитанное — дебаунс 1 с (прокрутка, открытие, новое
+  /// сообщение), не на каждый кадр.
   void _scheduleMarkRead() {
     _readDebounce?.cancel();
-    _readDebounce = Timer(const Duration(seconds: 2), () {
-      final ids = _messages
-          .map((m) => m.id)
-          .where((id) => !_readSent.contains(id))
-          .toList();
-      if (ids.isEmpty) return;
+    _readDebounce = Timer(const Duration(seconds: 1), _flushMarkRead);
+  }
+
+  Future<void> _flushMarkRead() async {
+    if (!mounted || _isLoading || !_isChatVisible) return;
+    final unread = ref.read(clubUnreadProvider.notifier);
+
+    // V3: «прочитано до» — самое новое видимое, если оно новее сохранённого.
+    final newest = _newestVisibleMessage();
+    final lastReadAt = _lastReadAt;
+    final advance = newest != null &&
+        (lastReadAt == null || newest.createdAt.isAfter(lastReadAt));
+    final upToId = advance ? newest!.id : _lastReadMessageId;
+
+    // readBy (4.11, метрика для Анны) — как раньше, все загруженные. Только
+    // вместе с messageId: без него сервер сдвинул бы «прочитано до» к самому
+    // новому из списка (так работает 1.0.4).
+    final ids = upToId == null
+        ? const <String>[]
+        : _messages
+            .map((m) => m.id)
+            .where((id) => !_readSent.contains(id))
+            .toList();
+
+    if (advance || ids.isNotEmpty) {
       _readSent.addAll(ids);
-      final api = ref.read(clubApiServiceProvider);
-      api.markRead(clubMonthId: widget.club.id, messageIds: ids);
-    });
+      final ok = await ref.read(clubApiServiceProvider).markRead(
+            clubMonthId: widget.club.id,
+            messageIds: ids,
+            upToMessageId: upToId,
+          );
+      if (!mounted) return;
+      if (!ok) {
+        _readSent.removeAll(ids);
+        return; // сеть — молча, счётчик не трогаем
+      }
+      if (advance) {
+        _lastReadAt = newest!.createdAt;
+        _lastReadMessageId = newest.id;
+      }
+    }
+
+    // Счётчик вкладки «Чат» = сколько новых осталось ниже видимого.
+    final readAt = _lastReadAt;
+    final left = readAt == null
+        ? 0
+        : _messages
+            .where((m) =>
+                m.createdAt.isAfter(readAt) && !m.isMine(_currentUserId))
+            .length;
+    unread.setClub(widget.club.id, left);
   }
 
   void _onScroll() {
@@ -468,6 +715,9 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
     if (nextShow != _showJumpDown) {
       setState(() => _showJumpDown = nextShow);
     }
+
+    // V3: прокрутка остановилась на 1 с — отметить видимое прочитанным.
+    _scheduleMarkRead();
 
     if (!_isLoadingMore &&
         _hasMoreBefore &&
@@ -1392,6 +1642,7 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
                   child: _messages.isEmpty
                       ? _EmptyChat()
                       : ListView.builder(
+                          key: _listKey,
                           controller: _scrollController,
                           reverse: true,
                           keyboardDismissBehavior:
@@ -1460,19 +1711,27 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
                                   : null,
                             );
 
-                            final Widget content = showDateHeader
-                                ? Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      _DateSeparator(
-                                        label:
-                                            _formatDateLabel(m.createdAt),
-                                      ),
-                                      bubble,
-                                    ],
-                                  )
-                                : bubble;
+                            // V3: плашка «Новые сообщения» над первым
+                            // непрочитанным (под датой, если она есть).
+                            final bool showNewHeader =
+                                m.id == _firstUnreadId;
+                            final Widget content =
+                                showDateHeader || showNewHeader
+                                    ? Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          if (showDateHeader)
+                                            _DateSeparator(
+                                              label: _formatDateLabel(
+                                                  m.createdAt),
+                                            ),
+                                          if (showNewHeader)
+                                            const _NewMessagesSeparator(),
+                                          bubble,
+                                        ],
+                                      )
+                                    : bubble;
 
                             // ⛔️ ValueKey ОБЯЗАТЕЛЕН на каждом элементе.
                             // GlobalKey — РОВНО НА ОДНОМ: цель прыжка.
@@ -1661,6 +1920,44 @@ class _EmptyChat extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Плашка «Новые сообщения» над первым непрочитанным (V3, 1.0.5).
+class _NewMessagesSeparator extends StatelessWidget {
+  const _NewMessagesSeparator();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 1,
+              color: AppColors.terracotta.withOpacity(0.35),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              'Новые сообщения',
+              style: AppTypography.small.copyWith(
+                color: AppColors.terracotta,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Container(
+              height: 1,
+              color: AppColors.terracotta.withOpacity(0.35),
+            ),
+          ),
+        ],
       ),
     );
   }
