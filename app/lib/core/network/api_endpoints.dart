@@ -185,8 +185,13 @@ class ApiEndpoints {
 
   /// POST /api/club/:clubMonthId/chat/read — отметить сообщения прочитанными
   /// (задача 4.11). Body: { messageIds: [string] } (1-100).
+  /// V1 (1.0.5): + messageId — «прочитано до» (последнее видимое сообщение).
   static String clubChatRead(String clubMonthId) =>
       '/club/$clubMonthId/chat/read';
+
+  /// GET /api/club/unread — непрочитанные в чатах клубов (V1, 1.0.5).
+  /// { items: [{ clubMonthId, unread }], total } — unread/total не больше 99.
+  static const String clubUnread = '/club/unread';
 
   /// POST /api/club/:clubMonthId/chat/:messageId/pin — закрепить/открепить
   /// сообщение (задача 4.10, только Анна-admin). Body: { pinned: bool }.
