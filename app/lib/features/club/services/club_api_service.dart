@@ -65,7 +65,14 @@ class ChatHistoryResult {
     required this.messages,
     required this.hasMore,
     this.pinnedMessage,
+    this.lastReadAt,
+    this.lastReadMessageId,
   });
+
+  /// V1 (1.0.5): «прочитано до» текущего пользователя — только на первой
+  /// странице. null — ещё ни разу не отмечала (или старый сервер).
+  final DateTime? lastReadAt;
+  final String? lastReadMessageId;
 
   /// DESC по createdAt — новые сверху (как возвращает сервер).
   final List<ChatMessage> messages;
@@ -243,10 +250,18 @@ class ClubApiService {
       pinned = ChatMessage.fromJson(pinnedRaw);
     }
 
+    final lastReadRaw = data['lastReadAt'];
+    final lastReadIdRaw = data['lastReadMessageId'];
+
     return ChatHistoryResult(
       messages: messages,
       hasMore: data['hasMore'] == true,
       pinnedMessage: pinned,
+      lastReadAt:
+          lastReadRaw is String ? DateTime.tryParse(lastReadRaw) : null,
+      lastReadMessageId: lastReadIdRaw is String && lastReadIdRaw.isNotEmpty
+          ? lastReadIdRaw
+          : null,
     );
   }
 
@@ -468,20 +483,56 @@ class ClubApiService {
 
   /// Отметить сообщения прочитанными (4.11). Фоновая метрика для Анны —
   /// ошибки глушим (не критично для UX). Без WS.
-  Future<void> markRead({
+  ///
+  /// V1 (1.0.5): [upToMessageId] — последнее видимое сообщение, сервер
+  /// сдвигает «прочитано до» (монотонно). Без него сервер сдвинул бы до самого
+  /// нового из [messageIds] — так ведут себя клиенты 1.0.4. Возвращает true,
+  /// если запрос прошёл.
+  Future<bool> markRead({
     required String clubMonthId,
-    required List<String> messageIds,
+    List<String> messageIds = const [],
+    String? upToMessageId,
   }) async {
-    if (messageIds.isEmpty) return;
+    if (messageIds.isEmpty && upToMessageId == null) return false;
     try {
       await _api.dio.post(
         ApiEndpoints.clubChatRead(clubMonthId),
-        data: {'messageIds': messageIds},
+        data: {
+          if (messageIds.isNotEmpty) 'messageIds': messageIds.take(100).toList(),
+          if (upToMessageId != null) 'messageId': upToMessageId,
+        },
       );
+      return true;
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[ClubApiService] markRead failed (ignored): $e');
       }
+      return false;
+    }
+  }
+
+  /// Непрочитанные в чатах клубов (V1, 1.0.5): clubMonthId → число (≤ 99).
+  /// null — ошибка сети/сервера (вызывающий молча ничего не показывает).
+  Future<Map<String, int>?> fetchUnread() async {
+    try {
+      final response = await _api.dio.get(ApiEndpoints.clubUnread);
+      final body = response.data as Map<String, dynamic>;
+      final data = body['data'] as Map<String, dynamic>;
+      final itemsRaw = data['items'];
+      final result = <String, int>{};
+      if (itemsRaw is List) {
+        for (final item in itemsRaw.whereType<Map<String, dynamic>>()) {
+          final id = item['clubMonthId'];
+          final n = item['unread'];
+          if (id is String && n is num) result[id] = n.toInt();
+        }
+      }
+      return result;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ClubApiService] fetchUnread failed (ignored): $e');
+      }
+      return null;
     }
   }
 
