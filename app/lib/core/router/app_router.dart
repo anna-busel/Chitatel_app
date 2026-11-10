@@ -21,6 +21,7 @@ import '../../features/home/screens/home_screen.dart';
 import '../../features/home/screens/banner_books_screen.dart';
 import '../../features/catalog/screens/catalog_screen.dart';
 import '../../features/club/screens/club_screen.dart';
+import '../../features/club/providers/club_unread_provider.dart';
 import '../../features/book/screens/book_screen.dart';
 import '../../features/book/screens/reviews_screen.dart';
 import '../../features/search/screens/search_screen.dart';
@@ -417,9 +418,16 @@ class _ScaffoldWithBottomBar extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const MiniPlayer(),
-          AppBottomBar(
-            currentIndex: _currentIndex(context),
-            onTap: (index) => _onTabTap(context, index),
+          // V4 (1.0.5): точка на «Клубе», если в чатах клубов есть новые.
+          // Первое чтение clubUnreadProvider здесь же запускает подсчёт.
+          Consumer(
+            builder: (context, ref, _) => AppBottomBar(
+              currentIndex: _currentIndex(context),
+              onTap: (index) => _onTabTap(context, index),
+              clubHasUnread: ref.watch(
+                clubUnreadProvider.select((s) => s.total > 0),
+              ),
+            ),
           ),
         ],
       ),
