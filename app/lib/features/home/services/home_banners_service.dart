@@ -19,6 +19,7 @@ class HomeBannerAction {
     this.bookId,
     this.listTitle = '',
     this.books = const [],
+    this.packageIds = const [],
   });
 
   final HomeBannerActionKind kind;
@@ -32,6 +33,10 @@ class HomeBannerAction {
   /// Для [HomeBannerActionKind.books] — разборы подборки (кратко, как в
   /// каталоге).
   final List<BookModel> books;
+
+  /// Для [HomeBannerActionKind.books] — id пакетов подборки (1.0.5).
+  /// Карточки берутся из packagesProvider (там цены и hasAccess).
+  final List<String> packageIds;
 
   static const none = HomeBannerAction(kind: HomeBannerActionKind.none);
 
@@ -50,11 +55,19 @@ class HomeBannerAction {
                 .map(BookModel.fromJson)
                 .toList(growable: false)
             : const <BookModel>[];
-        if (books.isEmpty) return none;
+        final rawPkgs = json['packageIds'];
+        final packageIds = rawPkgs is List
+            ? rawPkgs
+                .map((e) => e.toString())
+                .where((e) => e.isNotEmpty)
+                .toList(growable: false)
+            : const <String>[];
+        if (books.isEmpty && packageIds.isEmpty) return none;
         return HomeBannerAction(
           kind: HomeBannerActionKind.books,
           listTitle: json['listTitle'] as String? ?? '',
           books: books,
+          packageIds: packageIds,
         );
       default:
         return none;
@@ -67,11 +80,15 @@ class HomeBanner {
     required this.id,
     required this.imageUrl,
     required this.action,
+    this.showInCatalog = false,
   });
 
   final String id;
   final String imageUrl;
   final HomeBannerAction action;
+
+  /// Подборка баннера — ещё и первая вкладка каталога (1.0.5, 12.11.2026).
+  final bool showInCatalog;
 
   factory HomeBanner.fromJson(Map<String, dynamic> json) {
     return HomeBanner(
@@ -82,6 +99,7 @@ class HomeBanner {
             ? json['action'] as Map<String, dynamic>
             : null,
       ),
+      showInCatalog: json['showInCatalog'] == true,
     );
   }
 }

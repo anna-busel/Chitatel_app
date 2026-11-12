@@ -235,7 +235,11 @@ class _HomeCarouselState extends State<HomeCarousel>
     } else if (action.kind == HomeBannerActionKind.books) {
       context.push(
         Routes.bannerBooks,
-        extra: BannerBooksArgs(title: action.listTitle, books: action.books),
+        extra: BannerBooksArgs(
+          title: action.listTitle,
+          books: action.books,
+          packageIds: action.packageIds,
+        ),
       );
     }
   }
