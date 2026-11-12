@@ -7,6 +7,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/error_view.dart';
 import '../../../shared/widgets/shimmer_loading.dart';
+import '../../home/providers/home_banners_provider.dart';
+import '../../home/screens/banner_books_screen.dart';
 import '../providers/catalog_provider.dart';
 import '../providers/packages_provider.dart';
 import '../widgets/book_grid_card.dart';
@@ -36,7 +38,9 @@ class CatalogScreen extends ConsumerWidget {
         const CategoryChips(),
         const SizedBox(height: 12),
         Expanded(
-          child: state.filter is PackagesFilter
+          child: state.filter is PromoFilter
+              ? const _PromoTab()
+              : state.filter is PackagesFilter
               ? const _PackagesGrid()
               : _buildBody(context, ref, state),
         ),
@@ -57,10 +61,20 @@ class CatalogScreen extends ConsumerWidget {
     if (state.books.isEmpty) {
       return const _EmptyState();
     }
+    // 1.0.5: во «Все» разборы акции — первыми (порядок остальных тот же).
+    final promoIds = state.filter is AllBooksFilter
+        ? ref.watch(promoBadgesProvider).bookIds
+        : const <String>{};
+    final books = promoIds.isEmpty
+        ? state.books
+        : [
+            ...state.books.where((b) => promoIds.contains(b.id)),
+            ...state.books.where((b) => !promoIds.contains(b.id)),
+          ];
     return RefreshIndicator(
       color: AppColors.terracotta,
       onRefresh: () => ref.read(catalogProvider.notifier).load(),
-      child: _CatalogGrid(books: state.books),
+      child: _CatalogGrid(books: books),
     );
   }
 }
@@ -217,10 +231,18 @@ class _PackagesGrid extends ConsumerWidget {
         message: 'Не удалось загрузить пакеты',
         onRetry: () => ref.invalidate(packagesProvider),
       ),
-      data: (packages) {
-        if (packages.isEmpty) {
+      data: (all) {
+        if (all.isEmpty) {
           return const _EmptyState();
         }
+        // 1.0.5: пакеты акции — первыми.
+        final promoIds = ref.watch(promoBadgesProvider).packageIds;
+        final packages = promoIds.isEmpty
+            ? all
+            : [
+                ...all.where((p) => promoIds.contains(p.id)),
+                ...all.where((p) => !promoIds.contains(p.id)),
+              ];
         const horizontalPadding = AppSpacing.screenPadding;
         const crossAxisSpacing = 12.0;
         const mainAxisSpacing = 20.0;
@@ -253,6 +275,46 @@ class _PackagesGrid extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Вкладка-акция (1.0.5, 12.11.2026): пакеты и разборы подборки баннера.
+/// Акция закончилась, пока вкладка открыта (чип пропал) — переключаемся на
+/// «Все», чтобы не остаться на пустом невидимом фильтре.
+class _PromoTab extends ConsumerWidget {
+  const _PromoTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final promo = ref.watch(catalogPromoProvider);
+    if (promo == null) {
+      if (!ref.watch(homeBannersProvider).isLoading) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          ref.read(catalogProvider.notifier).setFilter(const AllBooksFilter());
+        });
+      }
+      return const _CatalogShimmer();
+    }
+    final ids = promo.action.packageIds;
+    final packages = promoPackages(ref, ids);
+    final books = promo.action.books;
+    if (books.isEmpty && packages.isEmpty) {
+      return ids.isNotEmpty && ref.watch(packagesProvider).isLoading
+          ? const _CatalogShimmer()
+          : const _EmptyState();
+    }
+    return RefreshIndicator(
+      color: AppColors.terracotta,
+      onRefresh: () async {
+        ref.invalidate(homeBannersProvider);
+        ref.invalidate(packagesProvider);
+      },
+      child: PromoGrid(
+        packages: packages,
+        books: books,
+        physics: const AlwaysScrollableScrollPhysics(),
+      ),
     );
   }
 }

@@ -9,6 +9,8 @@ import '../../../features/payments/providers/store_prices_provider.dart';
 import '../../../features/profile/providers/profile_provider.dart';
 import '../../../shared/models/package_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
+import '../../home/providers/home_banners_provider.dart';
+import 'promo_badge.dart';
 
 /// Карточка пакета в сетке каталога (фильтр «Пакеты»).
 /// Тап → экран пакета (Routes.package).
@@ -34,6 +36,10 @@ class PackageCard extends ConsumerWidget {
         package.displayPriceUsd;
     // 1.0.2: админу — «Доступ админа» вместо «Куплено» (см. isAdminProvider).
     final isAdmin = package.hasAccess && ref.watch(isAdminProvider);
+    // 1.0.5: плашка акции, если пакет в вкладке-акции и ещё не куплен.
+    final promo = ref.watch(promoBadgesProvider);
+    final showPromo =
+        !package.hasAccess && promo.packageIds.contains(package.id);
 
     return InkWell(
       onTap: () => context.push(Routes.package(package.id)),
@@ -42,12 +48,25 @@ class PackageCard extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          BookCoverImage(
-            imageUrl: package.coverImageUrl,
-            gradientColors: package.coverGradientColors,
-            label: package.coverLabel,
-            width: coverWidth,
-            height: coverHeight,
+          Stack(
+            children: [
+              BookCoverImage(
+                imageUrl: package.coverImageUrl,
+                gradientColors: package.coverGradientColors,
+                label: package.coverLabel,
+                width: coverWidth,
+                height: coverHeight,
+              ),
+              if (showPromo)
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: PromoBadge(
+                    label: promo.label,
+                    maxWidth: coverWidth - 16,
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 8),
           // Метка типа над названием: ПАКЕТ / ФАКУЛЬТАТИВ (по packageSlug).

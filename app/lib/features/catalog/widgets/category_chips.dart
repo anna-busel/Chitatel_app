@@ -4,6 +4,7 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/book_categories.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../home/providers/home_banners_provider.dart';
 import '../providers/catalog_provider.dart';
 
 /// Горизонтальная лента чипов-фильтров каталога.
@@ -35,7 +36,17 @@ class CategoryChips extends ConsumerWidget {
       ref.read(catalogProvider.notifier).setFilter(next);
     }
 
+    // Вкладка-акция из админки (1.0.5) — первой, пока баннер показывается.
+    final promo = ref.watch(catalogPromoProvider);
+    final promoTitle = promo?.action.listTitle.trim() ?? '';
+
     final items = <_ChipItem>[
+      if (promo != null)
+        _ChipItem(
+          label: promoTitle.isEmpty ? 'Акция' : promoTitle,
+          isActive: filter is PromoFilter,
+          onTap: () => apply(const PromoFilter()),
+        ),
       _ChipItem(
         label: 'Все',
         isActive: filter is AllBooksFilter,

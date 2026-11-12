@@ -9,6 +9,8 @@ import '../../../features/payments/providers/store_prices_provider.dart';
 import '../../../features/profile/providers/profile_provider.dart';
 import '../../../shared/models/book_model.dart';
 import '../../../shared/widgets/book_cover_image.dart';
+import '../../home/providers/home_banners_provider.dart';
+import 'promo_badge.dart';
 
 /// Карточка книги в сетке каталога.
 /// Тап → экран книги (Routes.book).
@@ -39,6 +41,11 @@ class BookGridCard extends ConsumerWidget {
     // 1.0.2: админу сервер отдаёт доступ ко всему — подписываем честно.
     // isAdminProvider читаем только при showBought (гостю профиль не грузим).
     final isAdmin = showBought && ref.watch(isAdminProvider);
+    // 1.0.5: плашка акции (вкладка-акция в каталоге). Не на бесплатных и не
+    // на уже купленных — им скидка не нужна.
+    final promo = ref.watch(promoBadgesProvider);
+    final showPromo =
+        !book.isFree && !showBought && promo.bookIds.contains(book.id);
 
     return InkWell(
       onTap: () => context.push(Routes.book(book.id)),
@@ -73,6 +80,15 @@ class BookGridCard extends ConsumerWidget {
                       'БЕСПЛАТНО',
                       style: AppTypography.badge,
                     ),
+                  ),
+                ),
+              if (showPromo)
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: PromoBadge(
+                    label: promo.label,
+                    maxWidth: coverWidth - 16,
                   ),
                 ),
             ],
