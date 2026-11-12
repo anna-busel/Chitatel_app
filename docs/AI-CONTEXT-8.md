@@ -121,3 +121,12 @@ UPDATES-PLAN V1–V4, выходит в 1.0.5 (iOS `codemagic.yaml --build-name=
 - Поддержка, частый случай: «нет пароля» у участницы, вошедшей через Apple. Проверка в mongosh (`use chitatel`):
   `db.users.find({email: /^ПОЧТА$/i}, {email:1, authProvider:1, appleUserId:1, hasPassword:{$cond:[{$ifNull:["$passwordHash",false]},true,false]}, subscriptionStatus:1, clubMonthsEntitled:1})`.
   `authProvider: 'apple'` → входить «Sign in with Apple» тем же Apple ID, пароля нет. `email` → с 1.0.4 «Забыли пароль?» (код на почту, может попасть в спам) и «Сменить пароль» в профиле. Пусто → доступ выдан не на тот аккаунт (часто скрытая почта Apple `@privaterelay.appleid.com`), перенести.
+
+## 6. 12.11.2026 — 1.0.5 проверена, акция в каталоге (X)
+
+- 1.0.5 Android проверена во внутреннем тесте (счётчик, плашка «Новые сообщения», точка), 1.0.4 Android раскатана на 100%. Как проверять непрочитанные без новых сообщений: в mongosh сдвинуть свою отметку назад —
+  `const me = db.users.findOne({email: /^ПОЧТА$/i}); db.chatreadstates.updateMany({userId: me._id}, {$set: {lastReadAt: new Date(Date.now() - 24*3600*1000), lastReadMessageId: null}})`. Перед этим выйти из чата и закрыть приложение, иначе открытый чат снова отметит всё прочитанным.
+- Пуши у Анны (12.11): на сервере всё включено, телефон (аккаунт Apple misswoolly@yandex.ru) зарегистрирован, сводки 10–11.11 ушли. Пуша на каждое сообщение чата нет ни у кого — только ответ/упоминание, сообщения Анны (ей самой нет) и сводка 21:00 МСК. Тест одной участнице без чата:
+  `node -e` с `push.sendToUser('<userId>', {title, body, data:{type:'test'}})` из `server/` (в ленту не пишется).
+- X (UPDATES-PLAN): акция в каталоге из баннера — `HomeBanner.action.packageIds`, `HomeBanner.showInCatalog`; ответ `/api/home/banners` + `action.packageIds`, `showInCatalog`. Клиент: `catalogPromoProvider`, `promoBadgesProvider` (`home_banners_provider.dart`), `PromoFilter`, `PromoGrid` (`banner_books_screen.dart`), `PromoBadge`. Только iOS (`defaultTargetPlatform`). В ветку android не переносили. Flutter здесь не собирается — проверка компиляции на сборке Codemagic.
+- Чёрная пятница 13–18.11: скидки в App Store Connect — «Война и мир» $25,99 (было $50,99), факультативы Достоевский и Толстой $73,99 (было $146,99); баннер с подборкой и отметкой «вкладкой в каталоге», только iPhone, 13.11 00:00 – 18.11 23:59 МСК. Если в ASC не было даты окончания — 19.11 вернуть цены руками.
