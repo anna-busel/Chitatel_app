@@ -60,6 +60,7 @@ const actionSchema = z.object({
   bookId: objectId.nullable().optional(),
   bookIds: z.array(objectId).max(50).optional(),
   listTitle: z.string().trim().max(120).optional(),
+  packageIds: z.array(objectId).max(50).optional(),
 });
 
 const fieldsSchema = z.object({
@@ -70,6 +71,7 @@ const fieldsSchema = z.object({
   action: actionSchema.optional(),
   order: z.number().int().optional(),
   isActive: z.boolean().optional(),
+  showInCatalog: z.boolean().optional(),
 });
 
 /** Поля из запроса: multipart → JSON в поле data, иначе обычный body. */
@@ -103,19 +105,26 @@ function normalizeAction(a) {
     if (!action.bookId) {
       throw new AppError('VALIDATION_ERROR', 'Выберите разбор', 400);
     }
-    return { kind: 'book', bookId: action.bookId, bookIds: [], listTitle: '' };
+    return { kind: 'book', bookId: action.bookId, bookIds: [], listTitle: '', packageIds: [] };
   }
   if (action.kind === 'books') {
     const ids = [...new Set(action.bookIds || [])];
-    if (!ids.length) {
-      throw new AppError('VALIDATION_ERROR', 'Выберите разборы для подборки', 400);
+    const pkgIds = [...new Set(action.packageIds || [])];
+    if (!ids.length && !pkgIds.length) {
+      throw new AppError('VALIDATION_ERROR', 'Выберите разборы или пакеты для подборки', 400);
     }
     if (!action.listTitle) {
       throw new AppError('VALIDATION_ERROR', 'Введите заголовок подборки', 400);
     }
-    return { kind: 'books', bookId: null, bookIds: ids, listTitle: action.listTitle };
+    return {
+      kind: 'books',
+      bookId: null,
+      bookIds: ids,
+      listTitle: action.listTitle,
+      packageIds: pkgIds,
+    };
   }
-  return { kind: 'none', bookId: null, bookIds: [], listTitle: '' };
+  return { kind: 'none', bookId: null, bookIds: [], listTitle: '', packageIds: [] };
 }
 
 function checkDates(startsAt, endsAt) {
@@ -164,7 +173,9 @@ function serialize(b) {
       bookId: a.bookId ? String(a.bookId) : null,
       bookIds: (a.bookIds || []).map(String),
       listTitle: a.listTitle || '',
+      packageIds: (a.packageIds || []).map(String),
     },
+    showInCatalog: b.showInCatalog === true,
     order: b.order || 0,
     isActive: b.isActive !== false,
     createdAt: b.createdAt,
@@ -214,6 +225,7 @@ router.post('/', uploadImage, async (req, res, next) => {
       action,
       order,
       isActive: data.isActive !== false,
+      showInCatalog: data.showInCatalog === true,
     });
     return success(res, { item: serialize(item) }, 201);
   } catch (err) {
@@ -239,6 +251,7 @@ router.patch('/:id', uploadImage, async (req, res, next) => {
     if (data.action) item.action = normalizeAction(data.action);
     if (typeof data.order === 'number') item.order = data.order;
     if (typeof data.isActive === 'boolean') item.isActive = data.isActive;
+    if (typeof data.showInCatalog === 'boolean') item.showInCatalog = data.showInCatalog;
 
     let oldImage = null;
     if (req.file) {

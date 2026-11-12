@@ -16,7 +16,11 @@ const mongoose = require('mongoose');
  *                      никаких ссылок наружу/на оплату вне Apple):
  *                        none  — ничего;
  *                        book  — экран разбора bookId;
- *                        books — экран-подборка bookIds с заголовком listTitle;
+ *                        books — экран-подборка bookIds (+ пакеты packageIds,
+ *                                с 1.0.5) с заголовком listTitle;
+ * - showInCatalog    — (1.0.5, 12.11.2026) подборка ещё и вкладкой каталога:
+ *                      первый чип с названием listTitle, пока баннер виден.
+ *                      Только для action.kind === 'books';
  * - order            — порядок в карусели (по возрастанию);
  * - isActive         — ручной выключатель.
  */
@@ -35,7 +39,9 @@ const homeBannerSchema = new mongoose.Schema(
       bookId: { type: mongoose.Schema.Types.ObjectId, ref: 'Book', default: null },
       bookIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Book' }],
       listTitle: { type: String, default: '', trim: true },
+      packageIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Package' }],
     },
+    showInCatalog: { type: Boolean, default: false },
     order: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
   },

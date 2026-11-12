@@ -21,12 +21,14 @@ jest.mock('../src/config/logger', () => ({
 }));
 jest.mock('../src/models/HomeBanner', () => ({ find: jest.fn() }));
 jest.mock('../src/models/Book', () => ({ find: jest.fn() }));
+jest.mock('../src/models/Package', () => ({ find: jest.fn() }));
 jest.mock('../src/services/image.service', () => ({
   generateImageSignedUrl: (p) => `https://test/images/${p}?sig=x`,
 }));
 
 const HomeBanner = require('../src/models/HomeBanner');
 const Book = require('../src/models/Book');
+const Package = require('../src/models/Package');
 const {
   listActiveBanners,
   normalizePlatform,
@@ -138,6 +140,7 @@ describe('listActiveBanners', () => {
       id: 'x',
       imageUrl: 'https://test/images/home-banners/x.jpg?sig=x',
       action: { kind: 'none' },
+      showInCatalog: false,
     });
     expect(Book.find).not.toHaveBeenCalled();
   });
@@ -184,5 +187,44 @@ describe('listActiveBanners', () => {
     mockBooks([]);
     const items = await listActiveBanners('ios', { now: NOW });
     expect(items[0].action).toEqual({ kind: 'none' });
+  });
+
+  // 1.0.5 (12.11.2026): пакеты в подборке и вкладка каталога.
+  test('подборка с пакетами: только опубликованные, без дублей; showInCatalog только у подборки', async () => {
+    const P1 = '64c000000000000000000001';
+    const P2 = '64c000000000000000000002';
+    mockBanners([
+      banner('bf', {
+        showInCatalog: true,
+        action: { kind: 'books', bookIds: [B1], packageIds: [P1, P2, P1], listTitle: 'Чёрная пятница' },
+      }),
+      banner('one', { order: 1, showInCatalog: true, action: { kind: 'book', bookId: B1 } }),
+    ]);
+    mockBooks([{ _id: B1, title: 'Первая' }]);
+    // P2 не опубликован.
+    Package.find.mockReturnValue({ select: () => ({ lean: async () => [{ _id: P1 }] }) });
+    const items = await listActiveBanners('ios', { now: NOW });
+
+    expect(Package.find.mock.calls[0][0]).toEqual({ _id: { $in: [P1, P2] }, isPublished: true });
+    expect(items[0].action.packageIds).toEqual([P1]);
+    expect(items[0].action.books.map((b) => b.title)).toEqual(['Первая']);
+    expect(items[0].showInCatalog).toBe(true);
+    expect(items[1].showInCatalog).toBe(false);
+  });
+
+  test('подборка только из пакетов — books пустой, но подборка есть; без пакетов в БД не ходим', async () => {
+    const P1 = '64c000000000000000000001';
+    mockBanners([banner('pk', { action: { kind: 'books', bookIds: [], packageIds: [P1], listTitle: 'T' } })]);
+    mockBooks([]);
+    Package.find.mockReturnValue({ select: () => ({ lean: async () => [{ _id: P1 }] }) });
+    const items = await listActiveBanners('ios', { now: NOW });
+    expect(items[0].action).toEqual({ kind: 'books', listTitle: 'T', books: [], packageIds: [P1] });
+    expect(items[0].showInCatalog).toBe(false);
+
+    Package.find.mockClear();
+    mockBanners([banner('b', { action: { kind: 'books', bookIds: [B1], listTitle: 'T' } })]);
+    mockBooks([{ _id: B1, title: 'Первая' }]);
+    await listActiveBanners('ios', { now: NOW });
+    expect(Package.find).not.toHaveBeenCalled();
   });
 });
