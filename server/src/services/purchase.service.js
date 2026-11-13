@@ -12,6 +12,7 @@ const Book = require('../models/Book');
 const Package = require('../models/Package');
 const Purchase = require('../models/Purchase');
 const googlePlay = require('./google-play.service');
+const crmStoreIngest = require('../crm/services/store-ingest.service');
 
 /**
  * Сервис верификации покупок (задачи 3.3 + 3.4 — Apple; E4 ANDROID-PLAN — Google).
@@ -335,7 +336,7 @@ async function applyTransaction({
 
   const priceUsd = await resolvePriceUsd(tx, mapped);
 
-  await Purchase.findOneAndUpdate(
+  const purchase = await Purchase.findOneAndUpdate(
     { transactionId: originalTransactionId },
     {
       $set: {
@@ -408,8 +409,8 @@ async function applyTransaction({
 
     // Хранимый оплаченный набор клубных месяцев (30.07.2026). Фиксируем ИМЕННО
     // в момент платежа: какие клубы оплатила ЭТА транзакция (дата покупки +
-    // план). Доступ к клубу сверяется с этим набором, а не пересчитывается из
-    // expiresAt — см. resolveClubAccess, userHasBookAccess.
+    // план). Доступ к клубу сверяется с этим набором, а не пересчитывается
+    // из expiresAt — см. resolveClubAccess, userHasBookAccess.
     const grantedKeys = clubMonthKeysForPurchase(
       tx.purchaseDate ? new Date(tx.purchaseDate) : new Date(),
       user.subscriptionPlan
@@ -476,6 +477,18 @@ async function applyTransaction({
   }
 
   await user.save();
+
+  // CRM-PLAN C1 (13.11.2026): оплата/возврат стора → заказ CRM. Права уже
+  // применены выше; CRM их не трогает. Ошибка CRM покупку не ломает.
+  try {
+    await crmStoreIngest.ingestStorePurchase({ user, purchase, status, tx, platform });
+  } catch (err) {
+    logger.error('CRM ingestStorePurchase error', {
+      transactionId: tx.transactionId || originalTransactionId,
+      platform,
+      message: err.message,
+    });
+  }
   return user;
 }
 
@@ -491,8 +504,8 @@ async function applyTransaction({
  * аккаунт и вошёл снова тем же Apple ID / Google-аккаунтом; разрешаем привязку
  * к текущему userId (Purchase.userId переносится в applyTransaction).
  *
- * 09.09.2026: вынесено из verifyPurchase в общий хелпер, чтобы проверка
- * владельца была ОДНА на обе платформы, а не копировалась.
+ * 09.09.2026: вынесено из verifyPurchase в общий хелпер, чтобы проверка владельца
+ * была ОДНА на обе платформы, а не копировалась.
  */
 async function assertPurchaseOwnership({ userId, tx }) {
   const tokenUserId = userIdFromAppAccountToken(tx.appAccountToken);
