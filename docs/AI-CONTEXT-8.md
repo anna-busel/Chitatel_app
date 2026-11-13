@@ -138,3 +138,31 @@ UPDATES-PLAN V1–V4, выходит в 1.0.5 (iOS `codemagic.yaml --build-name=
 Участница из РФ (видео): без VPN главная, профиль и клуб грузятся, каталог висит на заглушках. Размеры ответов: `/api/books?limit=20` 25 459 байт, `/api/home` 9 488, `/api/packages` 16 062 — похоже на «заморозку» соединений с зарубежными серверами после ~15–20 КБ у части российских провайдеров. Включено gzip-сжатие в nginx на VPS: `/etc/nginx/conf.d/gzip-api.conf` (копия — `deploy/nginx/gzip-api.conf`), каталог стал 5 915 байт. Сжимаются только текстовые ответы. Если без VPN не играет аудио — нужен промежуточный сервер в России (отдельная задача, обсудить с Анной при росте жалоб). Пока участницам: сменить сеть (Wi-Fi ↔ мобильный), не помогло — VPN.
 Также 13.11: в клубе ноября у части 4 в названии было «Часть 4 Разбор фильма месяца» (вписали вручную при загрузке) — в поле «Название» писать без «Часть N»; исправляется `db.books.updateOne({clubMonth:"2026-11","parts.number":4},{$set:{"parts.$.title":"…"}})`.
 - 13.11: 1.0.5 вышла в App Store (одобрена утром 13.11) и в Google Play (12.11 21:00). Пуш об обновлении — без акций (рекламные пуши только после переключателя «Предложения и акции», задача K), Android — никаких «купить на сайте» (политика платежей Google). Процесс на будущее: во время проверки сборки Гиорги присылает скриншоты новых экранов — из них карточки и пост для Telegram-группы к выходу.
+
+## 8. 13.11.2026 (вечер) — CRM C1–C3, сервер «Вопросов» D1–D5
+
+Только сервер, ветка `main`. Тесты: 321 зелёный (было 261: +18 CRM, +42 «Вопросы»).
+
+**CRM C1–C3** (`server/src/crm/services/store-ingest.service.js`).
+- В конце `applyTransaction` (после `user.save()`) — `ingestStorePurchase({user, purchase, status, tx, platform})` в try/catch: ошибка CRM покупку не ломает. Логика `applyTransaction` не менялась, только сохраняется результат `Purchase.findOneAndUpdate`.
+- Одна оплата = один заказ: `CrmOrder.storeTxId` (Apple `transactionId`, у продления свой; Google — токен + срок периода), уникальный частичный индекс. Повтор той же оплаты обновляет заказ.
+- `active` → заказ `paid`, source `app_store`/`google_play`; `refunded`/`cancelled` → `refund` (доступ уже снял `applyTransaction`); `expired` нового заказа не создаёт; sandbox в CRM не пишется. `club.premium.*` → «Тариф 2 (клуб + встречи)».
+- Клиентка: связанная с аккаунтом → по почте (связывается и получает оплаченное на сайте, как при входе B5) → новая с `appUserId`.
+- `applyOrder` пропускает заказы с `purchaseId` (доступ по ним ведёт стор/админка), сверка B7 их не смотрит.
+- C2: нет `CrmProduct` с `appleProductId`/`googleProductId` → `storeUnmatched: true` + `productTitle`. `storeWarnings(product)` / `productsWithStoreWarnings()` — разборы и пакеты без товара в App Store, показ в «Сегодня» (D7).
+- C3: `node src/scripts/crm-backfill-store.js` — сухой прогон, `--apply` — запись. Apple/Google (без sandbox) → заказы стора, ручные выдачи `web` → `admin`/`free`. Повторный запуск дублей не даёт. Подписка Apple из прошлого — один заказ (прошлые продления в `Purchase` не хранятся).
+- Не сделано: `firstPaidAt`/`lastPaidAt`/`ltvByn` клиентки не пересчитываются (D1). Ключ Google по сроку периода проверить, когда включим оплату на Android.
+
+**«Вопросы» D1–D5** (`server/src/services/qa.service.js`, `routes/club.js`, `routes/admin.js`).
+- `QAQuestion` += `interestedUserIds`, `status` (`open`/`podcast`/`answered`), индекс `{clubMonthId, status, createdAt}`. Старые документы не мигрированы: статус считается при выдаче.
+- `GET /api/club/:clubMonthId/qa?sort=interest|new&status=` → `{questions, remainingThisWeek, weeklyLimit: 3}`; у админа по умолчанию `interest`, у участниц порядок прежний (P7). В вопросе + `status`, `interestCount`, `interestedByMe`.
+- `POST /api/club/:clubMonthId/qa` — лимит 3 в неделю в клубе (пн 00:00 МСК), 4-й → 429 `QUESTION_LIMIT` «На этой неделе можно задать ещё 0 вопросов». Админ без лимита. ⚠️ Клиент любую 429 показывает «Слишком часто» — в D7 своё сообщение.
+- `POST /api/club/qa/:questionId/interest` → `{interested, interestCount}`, сокет `qa:updated` в комнату клуба.
+- `POST /api/club/qa/:questionId/status {status: podcast|answered, answerText?}` — только админ; `POST /api/admin/qa/:id/answer` принимает `status`. Пуш автору `qa_answer` только при смене статуса.
+- В `/admin/qa/unanswered` остаются вопросы «в подкаст» — поправить в D9.
+
+**Деплой (Гиорги):** `git pull && cd server && pm2 restart chitatel-api` (новых пакетов нет). Проверка: `GET /api/club/qa/000000000000000000000000/interest` без входа → 401. Потом `node src/scripts/crm-backfill-store.js` (посмотреть числа) → `--apply` → `node src/scripts/crm-verify-access.js` (ошибок нет).
+
+**A5/A6 — на VPS** (у меня нет SSH и доступа к DNS): `deploy/CRM-DEPLOY.md` шаги 1–6; CRM собирается (`npm run build` проверен 13.11). Учётки: `node src/scripts/crm-create-member.js <почта> "<Имя>" <роль> <пароль>` — Анна bebusel@bk.ru owner, Гульнара admin, Вероника admin (почту ждём), Тамуна manager.
+
+**Экраны CRM D1/D2/D4 → неделя 4**, этап 1 к 27.11 сохраняется.
