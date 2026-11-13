@@ -38,8 +38,11 @@ async function run() {
       p,
     ])
   );
+  // Заказы стора и перенесённые выдачи админки (purchaseId) доступ не выдают
+  // (C1/C3) — в сверку не входят.
   const orders = await CrmOrder.find({
     status: { $in: [...GRANTING, 'partial', ...REVOKING] },
+    purchaseId: null,
   })
     .select('num clientId productId status payments gift granted')
     .lean();

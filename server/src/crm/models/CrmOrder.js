@@ -84,6 +84,19 @@ const crmOrderSchema = new mongoose.Schema(
     },
     // Для заказов из стора.
     purchaseId: { type: ObjectId, ref: 'Purchase', default: null },
+    // C1 (13.11.2026): id ОДНОЙ оплаты стора (Apple transactionId; у Google —
+    // токен + срок периода). Продление = новый заказ, повтор той же оплаты —
+    // тот же заказ. Поле отсутствует у остальных заказов (уникальность только
+    // среди строк).
+    storeTxId: { type: String },
+    // C2: productId стора как пришёл (club.basic.monthly, book.<slug>…).
+    storeProductId: { type: String, default: null },
+    // C2: нет CrmProduct с таким appleProductId/googleProductId — «продукт
+    // стора не сопоставлен» (видно в «Сегодня»: CrmOrder.find({storeUnmatched: true})).
+    storeUnmatched: { type: Boolean, default: false },
+    // Название для заказов без продукта CRM (стор без сопоставления, перенос
+    // ручных выдач админки).
+    productTitle: { type: String, default: null },
     granted: {
       at: { type: Date, default: null },
       months: { type: [String], default: [] },
@@ -113,6 +126,10 @@ crmOrderSchema.index({ productId: 1 });
 crmOrderSchema.index({ managerId: 1 });
 crmOrderSchema.index({ deadline: 1 });
 crmOrderSchema.index({ purchaseId: 1 }, { sparse: true });
+crmOrderSchema.index(
+  { storeTxId: 1 },
+  { unique: true, partialFilterExpression: { storeTxId: { $type: 'string' } } }
+);
 crmOrderSchema.index({ 'payments.extId': 1 }, { sparse: true });
 crmOrderSchema.index({ 'gift.recipientClientId': 1 }, { sparse: true });
 // Подарки по почте получательницы — ищутся при входе в приложение (B5, 05.11.2026).
