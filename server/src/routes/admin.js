@@ -18,6 +18,7 @@ const { hideReview } = require('../services/review.service');
 const { runWeeklyReports } = require('../jobs/weekly-report');
 const { runMonthlyReports } = require('../jobs/monthly-report');
 const pushService = require('../services/push.service');
+const qaService = require('../services/qa.service');
 
 const router = Router();
 
@@ -311,7 +312,9 @@ router.get(
         .populate('clubMonthId', 'month year title')
         .lean();
 
-      return success(res, { questions });
+      return success(res, {
+        questions: questions.map((q) => qaService.serializeQuestion(q, req.user.userId)),
+      });
     } catch (err) {
       return next(err);
     }
@@ -320,11 +323,25 @@ router.get(
 
 /**
  * POST /api/admin/qa/:questionId/answer
- * Ответить на вопрос. Push отправит push-сервис в задаче 6.1.
+ * Ответить на вопрос / сменить статус (D4, 13.11.2026).
+ *
+ * Body: { answerText?, status?: 'podcast'|'answered' }
+ * - без status — как раньше: answerText обязателен, уже отвеченный → 409;
+ * - status 'answered' — ответ текстом (answerText обязателен, если ответа
+ *   ещё нет), повтор — правка текста без пуша;
+ * - status 'podcast' — «Анна возьмёт ваш вопрос в подкаст».
+ * Пуш автору (type qa_answer, + лента Notification) — только при смене
+ * статуса. Логика — qa.service.setQuestionStatus (общая с приложением).
  */
-const qaAnswerSchema = z.object({
-  answerText: z.string().min(1).max(5000).trim(),
-});
+const qaAnswerSchema = z
+  .object({
+    answerText: z.string().min(1).max(5000).trim().optional(),
+    status: z.enum(['podcast', 'answered']).optional(),
+  })
+  .refine((b) => b.status || b.answerText, {
+    message: 'Нужен answerText',
+    path: ['answerText'],
+  });
 
 router.post(
   '/qa/:questionId/answer',
@@ -332,49 +349,19 @@ router.post(
   async (req, res, next) => {
     try {
       const { questionId } = req.params;
-      if (!mongoose.Types.ObjectId.isValid(questionId)) {
-        throw new AppError('NOT_FOUND', 'Неверный questionId', 400);
-      }
+      await qaService.setQuestionStatus({
+        questionId,
+        status: req.body.status || 'answered',
+        answerText: req.body.answerText,
+        adminId: req.user.userId,
+        legacy: !req.body.status,
+      });
 
-      const question = await QAQuestion.findById(questionId);
-      if (!question) {
-        throw new AppError('NOT_FOUND', 'Вопрос не найден', 404);
-      }
-      if (question.answeredAt) {
-        throw new AppError(
-          'FORBIDDEN',
-          'На вопрос уже отвечено',
-          409
-        );
-      }
-
-      question.answerText = req.body.answerText;
-      question.answeredAt = new Date();
-      question.answeredByUserId = req.user.userId;
-      await question.save();
-
-      const populated = await QAQuestion.findById(question._id)
-        .populate('userId', 'name avatarUrl')
-        .populate('answeredByUserId', 'name avatarUrl')
-        .lean();
-
-      // Push автору вопроса: «Анна ответила» (задача 6.1). Fire-and-forget,
-      // гейтится настройкой chatMessages; себе не шлём.
-      if (String(question.userId) !== String(req.user.userId)) {
-        pushService
-          .sendToUser(
-            question.userId,
-            {
-              title: 'Анна ответила на ваш вопрос',
-              body: req.body.answerText.slice(0, 140),
-              data: { type: 'qa_answer', questionId: String(question._id) },
-            },
-            'chatMessages'
-          )
-          .catch(() => {});
-      }
-
-      return success(res, { question: populated });
+      const question = await qaService.findQuestionForResponse(
+        questionId,
+        req.user.userId
+      );
+      return success(res, { question });
     } catch (err) {
       return next(err);
     }
