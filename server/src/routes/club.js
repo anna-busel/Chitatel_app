@@ -19,6 +19,7 @@ const voiceService = require('../services/voice.service');
 const pushService = require('../services/push.service');
 const clubChatPush = require('../services/club-chat-push.service');
 const chatUnread = require('../services/chat-unread.service');
+const qaService = require('../services/qa.service');
 const logger = require('../config/logger');
 const User = require('../models/User');
 const ClubMonth = require('../models/ClubMonth');
@@ -1787,34 +1788,75 @@ router.post(
  * ------------------------------------------------------------------ */
 
 /**
- * GET /api/club/:clubMonthId/qa
- * Список вопросов клуба.
+ * GET /api/club/:clubMonthId/qa?sort=interest|new&status=open|podcast|answered
+ * Список вопросов клуба (раздел «Вопросы», UPDATES-PLAN D5).
+ *
+ * Видят все с доступом к клубу. Порядок по умолчанию: у Анны (admin) —
+ * sort=interest, у остальных — прежний (отвеченные по дате ответа, затем
+ * новые) — старые сборки с вкладкой Q&A его ждут (P7).
+ *
+ * В каждом вопросе — status, interestCount, interestedByMe (массив
+ * interestedUserIds не отдаём). Рядом с questions — remainingThisWeek
+ * (сколько ещё можно задать на этой неделе; null у админа) и weeklyLimit.
  */
-router.get('/:clubMonthId/qa', resolveClubAccess, async (req, res, next) => {
-  try {
-    // Вопросы заблокированных пользователей не отдаём (аудит P8) — тот же
-    // список blockedUsers, что фильтрует чат (getBlockedIds).
-    const blockedIds = await getBlockedIds(req.user.userId);
-    const filter = { clubMonthId: req.club._id };
-    if (blockedIds.length > 0) {
-      filter.userId = { $nin: blockedIds };
-    }
-
-    const questions = await QAQuestion.find(filter)
-      .sort({ answeredAt: -1, createdAt: -1 })
-      .populate('userId', 'name avatarUrl')
-      .populate('answeredByUserId', 'name avatarUrl')
-      .lean();
-
-    return success(res, { questions });
-  } catch (err) {
-    return next(err);
-  }
+const qaListSchema = z.object({
+  sort: z.enum(['interest', 'new']).optional(),
+  status: z.enum(qaService.QA_STATUSES).optional(),
 });
+
+router.get(
+  '/:clubMonthId/qa',
+  validate(qaListSchema, 'query'),
+  resolveClubAccess,
+  async (req, res, next) => {
+    try {
+      const isAdmin = req.clubAccess.kind === 'admin';
+      // Вопросы заблокированных пользователей не отдаём (аудит P8) — тот же
+      // список blockedUsers, что фильтрует чат (getBlockedIds).
+      const blockedIds = await getBlockedIds(req.user.userId);
+      const and = [{ clubMonthId: req.club._id }];
+      if (blockedIds.length > 0) {
+        and.push({ userId: { $nin: blockedIds } });
+      }
+      if (req.query.status) {
+        and.push(qaService.statusFilter(req.query.status));
+      }
+      const filter = and.length === 1 ? and[0] : { $and: and };
+
+      const found = await QAQuestion.find(filter)
+        .sort({ answeredAt: -1, createdAt: -1 })
+        .populate('userId', 'name avatarUrl')
+        .populate('answeredByUserId', 'name avatarUrl')
+        .lean();
+
+      const sort = req.query.sort || (isAdmin ? 'interest' : null);
+      const questions = qaService
+        .sortQuestions(found, sort)
+        .map((q) => qaService.serializeQuestion(q, req.user.userId));
+
+      const remainingThisWeek = await qaService.remainingThisWeek({
+        userId: req.user.userId,
+        clubMonthId: req.club._id,
+        isAdmin,
+      });
+
+      return success(res, {
+        questions,
+        remainingThisWeek,
+        weeklyLimit: qaService.QUESTION_WEEKLY_LIMIT,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
 
 /**
  * POST /api/club/:clubMonthId/qa
- * Задать вопрос Анне.
+ * Задать вопрос Анне. Лимит — 3 в неделю (пн–вс по Москве) в этом клубе,
+ * 4-й → 429 QUESTION_LIMIT (D2). Админ не ограничен.
+ * Ответ: { question, remainingThisWeek, weeklyLimit } (question — как раньше
+ * + status/interestCount/interestedByMe).
  */
 const qaCreateSchema = z.object({
   questionText: z.string().min(5).max(500).trim(),
@@ -1833,6 +1875,13 @@ router.post(
           403
         );
       }
+
+      const isAdmin = req.clubAccess.kind === 'admin';
+      const remainingBefore = await qaService.assertCanAsk({
+        userId: req.user.userId,
+        clubMonthId: req.club._id,
+        isAdmin,
+      });
 
       const normalized = req.body.questionText
         .toLowerCase()
@@ -1863,7 +1912,109 @@ router.post(
         .populate('userId', 'name avatarUrl')
         .lean();
 
-      return success(res, { question: populated }, 201);
+      return success(
+        res,
+        {
+          question: qaService.serializeQuestion(populated, req.user.userId),
+          remainingThisWeek:
+            remainingBefore === null ? null : Math.max(0, remainingBefore - 1),
+          weeklyLimit: qaService.QUESTION_WEEKLY_LIMIT,
+        },
+        201
+      );
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/**
+ * Для роутов /qa/:questionId/… — находит вопрос и подставляет его клуб в
+ * req.params.clubMonthId, чтобы resolveClubAccess проверил доступ к клубу
+ * ВОПРОСА (той же функцией, что и везде). Флагов скрытия/удаления у
+ * QAQuestion нет — проверять нечего.
+ */
+async function loadQuestionClub(req, _res, next) {
+  try {
+    const { questionId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(questionId)) {
+      throw new AppError('NOT_FOUND', 'Неверный questionId', 400);
+    }
+    const q = await QAQuestion.findById(questionId).select('clubMonthId').lean();
+    if (!q) {
+      throw new AppError('NOT_FOUND', 'Вопрос не найден', 404);
+    }
+    req.params.clubMonthId = String(q.clubMonthId);
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/**
+ * POST /api/club/qa/:questionId/interest
+ * «Тоже интересно» — toggle (D3). Права — доступ к клубу вопроса.
+ * Ответ: { interested, interestCount }. Сокет qa:updated
+ * { questionId, clubMonthId, interestCount } в комнату клуба.
+ */
+router.post(
+  '/qa/:questionId/interest',
+  loadQuestionClub,
+  resolveClubAccess,
+  async (req, res, next) => {
+    try {
+      const { interested, interestCount } = await qaService.toggleInterest(
+        req.params.questionId,
+        req.user.userId
+      );
+
+      const io = req.app.get('io');
+      emitToClub(io, req.club._id, 'qa:updated', {
+        questionId: String(req.params.questionId),
+        clubMonthId: String(req.club._id),
+        interestCount,
+      });
+
+      return success(res, { interested, interestCount });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/club/qa/:questionId/status — Анна из приложения (D4).
+ * Body: { status: 'podcast'|'answered', answerText? } (answerText обязателен
+ * для answered, если ответа ещё нет). Только role admin.
+ * Пуш автору (type qa_answer) при смене статуса; повтор — без пуша.
+ * Ответ: { question } — как в списке.
+ */
+const qaStatusSchema = z.object({
+  status: z.enum(['podcast', 'answered']),
+  answerText: z.string().max(5000).trim().optional(),
+});
+
+router.post(
+  '/qa/:questionId/status',
+  validate(qaStatusSchema),
+  loadQuestionClub,
+  resolveClubAccess,
+  async (req, res, next) => {
+    try {
+      if (req.clubAccess.kind !== 'admin') {
+        throw new AppError('FORBIDDEN', 'Только для автора клуба', 403);
+      }
+      await qaService.setQuestionStatus({
+        questionId: req.params.questionId,
+        status: req.body.status,
+        answerText: req.body.answerText,
+        adminId: req.user.userId,
+      });
+      const question = await qaService.findQuestionForResponse(
+        req.params.questionId,
+        req.user.userId
+      );
+      return success(res, { question });
     } catch (err) {
       return next(err);
     }
