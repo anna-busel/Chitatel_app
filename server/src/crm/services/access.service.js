@@ -83,7 +83,7 @@ function paidAt(order, product) {
   return order.createdAt ? new Date(order.createdAt) : new Date();
 }
 
-/** Конец срока для разборов/пакетов/«только письмо» (product.term). */
+/** Конец срока для разборов/пакетов/«только письма» (product.term). */
 function termUntil(product, from) {
   const term = product.term || {};
   if (term.mode === 'date' && term.date) {return new Date(term.date);}
@@ -421,6 +421,12 @@ async function undoGrant(order, { money = true, only = null, reason, who = 'Си
  * Возвращает { action: 'granted'|'revoked'|'not_linked'|'noop', ... }.
  */
 async function applyOrder(order, { who = 'Система' } = {}) {
+  // Заказы из App Store / Google Play и перенесённые ручные выдачи админки
+  // (C1, C3) — запись о правах, выданных вне CRM: доступ у них ведёт
+  // applyTransaction / админка, CRM его не выдаёт и не снимает (L6).
+  if (order.purchaseId) {
+    return { action: 'noop', reason: 'external_purchase' };
+  }
   const productId = idOf(order.productId);
   const product = productId ? await CrmProduct.findById(productId).lean() : null;
   if (!product) {
