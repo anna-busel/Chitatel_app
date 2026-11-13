@@ -51,6 +51,22 @@ const qaQuestionSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     }, // Анна (роль admin)
+
+    // «Тоже интересно» (UPDATES-PLAN D1, 13.11.2026). Наружу массив не
+    // отдаём — только interestCount / interestedByMe (qa.service).
+    interestedUserIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+      default: [],
+    },
+
+    // open — ждёт, podcast — Анна возьмёт в подкаст, answered — ответ текстом.
+    // Старые документы без поля: open, если без ответа, иначе answered —
+    // вычисляется при выдаче (qa.service.effectiveStatus), без миграции.
+    status: {
+      type: String,
+      enum: ['open', 'podcast', 'answered'],
+      default: 'open',
+    },
   },
   {
     timestamps: true,
@@ -59,6 +75,9 @@ const qaQuestionSchema = new mongoose.Schema(
 
 // Список вопросов клуба, новые сверху.
 qaQuestionSchema.index({ clubMonthId: 1, createdAt: -1 });
+
+// Раздел «Вопросы»: фильтр по статусу внутри клуба (D1).
+qaQuestionSchema.index({ clubMonthId: 1, status: 1, createdAt: -1 });
 
 // Для админки: неотвеченные вопросы (admin endpoint /api/admin/qa/unanswered).
 qaQuestionSchema.index({ answeredAt: 1, createdAt: 1 });
