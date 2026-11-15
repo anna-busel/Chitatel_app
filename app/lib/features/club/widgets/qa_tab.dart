@@ -29,9 +29,9 @@ import 'ask_question_sheet.dart';
 ///   на нуле кнопка неактивна «Новые вопросы — с понедельника»;
 /// - все видят вопросы месяца и жмут «Тоже интересно · N» (оптимистично,
 ///   откат при ошибке; число у всех синхронно — сокет qa:updated);
-/// - статус на карточке: «Будет в подкасте» / «Анна ответила» (+ ответ);
+/// - статус на карточке: «Анна ответила» (+ ответ);
 /// - у АННЫ (access.kind == admin): «Популярные / Новые», фильтр по статусу,
-///   на карточке «В подкаст» и «Ответить» → POST /api/club/qa/:id/status.
+///   на карточке «Ответить» → POST /api/club/qa/:id/status.
 class QATab extends ConsumerStatefulWidget {
   const QATab({super.key, required this.club, required this.access});
   final ClubMonth club;
@@ -45,7 +45,6 @@ class QATab extends ConsumerStatefulWidget {
 const List<(QAStatus?, String)> _statusFilters = [
   (null, 'Все'),
   (QAStatus.open, 'Ждут'),
-  (QAStatus.podcast, 'В подкаст'),
   (QAStatus.answered, 'Ответила'),
 ];
 
@@ -284,30 +283,6 @@ class _QATabState extends ConsumerState<QATab> {
     }
   }
 
-  Future<void> _moveToPodcast(QAQuestion question) async {
-    if (_statusInFlight.contains(question.id)) return;
-    setState(() => _statusInFlight.add(question.id));
-    try {
-      final updated = await ref.read(qaAdminServiceProvider).setStatus(
-            questionId: question.id,
-            status: QAStatus.podcast,
-          );
-      if (!mounted) return;
-      _applyStatusUpdate(updated);
-      _showSnack('Вопрос отмечен для подкаста');
-    } catch (e) {
-      if (!mounted) return;
-      _showSnack(
-        userMessageFor(e, fallback: 'Не удалось изменить статус'),
-        isError: true,
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _statusInFlight.remove(question.id));
-      }
-    }
-  }
-
   /// Ответить на вопрос (только Анна). Диалог с полем ответа → отправка →
   /// карточка перерисовывается уже с ответом.
   Future<void> _answerQuestion(QAQuestion question) async {
@@ -542,9 +517,6 @@ class _QATabState extends ConsumerState<QATab> {
             isAdmin: _isAdmin,
             // Анна видит число, но «Тоже интересно» жмут участницы.
             onInterest: _isAdmin ? null : () => _toggleInterest(q),
-            onPodcast: _isAdmin && q.status == QAStatus.open && !busy
-                ? () => _moveToPodcast(q)
-                : null,
             onAnswer: _isAdmin && q.status != QAStatus.answered && !busy
                 ? () => _answerQuestion(q)
                 : null,
@@ -751,13 +723,12 @@ class _Pill extends StatelessWidget {
 }
 
 /// Карточка одного вопроса: статус, текст, автор, ответ Анны (если есть),
-/// «Тоже интересно · N» и — у Анны — «В подкаст» / «Ответить».
+/// «Тоже интересно · N» и — у Анны — «Ответить».
 class _QuestionCard extends StatelessWidget {
   const _QuestionCard({
     required this.question,
     required this.isAdmin,
     this.onInterest,
-    this.onPodcast,
     this.onAnswer,
     this.onReport,
   });
@@ -766,9 +737,6 @@ class _QuestionCard extends StatelessWidget {
 
   /// Тап «Тоже интересно». null — только число (у Анны).
   final VoidCallback? onInterest;
-
-  /// Анна: «В подкаст» (null — кнопки нет).
-  final VoidCallback? onPodcast;
 
   /// Анна: «Ответить» (null — кнопки нет).
   final VoidCallback? onAnswer;
@@ -823,17 +791,6 @@ class _QuestionCard extends StatelessWidget {
                   selected: question.interestedByMe,
                   onTap: onInterest,
                 ),
-                if (onPodcast != null)
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.terracotta,
-                      side: const BorderSide(color: AppColors.terracotta),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    onPressed: onPodcast,
-                    icon: const Icon(Icons.mic_none, size: 18),
-                    label: const Text('В подкаст'),
-                  ),
                 if (onAnswer != null)
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
@@ -913,7 +870,7 @@ class _InterestButton extends StatelessWidget {
   }
 }
 
-/// Плашка статуса: «Будет в подкасте» / «Анна ответила»; у Анны ещё «Ждёт».
+/// Плашка статуса: «Анна ответила»; у Анны ещё «Ждёт».
 class _StatusBadge extends StatelessWidget {
   const _StatusBadge({required this.status});
   final QAStatus status;
@@ -922,7 +879,7 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (String label, Color color, Color bg) = switch (status) {
       QAStatus.podcast => (
-          'Будет в подкасте',
+          'Ждёт ответа',
           AppColors.terracotta,
           AppColors.terracotta.withValues(alpha: 0.08),
         ),
@@ -1023,8 +980,7 @@ class _EmptyQA extends StatelessWidget {
             if (!filtered) ...[
               const SizedBox(height: 4),
               Text(
-                'Задайте Анне вопрос о книге — самые интересные она разберёт '
-                'в подкасте',
+                'Задайте Анне вопрос о книге',
                 style: AppTypography.caption,
                 textAlign: TextAlign.center,
               ),
