@@ -104,6 +104,46 @@ class ChatContextResult {
   final bool hasMoreAfter;
 }
 
+/// Список вопросов клуба + остаток на неделю (D5).
+class QAListResult {
+  const QAListResult({
+    required this.questions,
+    required this.remainingThisWeek,
+    required this.weeklyLimit,
+  });
+
+  final List<QAQuestion> questions;
+
+  /// Сколько ещё вопросов можно задать на этой неделе. null — у Анны
+  /// (не ограничена) или старый сервер без лимита.
+  final int? remainingThisWeek;
+  final int weeklyLimit;
+}
+
+/// Результат «Задать вопрос»: сам вопрос + остаток на неделю (D2).
+class QAAskResult {
+  const QAAskResult({
+    required this.question,
+    required this.remainingThisWeek,
+    required this.weeklyLimit,
+  });
+
+  final QAQuestion question;
+  final int? remainingThisWeek;
+  final int weeklyLimit;
+}
+
+/// Результат «Тоже интересно» (D3).
+class QAInterestResult {
+  const QAInterestResult({
+    required this.interested,
+    required this.interestCount,
+  });
+
+  final bool interested;
+  final int interestCount;
+}
+
 /// Пользователь которого можно упомянуть через @ (задача 4.9).
 /// Сейчас это админы (Анна). id — userId для поля mentions[] при отправке.
 class MentionableUser {
@@ -550,21 +590,40 @@ class ClubApiService {
     return body['success'] == true;
   }
 
-  /// Список вопросов клуба.
-  Future<List<QAQuestion>> fetchQA(String clubMonthId) async {
+  /// Список вопросов клуба (раздел «Вопросы», D5).
+  ///
+  /// [sort] — 'interest' | 'new' (null — порядок сервера по умолчанию:
+  /// у участниц прежний, у Анны по интересу). [status] — фильтр по статусу
+  /// (null — все). Рядом со списком — остаток вопросов на неделю.
+  Future<QAListResult> fetchQA(
+    String clubMonthId, {
+    String? sort,
+    QAStatus? status,
+  }) async {
     try {
-      final response = await _api.dio.get(ApiEndpoints.clubQa(clubMonthId));
+      final query = <String, dynamic>{};
+      if (sort != null) query['sort'] = sort;
+      if (status != null) query['status'] = status.apiValue;
+
+      final response = await _api.dio.get(
+        ApiEndpoints.clubQa(clubMonthId),
+        queryParameters: query.isEmpty ? null : query,
+      );
       final body = response.data as Map<String, dynamic>;
       final data = body['data'] as Map<String, dynamic>;
 
       final raw = data['questions'];
-      if (raw is List) {
-        return raw
-            .whereType<Map<String, dynamic>>()
-            .map(QAQuestion.fromJson)
-            .toList(growable: false);
-      }
-      return const [];
+      final questions = raw is List
+          ? raw
+              .whereType<Map<String, dynamic>>()
+              .map(QAQuestion.fromJson)
+              .toList(growable: false)
+          : const <QAQuestion>[];
+      return QAListResult(
+        questions: questions,
+        remainingThisWeek: _intOrNull(data['remainingThisWeek']),
+        weeklyLimit: _intOrNull(data['weeklyLimit']) ?? 3,
+      );
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[ClubApiService] fetchQA failed: $e');
@@ -573,8 +632,8 @@ class ClubApiService {
     }
   }
 
-  /// Задать вопрос Анне.
-  Future<QAQuestion> askQuestion({
+  /// Задать вопрос Анне. 4-й за неделю → DioException 429 QUESTION_LIMIT.
+  Future<QAAskResult> askQuestion({
     required String clubMonthId,
     required String questionText,
   }) async {
@@ -584,8 +643,27 @@ class ClubApiService {
     );
     final body = response.data as Map<String, dynamic>;
     final data = body['data'] as Map<String, dynamic>;
-    return QAQuestion.fromJson(data['question'] as Map<String, dynamic>);
+    return QAAskResult(
+      question: QAQuestion.fromJson(data['question'] as Map<String, dynamic>),
+      remainingThisWeek: _intOrNull(data['remainingThisWeek']),
+      weeklyLimit: _intOrNull(data['weeklyLimit']) ?? 3,
+    );
   }
+
+  /// «Тоже интересно» — toggle (D3). Сервер эмитит qa:updated по WS.
+  Future<QAInterestResult> toggleQuestionInterest(String questionId) async {
+    final response = await _api.dio.post(
+      ApiEndpoints.clubQaInterest(questionId),
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>;
+    return QAInterestResult(
+      interested: data['interested'] == true,
+      interestCount: _intOrNull(data['interestCount']) ?? 0,
+    );
+  }
+
+  static int? _intOrNull(dynamic raw) => raw is num ? raw.toInt() : null;
 
   /// Распарсить код ошибки из DioException.
   static String? errorCodeFromException(Object error) {
