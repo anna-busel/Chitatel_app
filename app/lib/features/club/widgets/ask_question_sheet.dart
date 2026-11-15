@@ -148,8 +148,7 @@ class _AskQuestionSheetState extends ConsumerState<AskQuestionSheet> {
                 Text('Вопрос Анне', style: AppTypography.serifSectionTitle),
                 const SizedBox(height: 4),
                 Text(
-                  'Самые интересные вопросы Анна разберёт в подкасте — '
-                  'пришлём уведомление',
+                  'Когда Анна ответит, пришлём уведомление',
                   style: AppTypography.caption,
                 ),
                 if (widget.remainingThisWeek != null) ...[
