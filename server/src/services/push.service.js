@@ -510,6 +510,155 @@ const sendNews = async ({
   return { total: users.length, persisted: users.length, sent };
 };
 
+/* ------------------------------------------------------------------ *
+ *          ПУШ О ПОКУПКЕ (UPDATES-PLAN K0–K3, 15.11.2026)             *
+ * ------------------------------------------------------------------ */
+
+const PURCHASE_TARGET_KINDS = ['book', 'club', 'season', 'paywall'];
+const PURCHASE_AUDIENCES = [
+  'all',
+  'subscribers',
+  'season',
+  'no_current_club',
+  'not_bought_book',
+];
+
+/**
+ * data пуша о покупке — плоские строки (FCM принимает только строки, APNs
+ * кладёт как есть): { type: 'purchase', targetKind, targetId? }.
+ */
+const purchaseData = (target) => {
+  const data = { type: 'purchase', targetKind: String(target.kind) };
+  if (target.id) {data.targetId = String(target.id);}
+  return data;
+};
+
+/**
+ * Фильтр Mongo адресатов пуша о покупке. Всегда — только включившие
+ * «Предложения и акции» (pushSettings.offers === true, Apple 4.5.4).
+ * - no_current_club — нет ключа текущего клуба в clubMonthsEntitled и не
+ *   admin (currentClub null — клуба нет, доступа нет ни у кого из не-админов);
+ * - not_bought_book — нет книги (bookId) в purchasedBooks.
+ * Чистая функция.
+ */
+const purchaseFilter = ({ audience = 'all', currentClub = null, bookId = null, now = new Date() } = {}) => {
+  const filter = {
+    isDeleted: { $ne: true },
+    'pushSettings.offers': true,
+  };
+  if (audience === 'subscribers' || audience === 'season') {
+    filter.subscriptionStatus = { $in: ['basic', 'premium'] };
+    filter.subscriptionExpiresAt = { $gt: now };
+  }
+  if (audience === 'season') {
+    filter.subscriptionPlan = 'season';
+  }
+  if (audience === 'no_current_club') {
+    filter.role = { $ne: 'admin' };
+    if (currentClub) {filter.clubMonthsEntitled = { $ne: clubMonthKey(currentClub) };}
+  }
+  if (audience === 'not_bought_book') {
+    filter.purchasedBooks = { $ne: bookId };
+  }
+  return filter;
+};
+
+/**
+ * Разделить устройства пользователя под пуш о покупке (K3, Google Payments
+ * policy): iPhone получает iosText, Android — только нейтральный androidText;
+ * androidText пуст → на Android этот пуш не уходит вовсе. platform из
+ * админки ('all'|'ios'|'android') сужает дополнительно.
+ * @returns {{ios: object|null, android: object|null}} пользователь, урезанный
+ *   до устройств одной платформы, или null — на эту платформу не слать
+ */
+const splitForPurchase = (user, { platform = 'all', hasAndroidText = false } = {}) => {
+  const ios =
+    platform !== 'android' && hasPlatform(user, 'ios') ? onlyPlatform(user, 'ios') : null;
+  const android =
+    platform !== 'ios' && hasAndroidText && hasPlatform(user, 'android')
+      ? onlyPlatform(user, 'android')
+      : null;
+  return { ios, android };
+};
+
+/**
+ * Пуш о покупке из админки (K1): цель target {kind, id?} → data.type
+ * 'purchase'. Получатели — только с pushSettings.offers === true.
+ *
+ * Лента (колокольчик): запись получает тот, кому ушёл бы пуш; у кого есть
+ * Android-устройство — только с нейтральным androidText (лента общая для
+ * аккаунта и видна на андроиде), без androidText такой пользователь в ленту
+ * не попадает. iPhone-only — с текстом для iPhone.
+ *
+ * @param {{audience?, platform?, target, currentClub?, bookId?, title, body, androidBody?}} opts
+ * @returns {Promise<{total, ios, android, persisted, sent}>}
+ */
+const sendPurchase = async ({
+  audience = 'all',
+  platform = 'all',
+  target,
+  currentClub = null,
+  bookId = null,
+  title,
+  body,
+  androidBody = '',
+} = {}) => {
+  const now = new Date();
+  const filter = purchaseFilter({ audience, currentClub, bookId, now });
+  const users = await User.find(filter).select('_id ' + PUSH_FIELDS).lean();
+
+  const androidText = (androidBody || '').trim();
+  const data = purchaseData(target);
+  const iosUsers = [];
+  const androidUsers = [];
+  const feed = [];
+  for (const u of users) {
+    if (!isAllowed(u, 'offers')) {continue;}
+    const parts = splitForPurchase(u, { platform, hasAndroidText: !!androidText });
+    if (parts.ios) {iosUsers.push(parts.ios);}
+    if (parts.android) {androidUsers.push(parts.android);}
+    if (!parts.ios && !parts.android) {continue;}
+    if (hasPlatform(u, 'android')) {
+      if (androidText) {feed.push({ userId: u._id, type: 'purchase', title, body: androidText, data });}
+    } else {
+      feed.push({ userId: u._id, type: 'purchase', title, body, data });
+    }
+  }
+
+  if (feed.length > 0) {
+    try {
+      await Notification.insertMany(feed, { ordered: false });
+    } catch (err) {
+      logger.warn('Не удалось записать часть пушей о покупке в ленту', {
+        message: err.message,
+      });
+    }
+  }
+
+  const sentIos = await deliverMany(iosUsers, { title, body, data });
+  const sentAndroid = androidUsers.length
+    ? await deliverMany(androidUsers, { title, body: androidText, data })
+    : 0;
+
+  const total = new Set([...iosUsers, ...androidUsers].map((u) => String(u._id))).size;
+  logger.info('Push purchase завершён', {
+    audience,
+    platform,
+    targetKind: target.kind,
+    total,
+    ios: iosUsers.length,
+    android: androidUsers.length,
+    sent: sentIos + sentAndroid,
+  });
+  return {
+    total,
+    ios: iosUsers.length,
+    android: androidUsers.length,
+    persisted: feed.length,
+    sent: sentIos + sentAndroid,
+  };
+};
+
 /**
  * Оценка числа адресатов рассылки (для мгновенного ответа админке, пока
  * broadcast идёт в фоне). Тот же фильтр, что и в broadcast.
@@ -534,4 +683,10 @@ module.exports = {
   countBroadcastRecipients,
   onlyPlatform,
   hasPlatform,
+  sendPurchase,
+  purchaseFilter,
+  purchaseData,
+  splitForPurchase,
+  PURCHASE_TARGET_KINDS,
+  PURCHASE_AUDIENCES,
 };
