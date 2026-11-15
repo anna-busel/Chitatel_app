@@ -17,6 +17,7 @@ import '../providers/club_unread_provider.dart';
 import '../services/club_api_service.dart';
 import '../widgets/club_about_tab.dart';
 import '../widgets/club_meeting_card.dart';
+import '../widgets/club_members_sheet.dart';
 import '../widgets/chat_tab.dart';
 import '../widgets/club_switcher_sheet.dart';
 import '../widgets/qa_tab.dart';
@@ -280,6 +281,9 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
           title: club.title,
           onTap: _openSwitcher,
         ),
+        // E2: «N участниц» + аватары. Грузится отдельно и не блокирует клуб;
+        // ошибка или пусто — строки просто нет.
+        ClubMembersRow(clubMonthId: club.id),
 
         if (meetings != null && (!isIos || tier2SoldInStore))
           ClubMeetingCard(meetings: meetings),
@@ -329,7 +333,7 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
             tabs: [
               const Tab(text: 'Разборы'),
               Tab(child: _ChatTabLabel(unread: chatUnread)),
-              const Tab(text: 'Q&A'),
+              const Tab(text: 'Вопросы'),
             ],
           ),
         ),
