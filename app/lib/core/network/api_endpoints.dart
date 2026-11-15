@@ -221,6 +221,16 @@ class ApiEndpoints {
   /// Body: { questionText } (5-500 символов)
   static String clubQa(String clubMonthId) => '/club/$clubMonthId/qa';
 
+  /// POST /api/club/qa/:questionId/interest — «Тоже интересно» (toggle, D3).
+  /// Ответ: { interested, interestCount }; сокет qa:updated в комнату клуба.
+  static String clubQaInterest(String questionId) =>
+      '/club/qa/$questionId/interest';
+
+  /// POST /api/club/qa/:questionId/status — Анна: «В подкаст» / «Ответить»
+  /// (D4). Body: { status: 'podcast'|'answered', answerText? }. Только admin.
+  static String clubQaStatus(String questionId) =>
+      '/club/qa/$questionId/status';
+
   // — Платежи (задача 3.2 клиент / 3.3 сервер) —
 
   /// POST /api/purchases/verify — верификация покупки Apple.
