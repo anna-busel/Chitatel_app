@@ -166,3 +166,25 @@ UPDATES-PLAN V1–V4, выходит в 1.0.5 (iOS `codemagic.yaml --build-name=
 **A5/A6 — на VPS** (у меня нет SSH и доступа к DNS): `deploy/CRM-DEPLOY.md` шаги 1–6; CRM собирается (`npm run build` проверен 13.11). Учётки: `node src/scripts/crm-create-member.js <почта> "<Имя>" <роль> <пароль>` — Анна bebusel@bk.ru owner, Гульнара admin, Вероника admin (почту ждём), Тамуна manager.
 
 **Экраны CRM D1/D2/D4 → неделя 4**, этап 1 к 27.11 сохраняется.
+
+## 9. 15.11.2026 — «Вопросы» D6–D9, участницы E1–E2, пуш об акции K0–K3, версия 1.0.6
+
+Сделано досрочно (по плану неделя 4): в отчёте Анне 09.11 эти задачи стояли на неделю 09.11–15.11. Сервер: тесты 357 (было 321). Клиент здесь не собирается (нет Flutter) — проверка только на сборке Codemagic.
+
+- **D6:** `services/qa-digest.service.js` + cron в `jobs/push-scheduler.js`: раз в день в `QA_DIGEST_HOUR_MSK` (по умолчанию 10) всем `role=admin` пуш «N новых вопросов, самый популярный: «…»», `data {type:'qa_digest', clubMonthId}`, только вопросы текущего клуба за 24 ч. Повтор при рестарте — `ClubMonth.lastQaDigestAt` (окно 12 ч).
+- **D7/D8 (клиент):** `qa_tab.dart` переписан: вкладка «Вопросы», «Тоже интересно · N» (оптимистично, сокет `qa:updated`), статусы, остаток «Осталось N из 3», `QUESTION_LIMIT` — свой текст (и в `network_error.dart`). Анна: «Популярные / Новые», фильтр статуса, «В подкаст», «Ответить» (`POST /api/club/qa/:id/status`). В чате (`chat_input.dart`) иконка «Вопрос Анне». `club_socket_service.connect()` — защита от второго подключения.
+- **D9:** админка Q&A — статусы, «тоже интересно», сортировка, «В подкаст».
+- **E1:** `GET /api/club/:clubMonthId/members?page` → `{count, members:[{id,name,avatarUrl,isAdmin}], hasMore}`, по 50; count кэш 10 мин без учёта блокировок. **E2:** строка «N участниц» + аватары в шапке, шторка `club_members_sheet.dart`, мини-карточка.
+- **K0:** `User.pushSettings.offers` (по умолчанию false), `PATCH /api/profile/push-settings {offers}`, переключатель «Предложения и акции». **K1/K3:** `POST /api/admin/news` + `target {kind, id?}` и `androidBody`: только `offers === true`; iPhone — `body`, Android — только `androidBody` (пусто → не отправляется); аудитории `no_current_club`, `not_bought_book`. **K2:** `core/services/purchase_target.dart`: book → экран книги (slug ищется в каталоге), club/season/paywall → пейвол, на Android — вкладка клуба.
+- **android:** клиентские правки перенесены патчем (не merge веток), `qa_tab.dart` сведён руками (текст без «подписки» на Android). `pubspec` 1.0.6+1; в `main` `codemagic.yaml` build-name 1.0.6.
+- **Проверить на сборке:** records в `qa_tab.dart`; типизация в `club_members_sheet.dart` (`final Map data = …`).
+- **Деплой:** `git pull && pm2 restart chitatel-api` (новых пакетов нет); в `.env` при желании `QA_DIGEST_HOUR_MSK`.
+
+## 10. 15.11.2026 — CRM D1, D2, D4 (экраны «Клиенты», карточка клиентки, «Заказы»)
+
+Сервер: тесты 408 (+51: `crm-lists`, `crm-clients-card`). `crm/` собирается. Реальная MongoDB не запускалась (тесты на моках) — сегменты, счётчики и сортировки проверить на копии прода.
+- API (`/api/crm`): `GET /clients?q&seg&sort&page&limit` → `{items, total, page, limit, seg, counts, currentMonth}`; `GET /clients/export.csv`; `POST /clients/tags`; `GET/PATCH /clients/:id`; `POST /clients/:id/comments`; `POST /clients/:id/balance {op, amount, reason}` (атомарно, права `orders`); `GET /clients/:id/history`; `GET /orders?status&source&manager&from&to&q&sort&page`; `GET /orders/export.csv`. Изменения — в `CrmAudit`.
+- Сервисы: `crm/services/{client-list,client-card,order-list,order-view}.service.js`, `view.helpers.js`, `csv.js`; роуты `crm/routes/orders.js`, `clients.js`.
+- Фронт: `crm/src/pages/{Clients,Orders}.jsx`, `components/{ClientDrawer,Soon}.jsx`, `api/crm.js`.
+- Допущения: выгрузка CSV (UTF-8 BOM, «;»), xlsx-пакета нет; суммы по платежам заказов, валюты не BYN не считаются, пока не заданы курсы в настройках; «Последний вход» — нет поля; сортировка «Клиентов» не по имени тянет всю выборку — проверить скорость.
+- Неактивно «скоро»: сегменты/рассылка (J), задачи/план продаж (K), «+ Заказ»/«Выдать без оплаты» (D6), «Написать» (I), инструкция для входа/напоминание (F), каналы (G4).
