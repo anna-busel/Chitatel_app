@@ -213,6 +213,11 @@
         <div class="lbl">Жалобы</div>
         <div id="reportList"><div class="empty">Загрузка…</div></div>
         <div class="lbl">Вопросы Анне (Q&amp;A)</div>
+        <div class="seg" id="qaSort">
+          <div class="opt on" data-v="interest" onclick="pickQaSort(this)">Популярные</div>
+          <div class="opt" data-v="new" onclick="pickQaSort(this)">Новые</div>
+        </div>
+        <div class="hint">Показаны вопросы без текстового ответа: «Ждёт». «Популярные» — по числу «тоже интересно». «В подкаст» и «Опубликовать ответ» присылают автору уведомление.</div>
         <div id="qaList"><div class="empty">Загрузка…</div></div>
       </div>
 
@@ -242,7 +247,19 @@
               <div class="opt" data-v="subscribers" onclick="pick(this)">Подписчикам</div>
               <div class="opt" data-v="season" onclick="pick(this)">Сезон (текущий)</div>
               <div class="opt" data-v="tier2" onclick="pick(this)">Тариф 2 (встреча)</div>
+              <div class="opt pur" data-v="no_current_club" onclick="pick(this)" style="display:none">Без доступа к текущему клубу</div>
+              <div class="opt pur" data-v="not_bought_book" onclick="pick(this)" style="display:none">Не купили этот разбор</div>
             </div>
+          </div>
+          <div class="fld"><label>По нажатию (цель покупки)</label>
+            <div class="seg" id="newsTarget">
+              <div class="opt on" data-v="" onclick="pickNewsTarget(this)">Нет — обычная новость</div>
+              <div class="opt" data-v="book" onclick="pickNewsTarget(this)">Разбор</div>
+              <div class="opt" data-v="club" onclick="pickNewsTarget(this)">Клуб</div>
+              <div class="opt" data-v="season" onclick="pickNewsTarget(this)">Сезон</div>
+              <div class="opt" data-v="paywall" onclick="pickNewsTarget(this)">Экран подписки</div>
+            </div>
+            <input id="newsTargetId" placeholder="bookSlug разбора (как в каталоге)" style="display:none">
           </div>
           <div class="fld"><label>Устройства</label>
             <div class="seg" id="newsPlat">
@@ -253,6 +270,10 @@
           </div>
           <input id="newsTitle" placeholder="Заголовок" maxlength="120">
           <textarea id="newsBody" placeholder="Текст новости…" maxlength="1000"></textarea>
+          <div id="newsPurBox" style="display:none">
+            <textarea id="newsAndroidBody" placeholder="Текст для Android — нейтральный, без «купите» и цен (необязательно)" maxlength="1000"></textarea>
+            <div class="hint">Пуш о покупке уйдёт только тем, кто включил «Предложения и акции» в настройках уведомлений. Текст выше — для iPhone. На Android — без цен и призыва купить: уходит только текст для Android, а если он пуст — на Android пуш не отправляется вовсе. «Тариф 2» с целью покупки недоступен.</div>
+          </div>
           <button class="btn primary" onclick="sendNews()">Отправить новость</button>
           <div class="hint">Пишется в ленту уведомлений (колокольчик) всем адресатам + push тем, у кого включён тип «Новости». «Всем» — включая без подписки; «Подписчикам» — только с активной. «Тариф 2» — только у кого Тариф 2 на текущий месяц: приходит всегда (даже с выключенными «Новостями»), по нажатию открывается клуб с карточкой встречи. Ссылку Zoom вставляйте в «Клуб месяца» → встреча, в тексте пуша она не кликается. Напоминание за час уходит само. «Только iPhone» / «Только Android» — по устройству, на котором участница входила в приложение.</div>
         </div>
@@ -775,19 +796,35 @@ async function repAct(id,action,muteDays){
     toast('Готово'); loadReports(); loadDash();
   }catch(e){ toast(e.message); }
 }
+var _qaSort='interest', _qaItems=[];
+var QA_STATUS={open:['Ждёт','b-free'],podcast:['Ждёт','b-free'],answered:['Ответила','b-basic']};
+function pickQaSort(el){ pick(el); _qaSort=el.dataset.v; renderQa(); }
 async function loadQa(){
   var el=document.getElementById('qaList');
   try{
     var d=await api('/admin/qa/unanswered?limit=50');
-    if(!d.questions.length){ el.innerHTML='<div class="empty">Все вопросы отвечены</div>'; return; }
-    el.innerHTML=d.questions.map(function(q){
-      var who=q.userId?esc(q.userId.name||q.userId.email||''):'—';
-      return '<div class="card"><div style="font-weight:650;margin-bottom:2px">'+esc(q.questionText)+'</div>'+
-        '<div class="muted" style="margin-bottom:8px">'+who+' · '+fmtDate(q.createdAt)+'</div>'+
-        '<textarea id="qa_'+q._id+'" placeholder="Ответ Анны…"></textarea>'+
-        '<button class="btn primary" onclick="answerQa(\''+q._id+'\')">Опубликовать ответ</button></div>';
-    }).join('');
+    _qaItems=d.questions||[];
+    renderQa();
   }catch(e){ el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+function renderQa(){
+  var el=document.getElementById('qaList');
+  if(!_qaItems.length){ el.innerHTML='<div class="empty">Все вопросы отвечены</div>'; return; }
+  var list=_qaItems.slice().sort(function(a,b){
+    if(_qaSort==='interest'){ var d=(b.interestCount||0)-(a.interestCount||0); if(d) return d; }
+    return new Date(b.createdAt)-new Date(a.createdAt);
+  });
+  el.innerHTML=list.map(function(q){
+    var who=q.userId?esc(q.userId.name||q.userId.email||''):'—';
+    var st=QA_STATUS[q.status]||QA_STATUS.open;
+    return '<div class="card"><div style="font-weight:650;margin-bottom:2px">'+esc(q.questionText)+'</div>'+
+      '<div class="muted" style="margin-bottom:8px"><span class="badge '+st[1]+'">'+st[0]+'</span> · тоже интересно: '+(q.interestCount||0)+' · '+who+' · '+fmtDate(q.createdAt)+'</div>'+
+      '<textarea id="qa_'+q._id+'" placeholder="Ответ Анны…"></textarea>'+
+      '<div class="btnrow">'+
+      '<button class="btn primary sm" onclick="answerQa(\''+q._id+'\')">Опубликовать ответ</button>'+
+
+      '</div></div>';
+  }).join('');
 }
 async function answerQa(id){
   var answerText=(document.getElementById('qa_'+id).value||'').trim();
@@ -797,17 +834,40 @@ async function answerQa(id){
   }catch(e){ toast(e.message); }
 }
 
+function pickNewsTarget(el){
+  pick(el);
+  var kind=el.dataset.v;
+  document.getElementById('newsTargetId').style.display=kind==='book'?'':'none';
+  document.getElementById('newsPurBox').style.display=kind?'':'none';
+  document.querySelectorAll('#newsAud .opt.pur').forEach(function(o){
+    o.style.display=(kind && (o.dataset.v!=='not_bought_book' || kind==='book'))?'':'none';
+  });
+  // Аудитория, недоступная для выбранной цели, — сбросить на «Всем».
+  var cur=document.querySelector('#newsAud .opt.on');
+  if(cur && (cur.style.display==='none' || (kind && cur.dataset.v==='tier2'))) pick(document.querySelector('#newsAud .opt[data-v="all"]'));
+}
 async function sendNews(){
   var title=(document.getElementById('newsTitle').value||'').trim();
   var body=(document.getElementById('newsBody').value||'').trim();
   var audience=segVal('newsAud'), platform=segVal('newsPlat')||'all';
+  var kind=segVal('newsTarget')||'';
   if(!title||!body){ toast('Заполните заголовок и текст'); return; }
-  var audTxt={all:'всем',subscribers:'подписчикам',season:'участницам текущего сезона',tier2:'участницам с Тарифом 2'}[audience]||audience;
+  var payload={title:title,body:body,audience:audience,platform:platform};
+  if(kind){
+    if(audience==='tier2'){ toast('Тариф 2 — без цели покупки'); return; }
+    var tid=(document.getElementById('newsTargetId').value||'').trim();
+    if(kind==='book' && !tid){ toast('Укажите bookSlug разбора'); return; }
+    payload.target=kind==='book'?{kind:kind,id:tid}:{kind:kind};
+    payload.androidBody=(document.getElementById('newsAndroidBody').value||'').trim();
+  }
+  var audTxt={all:'всем',subscribers:'подписчикам',season:'участницам текущего сезона',tier2:'участницам с Тарифом 2',no_current_club:'тем, у кого нет доступа к текущему клубу',not_bought_book:'тем, кто не купил этот разбор'}[audience]||audience;
   var platTxt={all:'',ios:' (только iPhone)',android:' (только Android)'}[platform]||'';
-  if(!confirm('Отправить уведомление '+audTxt+platTxt+'?')) return;
-  try{ var d=await api('/admin/news',{method:'POST',body:JSON.stringify({title:title,body:body,audience:audience,platform:platform})});
-    toast('Отправлено: '+(d&&d.total!=null?d.total:0)+' чел.'+(d&&d.sent!=null?' · push '+d.sent:''));
+  var purTxt=kind?' — пуш о покупке, только включившим «Предложения и акции»'+(payload.androidBody?'':'; на Android не уйдёт'):'';
+  if(!confirm('Отправить уведомление '+audTxt+platTxt+purTxt+'?')) return;
+  try{ var d=await api('/admin/news',{method:'POST',body:JSON.stringify(payload)});
+    toast('Отправлено: '+(d&&d.total!=null?d.total:0)+' чел.'+(d&&d.sent!=null?' · push '+d.sent:'')+(kind&&d?' · iPhone '+(d.ios||0)+', Android '+(d.android||0):''));
     document.getElementById('newsTitle').value=''; document.getElementById('newsBody').value='';
+    document.getElementById('newsAndroidBody').value='';
   }catch(e){ toast(e.message); }
 }
 
