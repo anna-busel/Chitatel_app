@@ -14,6 +14,7 @@ const QAQuestion = require('../models/QAQuestion');
 const Report = require('../models/Report');
 const Quote = require('../models/Quote');
 const Review = require('../models/Review');
+const Book = require('../models/Book');
 const { hideReview } = require('../services/review.service');
 const { runWeeklyReports } = require('../jobs/weekly-report');
 const { runMonthlyReports } = require('../jobs/monthly-report');
@@ -540,28 +541,94 @@ router.post(
  *
  * Body:
  * - title, body — текст новости;
- * - audience ('all' | 'subscribers' | 'tier2', default 'all'); tier2 —
+ * - audience ('all' | 'subscribers' | 'season' | 'tier2', default 'all'); tier2 —
  *   участницы с Тарифом 2 на текущий клуб (03.11.2026);
  * - platform ('all' | 'ios' | 'android', default 'all');
  * - data (опц.) — полезная нагрузка для навигации по тапу.
+ *
+ * Пуш о покупке (UPDATES-PLAN K1/K3, 15.11.2026) — если задан target:
+ * - target { kind: 'book'|'club'|'season'|'paywall', id? } (id — bookSlug
+ *   для book, обязателен); data → { type:'purchase', targetKind, targetId? };
+ * - уходит ТОЛЬКО тем, у кого pushSettings.offers === true (Apple 4.5.4);
+ * - body — текст для iPhone; androidBody (опц.) — нейтральный текст для
+ *   Android без призыва купить; пуст → на Android не отправляется (Google
+ *   Payments policy);
+ * - audience дополнительно: 'no_current_club' (нет доступа к текущему клубу:
+ *   нет ключа месяца в clubMonthsEntitled и не admin), 'not_bought_book'
+ *   (только с target.kind 'book': книги нет в purchasedBooks). tier2 с target
+ *   нельзя — это служебный канал.
  */
-const newsSchema = z.object({
-  title: z.string().min(1).max(120).trim(),
-  body: z.string().min(1).max(1000).trim(),
-  audience: z.enum(['all', 'subscribers', 'season', 'tier2']).default('all'),
-  platform: z.enum(['all', 'ios', 'android']).default('all'),
-  data: z.record(z.any()).optional(),
-});
+const newsSchema = z
+  .object({
+    title: z.string().min(1).max(120).trim(),
+    body: z.string().min(1).max(1000).trim(),
+    audience: z
+      .enum(['all', 'subscribers', 'season', 'tier2', 'no_current_club', 'not_bought_book'])
+      .default('all'),
+    platform: z.enum(['all', 'ios', 'android']).default('all'),
+    data: z.record(z.any()).optional(),
+    target: z
+      .object({
+        kind: z.enum(['book', 'club', 'season', 'paywall']),
+        id: z.string().trim().max(200).optional(),
+      })
+      .optional(),
+    androidBody: z.string().max(1000).trim().optional(),
+  })
+  .superRefine((b, ctx) => {
+    const purchaseOnly = ['no_current_club', 'not_bought_book'];
+    if (!b.target && purchaseOnly.includes(b.audience)) {
+      ctx.addIssue({ code: 'custom', path: ['target'], message: 'Для этой аудитории нужна цель' });
+    }
+    if (b.target && b.audience === 'tier2') {
+      ctx.addIssue({ code: 'custom', path: ['audience'], message: 'Тариф 2 — без цели покупки' });
+    }
+    if (b.target && b.target.kind === 'book' && !b.target.id) {
+      ctx.addIssue({ code: 'custom', path: ['target', 'id'], message: 'Укажите bookSlug разбора' });
+    }
+    if (b.audience === 'not_bought_book' && (!b.target || b.target.kind !== 'book')) {
+      ctx.addIssue({ code: 'custom', path: ['audience'], message: '«Не купили разбор» — только с целью «разбор»' });
+    }
+  });
+
+/** Клуб текущего месяца (startsAt <= now <= endsAt) или null. */
+async function findCurrentClub() {
+  const now = new Date();
+  return ClubMonth.findOne({ startsAt: { $lte: now }, endsAt: { $gte: now } })
+    .select('year month startsAt endsAt')
+    .lean();
+}
 
 router.post('/news', validate(newsSchema), async (req, res, next) => {
   try {
-    const { title, body, audience, platform } = req.body;
+    const { title, body, audience, platform, target } = req.body;
+
+    if (target) {
+      let bookId = null;
+      if (target.kind === 'book') {
+        const book = await Book.findOne({ bookSlug: target.id }).select('_id').lean();
+        if (!book) {
+          throw new AppError('NOT_FOUND', `Разбор «${target.id}» не найден`, 404);
+        }
+        bookId = book._id;
+      }
+      const currentClub = audience === 'no_current_club' ? await findCurrentClub() : null;
+      const result = await pushService.sendPurchase({
+        audience,
+        platform,
+        target,
+        currentClub,
+        bookId,
+        title,
+        body,
+        androidBody: req.body.androidBody || '',
+      });
+      return success(res, result);
+    }
+
     let tier2Club = null;
     if (audience === 'tier2') {
-      const now = new Date();
-      tier2Club = await ClubMonth.findOne({ startsAt: { $lte: now }, endsAt: { $gte: now } })
-        .select('year month startsAt endsAt')
-        .lean();
+      tier2Club = await findCurrentClub();
       if (!tier2Club) {
         throw new AppError('NO_CURRENT_CLUB', 'Клуб текущего месяца не заведён — некому отправить', 400);
       }
