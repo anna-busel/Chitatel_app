@@ -497,6 +497,88 @@ router.get(
 );
 
 /**
+ * GET /api/club/:clubMonthId/members?page=1
+ * Участницы клуба для шапки (UPDATES-PLAN E1, 15.11.2026).
+ *
+ * Кто: у кого ключ месяца клуба в clubMonthsEntitled, плюс role=admin; без
+ * забаненных, удалённых и тех, кого текущий пользователь заблокировал.
+ * Видно всем, у кого есть доступ к клубу (resolveClubAccess).
+ * Порядок: админы первыми ('admin' < 'user'), потом по имени. Страница — 50.
+ *
+ * Ответ: { count, members: [{ id, name, avatarUrl, isAdmin }], hasMore }.
+ * count кэшируется в памяти на 10 минут по clubMonthId и считается БЕЗ учёта
+ * блокировок текущего пользователя (так проще: один счётчик на клуб для всех;
+ * расхождение на число заблокированных — допустимо). ClubMonth.participantCount
+ * не используем — он не обновляется.
+ *
+ * Два сегмента пути — с '/:clubMonthId' не конфликтует; объявлен до чата.
+ */
+const MEMBERS_PAGE_SIZE = 50;
+const MEMBERS_COUNT_TTL_MS = 10 * 60 * 1000;
+const membersCountCache = new Map(); // clubMonthId → { count, expiresAt }
+
+const membersSchema = z.object({
+  page: z.coerce.number().int().min(1).max(10000).default(1),
+});
+
+function membersFilter(club) {
+  return {
+    $or: [{ clubMonthsEntitled: clubMonthKey(club) }, { role: 'admin' }],
+    isBanned: { $ne: true },
+    isDeleted: { $ne: true },
+  };
+}
+
+async function membersCount(club, now = Date.now()) {
+  const key = String(club._id);
+  const cached = membersCountCache.get(key);
+  if (cached && cached.expiresAt > now) {return cached.count;}
+  const count = await User.countDocuments(membersFilter(club));
+  membersCountCache.set(key, { count, expiresAt: now + MEMBERS_COUNT_TTL_MS });
+  return count;
+}
+
+router.get(
+  '/:clubMonthId/members',
+  validate(membersSchema, 'query'),
+  resolveClubAccess,
+  async (req, res, next) => {
+    try {
+      const { page } = req.query;
+      const blockedIds = await getBlockedIds(req.user.userId);
+
+      const filter = membersFilter(req.club);
+      if (blockedIds.length > 0) {
+        filter._id = { $nin: blockedIds };
+      }
+
+      const [count, rows] = await Promise.all([
+        membersCount(req.club),
+        User.find(filter)
+          .select('name avatarUrl role')
+          .sort({ role: 1, name: 1, _id: 1 })
+          .collation({ locale: 'ru' })
+          .skip((page - 1) * MEMBERS_PAGE_SIZE)
+          .limit(MEMBERS_PAGE_SIZE + 1)
+          .lean(),
+      ]);
+
+      const hasMore = rows.length > MEMBERS_PAGE_SIZE;
+      const members = rows.slice(0, MEMBERS_PAGE_SIZE).map((u) => ({
+        id: String(u._id),
+        name: u.name || '',
+        avatarUrl: u.avatarUrl || null,
+        isAdmin: u.role === 'admin',
+      }));
+
+      return success(res, { count, members, hasMore });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/**
  * GET /api/club/:clubMonthId/chat
  * История сообщений чата клуба. Пагинация курсором (before).
  *
@@ -2020,5 +2102,8 @@ router.post(
     }
   }
 );
+
+// Для тестов: сброс кэша счётчика участниц (E1).
+router.membersCountCache = membersCountCache;
 
 module.exports = router;
