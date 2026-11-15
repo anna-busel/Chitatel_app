@@ -4,6 +4,8 @@ import Shell from './layout/Shell';
 import Login from './pages/Login';
 import NoAccess from './pages/NoAccess';
 import SectionStub from './pages/SectionStub';
+import Clients from './pages/Clients';
+import Orders from './pages/Orders';
 import { SECTIONS } from './sections';
 
 function RequireAuth({ children }) {
@@ -30,10 +32,14 @@ function RequireAuth({ children }) {
   return children;
 }
 
+// Готовые экраны (CRM-PLAN D1, D4); остальные разделы — заглушка до своей задачи.
+const PAGES = { clients: Clients, orders: Orders };
+
 function Section({ section }) {
   const { can } = useAuth();
   if (!can(section.perm)) return <NoAccess title={section.title} />;
-  return <SectionStub section={section} />;
+  const Page = PAGES[section.key];
+  return Page ? <Page /> : <SectionStub section={section} />;
 }
 
 export default function App() {
