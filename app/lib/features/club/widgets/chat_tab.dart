@@ -1835,6 +1835,11 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
                 ? null
                 : _replyPreviewText(_replyingTo!),
             onCancelReply: _replyingTo == null ? null : _cancelReply,
+            // D7: «Вопрос Анне» — участницам, не Анне.
+            askQuestionClubMonthId:
+                widget.access.kind == ClubAccessKind.admin || _isAdmin
+                    ? null
+                    : widget.club.id,
           ),
         ],
       ),
