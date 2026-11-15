@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../services/club_api_service.dart';
+import 'ask_question_sheet.dart';
 import 'voice_recorder.dart';
 
 /// Поле ввода чата клуба.
@@ -32,6 +33,11 @@ import 'voice_recorder.dart';
 /// растягивается на ВСЮ строку (Expanded), скрепка/текстфилд/кнопка
 /// отправки скрыты. Состояние записи приходит из VoiceRecorder через
 /// onRecordingStateChanged. Только Анна-admin — для остальных кнопки нет.
+///
+/// «Вопрос Анне» (D7): если передан askQuestionClubMonthId — рядом со
+/// скрепкой иконка-вопрос, открывает ту же шторку, что и раздел «Вопросы»;
+/// вопрос попадает в раздел, а не в чат. Родитель передаёт id только
+/// участнице, которая может писать (не Анне).
 class ChatInput extends StatefulWidget {
   const ChatInput({
     super.key,
@@ -47,6 +53,7 @@ class ChatInput extends StatefulWidget {
     this.replyToName,
     this.replyToText,
     this.onCancelReply,
+    this.askQuestionClubMonthId,
   });
 
   final bool canPost;
@@ -77,6 +84,9 @@ class ChatInput extends StatefulWidget {
 
   /// Сброс режима ответа (крестик на плашке).
   final VoidCallback? onCancelReply;
+
+  /// Клуб для кнопки «Вопрос Анне» (D7). null — кнопки нет (Анна, нет прав).
+  final String? askQuestionClubMonthId;
 
   @override
   State<ChatInput> createState() => _ChatInputState();
@@ -185,6 +195,23 @@ class _ChatInputState extends State<ChatInput> {
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// «Вопрос Анне» (D7) — шторка AskQuestionSheet для текущего клуба.
+  Future<void> _openAskQuestion() async {
+    final clubMonthId = widget.askQuestionClubMonthId;
+    if (clubMonthId == null) return;
+    final result = await showModalBottomSheet<QAAskResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => AskQuestionSheet(clubMonthId: clubMonthId),
+    );
+    if (result == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Вопрос отправлен — он появится в разделе «Вопросы»'),
+      backgroundColor: AppColors.success,
+    ));
   }
 
   void _handleSend() {
@@ -374,6 +401,9 @@ class _ChatInputState extends State<ChatInput> {
                         // — Обычный режим: скрепка + поле + (микрофон/отправка) —
                         : [
                             _AttachButton(onTap: widget.onAttachImage),
+                            if (widget.askQuestionClubMonthId != null &&
+                                !widget.isAdmin)
+                              _AskQuestionButton(onTap: _openAskQuestion),
                             const SizedBox(width: 4),
                             Expanded(
                               child: Container(
@@ -452,6 +482,37 @@ class _AttachButton extends StatelessWidget {
             Icons.add_photo_alternate_outlined,
             size: 24,
             color: AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Кнопка «Вопрос Анне» (D7) — иконка рядом со скрепкой.
+class _AskQuestionButton extends StatelessWidget {
+  const _AskQuestionButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Вопрос Анне',
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: const SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(
+              Icons.help_outline,
+              size: 24,
+              color: AppColors.textSecondary,
+              semanticLabel: 'Вопрос Анне',
+            ),
           ),
         ),
       ),
