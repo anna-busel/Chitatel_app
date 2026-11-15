@@ -38,4 +38,28 @@ class QaAdminService {
     final data = body['data'] as Map<String, dynamic>;
     return QAQuestion.fromJson(data['question'] as Map<String, dynamic>);
   }
+
+  /// Раздел «Вопросы» (D4/D8): «В подкаст» (`status: podcast`) или
+  /// «Ответить» (`status: answered` + [answerText]). Пуш автору сервер шлёт
+  /// сам при смене статуса. Возвращает вопрос в формате списка (со статусом
+  /// и «Тоже интересно»).
+  ///
+  /// Ошибки: FORBIDDEN (не админ), NOT_FOUND, VALIDATION_ERROR.
+  Future<QAQuestion> setStatus({
+    required String questionId,
+    required QAStatus status,
+    String? answerText,
+  }) async {
+    final payload = <String, dynamic>{'status': status.apiValue};
+    if (answerText != null && answerText.isNotEmpty) {
+      payload['answerText'] = answerText;
+    }
+    final response = await _api.dio.post(
+      ApiEndpoints.clubQaStatus(questionId),
+      data: payload,
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>;
+    return QAQuestion.fromJson(data['question'] as Map<String, dynamic>);
+  }
 }

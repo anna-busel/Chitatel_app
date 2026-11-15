@@ -44,9 +44,43 @@ String userMessageFor(
       return 'Вы не можете писать в этом клубе';
     case 'NOT_FOUND':
       return 'Сообщение не найдено';
+    // D2/D7: лимит вопросов Анне — тоже 429, но «Слишком часто» тут неверно.
+    case 'QUESTION_LIMIT':
+      return questionLimitMessage(error);
   }
   if (error is DioException && error.response?.statusCode == 429) {
     return 'Слишком часто, попробуйте через минуту';
   }
   return fallback;
+}
+
+/// Текст для 429 QUESTION_LIMIT (раздел «Вопросы», D2/D7): недельный лимит
+/// берём из details.weeklyLimit, если сервер его прислал.
+String questionLimitMessage(Object? error) {
+  var limit = 3;
+  if (error is DioException) {
+    final data = error.response?.data;
+    if (data is Map) {
+      final err = data['error'];
+      if (err is Map) {
+        final details = err['details'];
+        if (details is Map) {
+          final raw = details['weeklyLimit'];
+          if (raw is num && raw > 0) limit = raw.toInt();
+        }
+      }
+    }
+  }
+  return 'На этой неделе вы уже задали $limit ${_questionsWord(limit)}. '
+      'Новые можно будет задать с понедельника';
+}
+
+/// «вопрос / вопроса / вопросов» по числу.
+String _questionsWord(int n) {
+  final mod100 = n % 100;
+  final mod10 = n % 10;
+  if (mod100 >= 11 && mod100 <= 14) return 'вопросов';
+  if (mod10 == 1) return 'вопрос';
+  if (mod10 >= 2 && mod10 <= 4) return 'вопроса';
+  return 'вопросов';
 }
