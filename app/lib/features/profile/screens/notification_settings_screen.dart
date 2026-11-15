@@ -74,6 +74,14 @@ class NotificationSettingsScreen extends ConsumerWidget {
       title: 'Напоминания',
       subtitle: 'Мягкое напоминание записать цитату',
     ),
+    // K0 (Apple 4.5.4): согласие на рекламные пуши. По умолчанию ВЫКЛ — сервер
+    // шлёт пуши с целью покупки только тем, у кого offers == true.
+    _Setting(
+      key: 'offers',
+      title: 'Предложения и акции',
+      subtitle: 'Скидки и новые разборы. Можно выключить в любой момент',
+      defaultValue: false,
+    ),
   ];
 
   Future<void> _toggle(
@@ -153,10 +161,14 @@ class _Setting {
     required this.key,
     required this.title,
     required this.subtitle,
+    this.defaultValue = true,
   });
   final String key;
   final String title;
   final String subtitle;
+
+  /// Значение, если поля нет в профиле. Сервисные — true, offers — false.
+  final bool defaultValue;
 }
 
 class _Body extends StatelessWidget {
@@ -191,7 +203,7 @@ class _Body extends StatelessWidget {
                   value:
                       profile.pushSettings[
                               NotificationSettingsScreen._settings[i].key] ??
-                          true,
+                          NotificationSettingsScreen._settings[i].defaultValue,
                   activeColor: AppColors.terracotta,
                   title: Text(
                     NotificationSettingsScreen._settings[i].title,
