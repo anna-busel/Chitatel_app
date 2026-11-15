@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../network/api_client.dart';
 import '../router/app_router.dart';
 import '../router/routes.dart';
+import 'purchase_target.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import 'firebase_android_options.dart';
 
@@ -344,8 +345,24 @@ class PushService {
       // Тариф 2: «через час встреча с Анной» — карточка встречи в клубе.
       case 'club_meeting':
         router.go(Routes.club);
+      // K2: пуш о покупке — экран книги / пейвол клуба (на Android — клуб).
+      case 'purchase':
+        _openPurchase(data);
       default:
         router.go(Routes.home);
+    }
+  }
+
+  /// K2: куда ведёт пуш `purchase` — см. purchase_target.dart. Пока ищем книгу
+  /// по slug, показываем главную, чтобы тап не выглядел «пустым».
+  Future<void> _openPurchase(Map<String, dynamic> data) async {
+    final router = _ref.read(routerProvider);
+    router.go(Routes.home);
+    final target = await resolvePurchaseTarget(_ref, data);
+    if (target.isTab) {
+      router.go(target.location);
+    } else {
+      router.push(target.location);
     }
   }
 }
