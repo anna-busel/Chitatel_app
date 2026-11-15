@@ -7,6 +7,16 @@ const { takeNextText } = require('../services/reminder-text.service');
 const { getNotif } = require('../services/notification-setting.service');
 const { scheduleMeetingReminders } = require('./meeting-reminders');
 const { sendDailyDigest } = require('../services/club-chat-push.service');
+const { sendQaDigest } = require('../services/qa-digest.service');
+
+// Час дайджеста вопросов Анне по Москве (UPDATES-PLAN D6). Env
+// QA_DIGEST_HOUR_MSK (0..23), по умолчанию 10:00 — время ждёт подтверждения
+// Анны, поэтому вынесено в env, а не зашито.
+const QA_DIGEST_HOUR_DEFAULT = 10;
+function qaDigestHour(env = process.env) {
+  const h = parseInt(env.QA_DIGEST_HOUR_MSK, 10);
+  return Number.isInteger(h) && h >= 0 && h <= 23 ? h : QA_DIGEST_HOUR_DEFAULT;
+}
 
 /**
  * Планировщик push по расписанию (MASTER 7.9).
@@ -158,6 +168,25 @@ function scheduleClubChatDigest() {
   logger.info('Club chat digest cron scheduled: "0 21 * * *" Europe/Moscow');
 }
 
+/**
+ * Дайджест новых вопросов Анне (UPDATES-PLAN D6): раз в день в
+ * QA_DIGEST_HOUR_MSK:00 по Москве, если за 24 часа есть новые вопросы.
+ * Повтор при рестарте отсекает ClubMonth.lastQaDigestAt (qa-digest.service).
+ */
+function scheduleQaDigest() {
+  const expr = `0 ${qaDigestHour()} * * *`;
+  cron.schedule(
+    expr,
+    () => {
+      sendQaDigest().catch((err) => {
+        logger.error('Q&A digest cron error', { message: err.message });
+      });
+    },
+    { timezone: 'Europe/Moscow' }
+  );
+  logger.info(`Q&A digest cron scheduled: "${expr}" Europe/Moscow`);
+}
+
 const schedulePushJobs = async () => {
   // Напоминание записать цитату — из настройки БД (редактируется в админке).
   try {
@@ -188,9 +217,16 @@ const schedulePushJobs = async () => {
     logger.error('Club chat digest schedule error', { message: err.message });
   }
 
+  // Дайджест новых вопросов Анне (UPDATES-PLAN D6).
+  try {
+    scheduleQaDigest();
+  } catch (err) {
+    logger.error('Q&A digest schedule error', { message: err.message });
+  }
+
   logger.info(
     'Push cron scheduled (reminder + daily quote configurable; Europe/Moscow)'
   );
 };
 
-module.exports = { schedulePushJobs, reloadReminder, reloadDailyQuote };
+module.exports = { schedulePushJobs, reloadReminder, reloadDailyQuote, qaDigestHour };

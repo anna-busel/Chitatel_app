@@ -94,6 +94,9 @@ const clubMonthSchema = new mongoose.Schema(
     // когда ушла вечерняя сводка — чтобы рестарт в 21:00 её не задвоил.
     lastAnnaPushAt: { type: Date, default: null },
     lastDigestAt: { type: Date, default: null },
+    // Дайджест новых вопросов Анне (UPDATES-PLAN D6, 15.11.2026) — когда ушёл
+    // последний, чтобы рестарт в момент cron его не задвоил.
+    lastQaDigestAt: { type: Date, default: null },
   },
   {
     timestamps: true,
