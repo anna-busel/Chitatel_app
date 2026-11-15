@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import '../../../core/network/network_error.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/app_button.dart';
-import '../models/qa_question.dart';
 import '../services/club_api_service.dart';
 
 /// Bottom sheet для задания вопроса Анне.
@@ -13,11 +13,25 @@ import '../services/club_api_service.dart';
 /// - min 5 символов
 /// - max 500 символов
 /// - дубликаты блокируются (409 QA_DUPLICATE)
+/// - не больше 3 вопросов в неделю (429 QUESTION_LIMIT, D2) — показываем
+///   своё сообщение, а не общее «Слишком часто»
 ///
-/// Возвращает созданный QAQuestion через Navigator.pop (или null если отмена).
+/// Возвращает [QAAskResult] (вопрос + остаток на неделю) через
+/// Navigator.pop, или null если отмена. Открывается из раздела «Вопросы» и
+/// кнопкой «Вопрос Анне» в чате (D7).
 class AskQuestionSheet extends ConsumerStatefulWidget {
-  const AskQuestionSheet({super.key, required this.clubMonthId});
+  const AskQuestionSheet({
+    super.key,
+    required this.clubMonthId,
+    this.remainingThisWeek,
+    this.weeklyLimit = 3,
+  });
   final String clubMonthId;
+
+  /// Остаток на неделю, если известен (из списка «Вопросы»). null — не
+  /// показываем подпись (Анна или открыли из чата).
+  final int? remainingThisWeek;
+  final int weeklyLimit;
 
   @override
   ConsumerState<AskQuestionSheet> createState() => _AskQuestionSheetState();
@@ -66,20 +80,25 @@ class _AskQuestionSheetState extends ConsumerState<AskQuestionSheet> {
 
     try {
       final api = ref.read(clubApiServiceProvider);
-      final question = await api.askQuestion(
+      final result = await api.askQuestion(
         clubMonthId: widget.clubMonthId,
         questionText: text,
       );
       if (!mounted) return;
-      Navigator.of(context).pop(question);
+      Navigator.of(context).pop(result);
     } on DioException catch (e) {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
       setState(() {
         _isSending = false;
-        _errorText = code == 'QA_DUPLICATE'
-            ? 'Похожий вопрос уже задан'
-            : 'Не удалось отправить — попробуйте ещё раз';
+        _errorText = switch (code) {
+          'QA_DUPLICATE' => 'Похожий вопрос уже задан',
+          'QUESTION_LIMIT' => questionLimitMessage(e),
+          _ => userMessageFor(
+              e,
+              fallback: 'Не удалось отправить — попробуйте ещё раз',
+            ),
+        };
       });
     } catch (_) {
       if (!mounted) return;
@@ -129,9 +148,18 @@ class _AskQuestionSheetState extends ConsumerState<AskQuestionSheet> {
                 Text('Вопрос Анне', style: AppTypography.serifSectionTitle),
                 const SizedBox(height: 4),
                 Text(
-                  'Анна отвечает по пятницам — пришлём push когда ответ будет готов',
+                  'Самые интересные вопросы Анна разберёт в подкасте — '
+                  'пришлём уведомление',
                   style: AppTypography.caption,
                 ),
+                if (widget.remainingThisWeek != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Осталось ${widget.remainingThisWeek} из '
+                    '${widget.weeklyLimit} на этой неделе',
+                    style: AppTypography.small,
+                  ),
+                ],
                 const SizedBox(height: 16),
 
                 // — Поле ввода —

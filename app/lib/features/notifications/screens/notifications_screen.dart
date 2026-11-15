@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/router/routes.dart';
+import '../../../core/services/purchase_target.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../models/app_notification.dart';
@@ -142,9 +143,26 @@ class NotificationsScreen extends ConsumerWidget {
       // Тариф 2: напоминание о встрече — в клуб, там карточка с «Подключиться».
       case 'club_meeting':
         context.go(Routes.club);
+      // K2: о покупке — экран книги / пейвол клуба (на Android — клуб).
+      case 'purchase':
+        _openPurchase(context, ref, n);
       default:
         // Остальные — просто помечаем прочитанными, остаёмся на экране.
         break;
+    }
+  }
+
+  Future<void> _openPurchase(
+    BuildContext context,
+    WidgetRef ref,
+    AppNotification n,
+  ) async {
+    final target = await resolvePurchaseTargetFromWidget(ref, n.data);
+    if (!context.mounted) return;
+    if (target.isTab) {
+      context.go(target.location);
+    } else {
+      context.push(target.location);
     }
   }
 
@@ -163,6 +181,8 @@ class NotificationsScreen extends ConsumerWidget {
         return (Icons.insights_outlined, AppColors.terracotta);
       case 'club_meeting':
         return (Icons.videocam_outlined, AppColors.terracotta);
+      case 'purchase':
+        return (Icons.local_offer_outlined, AppColors.terracotta);
       default:
         return (Icons.notifications_none, AppColors.textSecondary);
     }
