@@ -5,6 +5,7 @@ const { auditMiddleware } = require('../middleware/audit');
 const { permsOf } = require('../services/permissions');
 const authRoutes = require('./auth');
 const clientsRoutes = require('./clients');
+const ordersRoutes = require('./orders');
 
 /**
  * Корневой роутер CRM, монтируется в app.js: app.use('/api/crm', crmRouter).
@@ -35,7 +36,9 @@ router.get('/me', (req, res) => {
   });
 });
 
-// Клиентки: ручная привязка к аккаунту приложения (B6, 05.11.2026).
+// Клиентки: список и карточка (D1, D2), ручная привязка (B6).
 router.use('/clients', clientsRoutes);
+// Заказы: список и выгрузка (D4).
+router.use('/orders', ordersRoutes);
 
 module.exports = router;
