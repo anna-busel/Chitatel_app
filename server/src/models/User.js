@@ -147,6 +147,11 @@ const userSchema = new mongoose.Schema(
       // приложения знают лишь его, выключив его, участница глушит всё про чат.
       clubAnna: { type: Boolean, default: true },
       clubDigest: { type: Boolean, default: true },
+      // «Предложения и акции» (UPDATES-PLAN K0, 15.11.2026): пуши о покупке
+      // (с target). Apple 4.5.4 — рекламные пуши только с явного согласия,
+      // поэтому по умолчанию ВЫКЛ и проверяется строго === true (у старых
+      // аккаунтов поля нет → не шлём).
+      offers: { type: Boolean, default: false },
     },
     surveyAnswers: mongoose.Schema.Types.Mixed,
     // Флаг прохождения персонализации (онбординг-опрос, задача 6.3). Ставится
