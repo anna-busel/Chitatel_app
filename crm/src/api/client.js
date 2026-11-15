@@ -136,6 +136,46 @@ export async function api(path, options = {}) {
   return send(path, { ...options, token: fresh });
 }
 
+/**
+ * Скачать файл (выгрузка CSV) с токеном CRM: на 401 — один refresh и повтор,
+ * как у api(). Сохраняет файл под именем из Content-Disposition.
+ */
+export async function download(path, fallbackName = 'export.csv') {
+  const get = (token) => fetch(BASE + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    .catch(() => { throw new ApiError('NETWORK', 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз', 0); });
+
+  let res = await get(tokens.access);
+  if (res.status === 401 && tokens.refresh) {
+    let fresh;
+    try {
+      fresh = await refreshOnce(tokens.access);
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 400)) {
+        tokens.clear();
+        emitLogout('expired');
+      }
+      throw err;
+    }
+    res = await get(fresh);
+  }
+  if (!res.ok) {
+    let msg = `Ошибка сервера (${res.status})`;
+    try { const j = await res.json(); if (j && j.error && j.error.message) msg = j.error.message; } catch (_e) { /* не JSON */ }
+    throw new ApiError(`HTTP_${res.status}`, msg, res.status);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get('Content-Disposition') || '';
+  const m = /filename="?([^";]+)"?/.exec(cd);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = m ? m[1] : fallbackName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // --- вход (CRM-PLAN A2): пароль → код 2FA → пара токенов ------------------
 
 /** → { twoFactor:'required', tempToken } | { twoFactor:'setup', tempToken, secret, otpauthUrl } */
