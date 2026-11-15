@@ -67,6 +67,19 @@ class ChatReactionUpdatedEvent extends ClubSocketEvent {
   final List<MessageReaction> reactions;
 }
 
+/// «Тоже интересно» у вопроса изменилось (D3, раздел «Вопросы»).
+/// Приходит только число — interestedByMe у каждой своё, его не трогаем.
+class QAUpdatedEvent extends ClubSocketEvent {
+  const QAUpdatedEvent({
+    required this.questionId,
+    required this.clubMonthId,
+    required this.interestCount,
+  });
+  final String questionId;
+  final String clubMonthId;
+  final int interestCount;
+}
+
 /// Кто-то печатает (broadcast, без сохранения).
 class ChatUserTypingEvent extends ClubSocketEvent {
   const ChatUserTypingEvent(this.userId);
@@ -172,6 +185,11 @@ class ClubSocketService {
     _closeSocket();
 
     final token = await _storage.getAccessToken();
+    // Пока ждали токен, параллельный connect() к этому же клубу (чат и
+    // «Вопросы» подключаются независимо) уже создал сокет — второй не нужен.
+    if (_currentClubMonthId == clubMonthId && _socket != null) {
+      return;
+    }
     if (token == null || token.isEmpty) {
       if (kDebugMode) {
         debugPrint('[ClubSocketService] no JWT, skipping connect');
@@ -322,6 +340,17 @@ class ClubSocketService {
                 '[ClubSocketService] failed to parse chat:reaction_updated: $e');
           }
         }
+      }
+    });
+
+    _socket!.on('qa:updated', (data) {
+      if (data is Map && data['questionId'] != null) {
+        final count = data['interestCount'];
+        _eventsController.add(QAUpdatedEvent(
+          questionId: data['questionId'].toString(),
+          clubMonthId: (data['clubMonthId'] ?? '').toString(),
+          interestCount: count is num ? count.toInt() : 0,
+        ));
       }
     });
 
