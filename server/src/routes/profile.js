@@ -24,13 +24,20 @@ const HIDDEN_FIELDS = '-passwordHash -refreshTokens';
  * - ugcRulesAcceptedAt — приняты ли правила сообщества (A3), до этого
  *   приложение показывает экран-согласие перед первой публикацией;
  * - authProvider — 'email' | 'apple' | 'google': «Сменить пароль» (P4)
- *   показывается только при входе по почте.
+ *   показывается только при входе по почте;
+ * - pushSettings.offers — «Предложения и акции» (K0), по умолчанию false.
  */
 function forClient(user) {
   return {
     ...user,
     authProvider: user.authProvider || null,
     ugcRulesAcceptedAt: user.ugcRulesAcceptedAt || null,
+    // pushSettings.offers (K0): у старых аккаунтов поля нет — отдаём явный
+    // false, чтобы переключатель «Предложения и акции» был выключен.
+    pushSettings: {
+      ...(user.pushSettings || {}),
+      offers: !!(user.pushSettings && user.pushSettings.offers === true),
+    },
   };
 }
 
@@ -216,6 +223,8 @@ const pushSettingsSchema = z.object({
   // Пуши чата клуба (07.11.2026), см. services/club-chat-push.service.js.
   clubAnna: z.boolean().optional(),
   clubDigest: z.boolean().optional(),
+  // «Предложения и акции» (K0, Apple 4.5.4): по умолчанию выкл.
+  offers: z.boolean().optional(),
 });
 
 router.patch(
