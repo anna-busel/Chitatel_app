@@ -43,6 +43,11 @@ final clubArchiveFallbackProvider = StateProvider<String?>((_) => null);
 /// фазе перестроения дерева, менять провайдер там нельзя.
 final clubManualCurrentProvider = StateProvider<bool>((_) => false);
 
+/// Просьба открыть экран клуба сразу на вкладке «Чат» (15.11.2026): ставит
+/// тап по пушу qa_digest («N новых вопросов в чате клуба»). ClubScreen
+/// переключает вкладку и сбрасывает флаг.
+final clubOpenChatRequestProvider = StateProvider<bool>((_) => false);
+
 /// Провайдер контента выбранного клуба месяца.
 ///
 /// Зависит от `selectedClubIdProvider`:
