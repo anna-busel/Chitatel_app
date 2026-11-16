@@ -19,7 +19,6 @@ import '../widgets/club_meeting_card.dart';
 import '../widgets/club_members_sheet.dart';
 import '../widgets/chat_tab.dart';
 import '../widgets/club_switcher_sheet.dart';
-import '../widgets/qa_tab.dart';
 
 /// Главный экран клуба месяца. Источник: MASTER.md секция 4.21.
 ///
@@ -28,7 +27,8 @@ import '../widgets/qa_tab.dart';
 /// 2. Плашка сезона (анонс/окно покупки) — для действующих подписчиц (11.07).
 ///    12.07: НЕ показывается тем, у кого сезон уже оформлен (plan=='season').
 /// 3. Баннер «Архив» если это архивный клуб.
-/// 4. TabBar — 3 таба: Разборы / Чат / Q&A.
+/// 4. TabBar — 2 таба: Разборы / Чат. Вкладку «Вопросы» убрали (решение
+///    Анны 15.11.2026) — вопросы Анне задаются в чате кнопкой «Вопрос Анне».
 ///
 /// PAYWALL (модель доступа 08.07.2026): если сервер вернул 403
 /// SUBSCRIPTION_REQUIRED — показываем PaywallScreen вместо ошибки.
@@ -62,7 +62,7 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
   /// Идёт попытка подобрать архивный клуб — вместо paywall показываем лоадер.
   bool _resolvingArchive = false;
 
-  /// Индекс вкладки «Чат» в TabBar (Разборы / Чат / Q&A).
+  /// Индекс вкладки «Чат» в TabBar (Разборы / Чат).
   static const int _chatTabIndex = 1;
 
   /// Счётчики непрочитанных (V2). Ссылка на notifier сохранена заранее —
@@ -72,13 +72,14 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(_syncChatOpen);
     _unread = ref.read(clubUnreadProvider.notifier);
     // V2: открыли клуб — перечитать счётчики. Если клуб уже в кеше,
     // ref.listen ниже не сработает, поэтому зовём здесь (после кадра).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      _consumeOpenChatRequest();
       _syncChatOpen();
       final loaded = ref.read(currentClubProvider).valueOrNull != null;
       _unread.refresh(force: loaded);
@@ -91,6 +92,13 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
     _unread.releaseChatOpen(this);
     _tabController.dispose();
     super.dispose();
+  }
+
+  /// Тап по пушу qa_digest попросил открыть вкладку «Чат» (15.11.2026).
+  void _consumeOpenChatRequest() {
+    if (!mounted || !ref.read(clubOpenChatRequestProvider)) return;
+    ref.read(clubOpenChatRequestProvider.notifier).state = false;
+    _tabController.animateTo(_chatTabIndex);
   }
 
   /// Сообщить счётчику, открыт ли сейчас чат клуба: пока он открыт,
@@ -116,6 +124,11 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
           _unread.refresh(force: true);
         },
       );
+    });
+
+    // Экран уже открыт, а пришёл тап по пушу qa_digest — к вкладке «Чат».
+    ref.listen<bool>(clubOpenChatRequestProvider, (_, next) {
+      if (next) _consumeOpenChatRequest();
     });
 
     final clubAsync = ref.watch(currentClubProvider);
@@ -329,7 +342,6 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
             tabs: [
               const Tab(text: 'Разборы'),
               Tab(child: _ChatTabLabel(unread: chatUnread)),
-              const Tab(text: 'Вопросы'),
             ],
           ),
         ),
@@ -345,7 +357,6 @@ class _ClubScreenState extends ConsumerState<ClubScreen>
                 tabController: _tabController,
                 tabIndex: _chatTabIndex,
               ),
-              QATab(club: club, access: access),
             ],
           ),
         ),
