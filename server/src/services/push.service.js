@@ -104,7 +104,7 @@ const getProvider = () => {
 };
 
 /** Собирает apn.Notification из полезной нагрузки. */
-const buildNotification = ({ title, body, data }) => {
+const buildNotification = ({ title, body, data, threadId }) => {
   const note = new apn.Notification();
   note.topic = config.apns.bundleId;
   note.alert = { title, body };
@@ -113,6 +113,9 @@ const buildNotification = ({ title, body, data }) => {
   // Живёт сутки: если устройство офлайн, APNs подержит и доставит позже.
   note.expiry = Math.floor(Date.now() / 1000) + 24 * 3600;
   if (data) note.payload = data;
+  // Группировка в одну стопку на экране блокировки (aps.thread-id) — пуши
+  // чата одного клуба (club-chat-push.service, 15.11.2026).
+  if (threadId) {note.threadId = String(threadId);}
   return note;
 };
 
