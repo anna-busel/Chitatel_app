@@ -216,6 +216,21 @@ class ApiEndpoints {
   /// Reason: spam/inappropriate/offensive/copyright/other.
   static String clubChatReport(String messageId) => '/club/chat/$messageId/report';
 
+  /// GET /api/club/:clubMonthId/chat/questions?page — «Вопросы Анне» в чате
+  /// (15.11.2026): { questions: [сообщения чата], hasMore, newCount }.
+  static String clubChatQuestions(String clubMonthId) =>
+      '/club/$clubMonthId/chat/questions';
+
+  /// POST /api/club/:clubMonthId/chat/questions/seen — Анна открыла список,
+  /// newCount обнуляется. Ответ: { questionsSeenAt }.
+  static String clubChatQuestionsSeen(String clubMonthId) =>
+      '/club/$clubMonthId/chat/questions/seen';
+
+  /// GET /api/club/:clubMonthId/chat/questions/remaining —
+  /// { remainingThisWeek, weeklyLimit } (у Анны remainingThisWeek null).
+  static String clubChatQuestionsRemaining(String clubMonthId) =>
+      '/club/$clubMonthId/chat/questions/remaining';
+
   /// GET /api/club/:clubMonthId/qa — список вопросов клуба.
   /// POST /api/club/:clubMonthId/qa — задать вопрос Анне.
   /// Body: { questionText } (5-500 символов)
