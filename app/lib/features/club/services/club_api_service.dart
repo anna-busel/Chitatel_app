@@ -104,6 +104,31 @@ class ChatContextResult {
   final bool hasMoreAfter;
 }
 
+/// «Вопросы Анне» в чате (15.11.2026): страница вопросов (сообщения чата,
+/// новые сверху) + сколько новых с последнего открытия списка.
+class ChatQuestionsResult {
+  const ChatQuestionsResult({
+    required this.questions,
+    required this.hasMore,
+    required this.newCount,
+  });
+
+  final List<ChatMessage> questions;
+  final bool hasMore;
+  final int newCount;
+}
+
+/// Остаток вопросов Анне на неделю. remainingThisWeek null — у Анны.
+class QuestionsRemainingResult {
+  const QuestionsRemainingResult({
+    required this.remainingThisWeek,
+    required this.weeklyLimit,
+  });
+
+  final int? remainingThisWeek;
+  final int weeklyLimit;
+}
+
 /// Список вопросов клуба + остаток на неделю (D5).
 class QAListResult {
   const QAListResult({
@@ -348,12 +373,15 @@ class ClubApiService {
     required String text,
     String? replyToId,
     List<String> mentions = const [],
+    bool isQuestion = false,
   }) async {
     final payload = <String, dynamic>{
       'type': 'text',
       'text': text,
       if (replyToId != null) 'replyToId': replyToId,
       if (mentions.isNotEmpty) 'mentions': mentions,
+      // «Вопрос Анне» (15.11.2026): 4-й за неделю → 429 QUESTION_LIMIT.
+      if (isQuestion) 'isQuestion': true,
     };
 
     final response = await _api.dio.post(
@@ -588,6 +616,58 @@ class ClubApiService {
     );
     final body = response.data as Map<String, dynamic>;
     return body['success'] == true;
+  }
+
+  /// «Вопросы Анне» в чате: страница [page] (по 20, новые сверху) и newCount.
+  Future<ChatQuestionsResult> fetchChatQuestions(
+    String clubMonthId, {
+    int page = 1,
+  }) async {
+    final response = await _api.dio.get(
+      ApiEndpoints.clubChatQuestions(clubMonthId),
+      queryParameters: {'page': page},
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>;
+    final raw = data['questions'];
+    final questions = raw is List
+        ? raw
+            .whereType<Map<String, dynamic>>()
+            .map(ChatMessage.fromJson)
+            .toList(growable: false)
+        : const <ChatMessage>[];
+    return ChatQuestionsResult(
+      questions: questions,
+      hasMore: data['hasMore'] == true,
+      newCount: _intOrNull(data['newCount']) ?? 0,
+    );
+  }
+
+  /// Анна открыла список вопросов — newCount на сервере обнуляется.
+  /// Ошибку глушим: счётчик просто пересчитается при следующем входе.
+  Future<void> markChatQuestionsSeen(String clubMonthId) async {
+    try {
+      await _api.dio.post(ApiEndpoints.clubChatQuestionsSeen(clubMonthId));
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ClubApiService] markChatQuestionsSeen failed: $e');
+      }
+    }
+  }
+
+  /// Сколько вопросов Анне ещё можно задать на этой неделе.
+  Future<QuestionsRemainingResult> fetchQuestionsRemaining(
+    String clubMonthId,
+  ) async {
+    final response = await _api.dio.get(
+      ApiEndpoints.clubChatQuestionsRemaining(clubMonthId),
+    );
+    final body = response.data as Map<String, dynamic>;
+    final data = body['data'] as Map<String, dynamic>;
+    return QuestionsRemainingResult(
+      remainingThisWeek: _intOrNull(data['remainingThisWeek']),
+      weeklyLimit: _intOrNull(data['weeklyLimit']) ?? 3,
+    );
   }
 
   /// Список вопросов клуба (раздел «Вопросы», D5).
