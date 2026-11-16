@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../services/club_api_service.dart';
-import 'ask_question_sheet.dart';
 import 'voice_recorder.dart';
 
 /// Поле ввода чата клуба.
@@ -34,10 +33,11 @@ import 'voice_recorder.dart';
 /// отправки скрыты. Состояние записи приходит из VoiceRecorder через
 /// onRecordingStateChanged. Только Анна-admin — для остальных кнопки нет.
 ///
-/// «Вопрос Анне» (D7): если передан askQuestionClubMonthId — рядом со
-/// скрепкой иконка-вопрос, открывает ту же шторку, что и раздел «Вопросы»;
-/// вопрос попадает в раздел, а не в чат. Родитель передаёт id только
-/// участнице, которая может писать (не Анне).
+/// «Вопрос Анне» (решение Анны 15.11.2026): у участницы рядом со скрепкой
+/// иконка-вопрос (onAskQuestion) — родитель открывает шторку, вопрос уходит
+/// обычным сообщением в чат с пометкой. У Анны на том же месте кнопка
+/// «Вопросы» с цифрой новых (onOpenQuestions + newQuestionsCount) —
+/// родитель открывает список вопросов клуба.
 class ChatInput extends StatefulWidget {
   const ChatInput({
     super.key,
@@ -53,7 +53,9 @@ class ChatInput extends StatefulWidget {
     this.replyToName,
     this.replyToText,
     this.onCancelReply,
-    this.askQuestionClubMonthId,
+    this.onAskQuestion,
+    this.onOpenQuestions,
+    this.newQuestionsCount = 0,
   });
 
   final bool canPost;
@@ -85,8 +87,14 @@ class ChatInput extends StatefulWidget {
   /// Сброс режима ответа (крестик на плашке).
   final VoidCallback? onCancelReply;
 
-  /// Клуб для кнопки «Вопрос Анне» (D7). null — кнопки нет (Анна, нет прав).
-  final String? askQuestionClubMonthId;
+  /// «Вопрос Анне» — у участницы. null — кнопки нет.
+  final VoidCallback? onAskQuestion;
+
+  /// «Вопросы» — у Анны: открыть список вопросов клуба. null — кнопки нет.
+  final VoidCallback? onOpenQuestions;
+
+  /// Сколько новых вопросов с последнего открытия списка (бейдж у Анны).
+  final int newQuestionsCount;
 
   @override
   State<ChatInput> createState() => _ChatInputState();
@@ -195,23 +203,6 @@ class _ChatInputState extends State<ChatInput> {
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
-  }
-
-  /// «Вопрос Анне» (D7) — шторка AskQuestionSheet для текущего клуба.
-  Future<void> _openAskQuestion() async {
-    final clubMonthId = widget.askQuestionClubMonthId;
-    if (clubMonthId == null) return;
-    final result = await showModalBottomSheet<QAAskResult>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => AskQuestionSheet(clubMonthId: clubMonthId),
-    );
-    if (result == null || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Вопрос отправлен — он появится в разделе «Вопросы»'),
-      backgroundColor: AppColors.success,
-    ));
   }
 
   void _handleSend() {
@@ -401,9 +392,13 @@ class _ChatInputState extends State<ChatInput> {
                         // — Обычный режим: скрепка + поле + (микрофон/отправка) —
                         : [
                             _AttachButton(onTap: widget.onAttachImage),
-                            if (widget.askQuestionClubMonthId != null &&
-                                !widget.isAdmin)
-                              _AskQuestionButton(onTap: _openAskQuestion),
+                            if (widget.onOpenQuestions != null)
+                              _QuestionsButton(
+                                count: widget.newQuestionsCount,
+                                onTap: widget.onOpenQuestions!,
+                              )
+                            else if (widget.onAskQuestion != null)
+                              _AskQuestionButton(onTap: widget.onAskQuestion!),
                             const SizedBox(width: 4),
                             Expanded(
                               child: Container(
@@ -489,7 +484,7 @@ class _AttachButton extends StatelessWidget {
   }
 }
 
-/// Кнопка «Вопрос Анне» (D7) — иконка рядом со скрепкой.
+/// Кнопка «Вопрос Анне» у участницы — иконка рядом со скрепкой.
 class _AskQuestionButton extends StatelessWidget {
   const _AskQuestionButton({required this.onTap});
   final VoidCallback onTap;
@@ -512,6 +507,69 @@ class _AskQuestionButton extends StatelessWidget {
               size: 24,
               color: AppColors.textSecondary,
               semanticLabel: 'Вопрос Анне',
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Кнопка «Вопросы» у Анны (15.11.2026) — на месте «Вопрос Анне»: иконка
+/// с красной цифрой новых вопросов (с последнего открытия списка).
+class _QuestionsButton extends StatelessWidget {
+  const _QuestionsButton({required this.count, required this.onTap});
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Вопросы',
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                const Icon(
+                  Icons.question_answer_outlined,
+                  size: 24,
+                  color: AppColors.textSecondary,
+                  semanticLabel: 'Вопросы',
+                ),
+                if (count > 0)
+                  Positioned(
+                    top: 4,
+                    right: 2,
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 18),
+                      height: 18,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppColors.error,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Text(
+                        count > 99 ? '99+' : '$count',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          height: 1.1,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
