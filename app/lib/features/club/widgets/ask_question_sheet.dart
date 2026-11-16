@@ -5,33 +5,26 @@ import '../../../core/network/network_error.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../models/chat_message.dart';
 import '../services/club_api_service.dart';
 
-/// Bottom sheet для задания вопроса Анне.
+/// Шторка «Вопрос Анне» из чата клуба (решение Анны 15.11.2026).
+///
+/// Вопрос уходит ОБЫЧНЫМ сообщением в чат клуба с пометкой isQuestion —
+/// видят все, отвечать и реагировать можно как на любое сообщение. Вкладки
+/// «Вопросы» больше нет.
 ///
 /// Ограничения с бэка:
-/// - min 5 символов
-/// - max 500 символов
-/// - дубликаты блокируются (409 QA_DUPLICATE)
-/// - не больше 3 вопросов в неделю (429 QUESTION_LIMIT, D2) — показываем
-///   своё сообщение, а не общее «Слишком часто»
+/// - текст как у сообщения чата (до 1000 символов, без ссылок у участниц);
+/// - не больше 3 вопросов в неделю (с понедельника 00:00 МСК) — 4-й →
+///   429 QUESTION_LIMIT, показываем questionLimitMessage.
 ///
-/// Возвращает [QAAskResult] (вопрос + остаток на неделю) через
-/// Navigator.pop, или null если отмена. Открывается из раздела «Вопросы» и
-/// кнопкой «Вопрос Анне» в чате (D7).
+/// При открытии запрашиваем остаток и показываем «Осталось N из 3 на этой
+/// неделе». Возвращает отправленное [ChatMessage] через Navigator.pop или
+/// null, если закрыли.
 class AskQuestionSheet extends ConsumerStatefulWidget {
-  const AskQuestionSheet({
-    super.key,
-    required this.clubMonthId,
-    this.remainingThisWeek,
-    this.weeklyLimit = 3,
-  });
+  const AskQuestionSheet({super.key, required this.clubMonthId});
   final String clubMonthId;
-
-  /// Остаток на неделю, если известен (из списка «Вопросы»). null — не
-  /// показываем подпись (Анна или открыли из чата).
-  final int? remainingThisWeek;
-  final int weeklyLimit;
 
   @override
   ConsumerState<AskQuestionSheet> createState() => _AskQuestionSheetState();
@@ -44,15 +37,40 @@ class _AskQuestionSheetState extends ConsumerState<AskQuestionSheet> {
   bool _isSending = false;
   String? _errorText;
 
-  static const int _maxChars = 500;
-  static const int _minChars = 5;
+  /// Остаток на неделю (null — ещё не загрузили или не удалось).
+  int? _remaining;
+  int _weeklyLimit = 3;
+
+  static const int _maxChars = 1000;
 
   @override
   void initState() {
     super.initState();
+    // Перерисовка на каждый ввод: кнопка «Задать вопрос» зависит от текста.
+    // Ошибку лимита не сбрасываем — она остаётся до понедельника.
     _controller.addListener(() {
-      if (_errorText != null) setState(() => _errorText = null);
+      setState(() {
+        if (!_limitReached) _errorText = null;
+      });
     });
+    _loadRemaining();
+  }
+
+  bool get _limitReached => _remaining != null && _remaining! <= 0;
+
+  Future<void> _loadRemaining() async {
+    try {
+      final api = ref.read(clubApiServiceProvider);
+      final result = await api.fetchQuestionsRemaining(widget.clubMonthId);
+      if (!mounted) return;
+      setState(() {
+        _remaining = result.remainingThisWeek;
+        _weeklyLimit = result.weeklyLimit;
+        if (_limitReached) _errorText = questionLimitMessage(null);
+      });
+    } catch (_) {
+      // Не загрузили остаток — подписи нет, лимит всё равно проверит сервер.
+    }
   }
 
   @override
@@ -64,10 +82,7 @@ class _AskQuestionSheetState extends ConsumerState<AskQuestionSheet> {
 
   Future<void> _submit() async {
     final text = _controller.text.trim();
-    if (text.length < _minChars) {
-      setState(() => _errorText = 'Минимум $_minChars символов');
-      return;
-    }
+    if (text.isEmpty) return;
     if (text.length > _maxChars) {
       setState(() => _errorText = 'Максимум $_maxChars символов');
       return;
@@ -80,20 +95,24 @@ class _AskQuestionSheetState extends ConsumerState<AskQuestionSheet> {
 
     try {
       final api = ref.read(clubApiServiceProvider);
-      final result = await api.askQuestion(
+      final ChatMessage sent = await api.sendTextMessage(
         clubMonthId: widget.clubMonthId,
-        questionText: text,
+        text: text,
+        isQuestion: true,
       );
       if (!mounted) return;
-      Navigator.of(context).pop(result);
+      Navigator.of(context).pop(sent);
     } on DioException catch (e) {
       if (!mounted) return;
       final code = ClubApiService.errorCodeFromException(e);
       setState(() {
         _isSending = false;
+        if (code == 'QUESTION_LIMIT') _remaining = 0;
         _errorText = switch (code) {
-          'QA_DUPLICATE' => 'Похожий вопрос уже задан',
           'QUESTION_LIMIT' => questionLimitMessage(e),
+          'LINK_NOT_ALLOWED' =>
+            'Ссылки в чате запрещены. Уберите ссылку из сообщения',
+          'FORBIDDEN' => 'В архиве нельзя отправлять сообщения',
           _ => userMessageFor(
               e,
               fallback: 'Не удалось отправить — попробуйте ещё раз',
@@ -111,8 +130,11 @@ class _AskQuestionSheetState extends ConsumerState<AskQuestionSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final remaining = _maxChars - _controller.text.length;
-    final isOverLimit = remaining < 0;
+    final remainingChars = _maxChars - _controller.text.length;
+    final isOverLimit = remainingChars < 0;
+    final canSend = !_isSending &&
+        !_limitReached &&
+        _controller.text.trim().isNotEmpty;
 
     // viewInsets — учитывает клавиатуру.
     return Padding(
@@ -148,14 +170,13 @@ class _AskQuestionSheetState extends ConsumerState<AskQuestionSheet> {
                 Text('Вопрос Анне', style: AppTypography.serifSectionTitle),
                 const SizedBox(height: 4),
                 Text(
-                  'Когда Анна ответит, пришлём уведомление',
+                  'Вопрос появится в чате клуба с пометкой «Вопрос Анне»',
                   style: AppTypography.caption,
                 ),
-                if (widget.remainingThisWeek != null) ...[
+                if (_remaining != null) ...[
                   const SizedBox(height: 4),
                   Text(
-                    'Осталось ${widget.remainingThisWeek} из '
-                    '${widget.weeklyLimit} на этой неделе',
+                    'Осталось $_remaining из $_weeklyLimit на этой неделе',
                     style: AppTypography.small,
                   ),
                 ],
@@ -177,7 +198,7 @@ class _AskQuestionSheetState extends ConsumerState<AskQuestionSheet> {
                     maxLines: 6,
                     minLines: 4,
                     maxLength: _maxChars,
-                    enabled: !_isSending,
+                    enabled: !_isSending && !_limitReached,
                     style: AppTypography.body,
                     decoration: InputDecoration(
                       hintText: 'О чём хотите спросить?',
@@ -191,7 +212,7 @@ class _AskQuestionSheetState extends ConsumerState<AskQuestionSheet> {
                   ),
                 ),
 
-                // — Счётчик символов / ошибка —
+                // — Ошибка / счётчик символов —
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Row(
@@ -206,14 +227,15 @@ class _AskQuestionSheetState extends ConsumerState<AskQuestionSheet> {
                               )
                             : const SizedBox.shrink(),
                       ),
-                      Text(
-                        '$remaining',
-                        style: AppTypography.small.copyWith(
-                          color: isOverLimit
-                              ? AppColors.error
-                              : AppColors.textTertiary,
+                      if (remainingChars <= 50)
+                        Text(
+                          '$remainingChars',
+                          style: AppTypography.small.copyWith(
+                            color: isOverLimit
+                                ? AppColors.error
+                                : AppColors.textTertiary,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -223,7 +245,7 @@ class _AskQuestionSheetState extends ConsumerState<AskQuestionSheet> {
                 // — Кнопка отправки —
                 AppButton(
                   text: _isSending ? 'Отправка...' : 'Задать вопрос',
-                  onPressed: _isSending ? null : _submit,
+                  onPressed: canSend ? _submit : null,
                 ),
               ],
             ),
