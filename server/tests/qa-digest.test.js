@@ -2,8 +2,10 @@
  * Дайджест новых вопросов Анне (UPDATES-PLAN D6, 15.11.2026).
  *
  * Проверяем qa-digest.service и час cron:
- * - N > 0 → пуш всем role=admin, текст «N новых вопросов, самый популярный:
- *   «…»» (самый популярный по interestedUserIds, текст обрезан до 80),
+ * - вопросы — сообщения чата с isQuestion (решение Анны 15.11.2026), без
+ *   удалённых и скрытых;
+ * - N > 0 → пуш всем role=admin, текст «N новых вопросов в чате клуба, самый
+ *   первый: «…»» (самый ранний, текст обрезан до 80),
  *   data { type: 'qa_digest', clubMonthId };
  * - нет вопросов / нет клуба → не шлём;
  * - отметка lastQaDigestAt не дала поставить (рестарт) → не шлём повторно;
@@ -20,12 +22,12 @@ jest.mock('../src/config/logger', () => ({
 }));
 jest.mock('../src/models/User', () => ({ find: jest.fn() }));
 jest.mock('../src/models/ClubMonth', () => ({ findOne: jest.fn(), updateOne: jest.fn() }));
-jest.mock('../src/models/QAQuestion', () => ({ find: jest.fn() }));
+jest.mock('../src/models/ChatMessage', () => ({ find: jest.fn() }));
 jest.mock('../src/services/push.service', () => ({ sendToUsers: jest.fn() }));
 
 const User = require('../src/models/User');
 const ClubMonth = require('../src/models/ClubMonth');
-const QAQuestion = require('../src/models/QAQuestion');
+const ChatMessage = require('../src/models/ChatMessage');
 const pushService = require('../src/services/push.service');
 const svc = require('../src/services/qa-digest.service');
 
@@ -72,24 +74,15 @@ describe('тексты', () => {
     expect(p.endsWith('…')).toBe(true);
     expect(svc.questionPreview('  Как   читать\nмедленно? ')).toBe('Как читать медленно?');
   });
-
-  test('самый популярный — по interestedUserIds, при равенстве ранний', () => {
-    const qs = [
-      { questionText: 'A', interestedUserIds: ['x'], createdAt: new Date('2026-11-15T10:00:00Z') },
-      { questionText: 'B', interestedUserIds: ['x', 'y'], createdAt: new Date('2026-11-15T12:00:00Z') },
-      { questionText: 'C', interestedUserIds: ['x', 'z'], createdAt: new Date('2026-11-15T11:00:00Z') },
-    ];
-    expect(svc.mostPopular(qs).questionText).toBe('C');
-    expect(svc.mostPopular([{ questionText: 'D', createdAt: NOW }]).questionText).toBe('D');
-  });
 });
 
 describe('sendQaDigest', () => {
-  test('есть новые вопросы → пуш админам с самым популярным', async () => {
-    QAQuestion.find.mockReturnValue(
+  test('есть новые вопросы в чате → пуш админам с самым первым', async () => {
+    // Запрос сортирует по createdAt ASC — первый в выдаче самый ранний.
+    ChatMessage.find.mockReturnValue(
       chain([
-        { questionText: 'Первый', interestedUserIds: [], createdAt: NOW },
-        { questionText: 'Популярный вопрос', interestedUserIds: ['u1', 'u2'], createdAt: NOW },
+        { text: 'Самый первый вопрос', createdAt: new Date('2026-11-15T08:00:00Z') },
+        { text: 'Второй', createdAt: new Date('2026-11-15T09:00:00Z') },
       ])
     );
 
@@ -98,8 +91,13 @@ describe('sendQaDigest', () => {
     expect(r.sent).toBe(1);
     expect(r.count).toBe(2);
     // Окно — последние 24 часа, текущий клуб.
-    const filter = QAQuestion.find.mock.calls[0][0];
+    const filter = ChatMessage.find.mock.calls[0][0];
     expect(filter.clubMonthId).toBe(CLUB);
+    // Только сообщения-вопросы, без удалённых и скрытых; ранние первыми.
+    expect(filter.isQuestion).toBe(true);
+    expect(filter.deletedAt).toBeNull();
+    expect(filter.isHidden).toEqual({ $ne: true });
+    expect(ChatMessage.find.mock.results[0].value.calls.sort).toEqual([{ createdAt: 1 }]);
     expect(filter.createdAt.$gte).toEqual(new Date(NOW.getTime() - 24 * 3600 * 1000));
     // Получатели — role=admin без удалённых.
     expect(User.find.mock.calls[0][0]).toEqual({ role: 'admin', isDeleted: { $ne: true } });
@@ -108,13 +106,13 @@ describe('sendQaDigest', () => {
     expect(key).toBeNull();
     expect(payload).toEqual({
       title: 'Новые вопросы в клубе',
-      body: '2 новых вопроса, самый популярный: «Популярный вопрос»',
+      body: '2 новых вопроса в чате клуба, самый первый: «Самый первый вопрос»',
       data: { type: 'qa_digest', clubMonthId: CLUB },
     });
   });
 
   test('нет новых вопросов → не шлём и отметку не ставим', async () => {
-    QAQuestion.find.mockReturnValue(chain([]));
+    ChatMessage.find.mockReturnValue(chain([]));
     const r = await svc.sendQaDigest(NOW);
     expect(r).toEqual({ sent: 0, skipped: 'empty', count: 0 });
     expect(ClubMonth.updateOne).not.toHaveBeenCalled();
@@ -129,7 +127,7 @@ describe('sendQaDigest', () => {
   });
 
   test('повтор при рестарте: отметку уже поставили → не шлём', async () => {
-    QAQuestion.find.mockReturnValue(chain([{ questionText: 'Q', interestedUserIds: [], createdAt: NOW }]));
+    ChatMessage.find.mockReturnValue(chain([{ text: 'Q', createdAt: NOW }]));
     ClubMonth.updateOne.mockResolvedValue({ modifiedCount: 0 });
     const r = await svc.sendQaDigest(NOW);
     expect(r.skipped).toBe('already_sent');
