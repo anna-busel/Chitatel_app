@@ -19,8 +19,10 @@ import '../providers/club_unread_provider.dart';
 import '../services/block_service.dart';
 import '../services/club_api_service.dart';
 import '../services/club_socket_service.dart';
+import 'ask_question_sheet.dart';
 import 'chat_message_bubble.dart';
 import 'chat_input.dart';
+import 'chat_questions_sheet.dart';
 import 'pinned_message_banner.dart';
 
 /// Подпись разделителя даты: «Сегодня» / «Вчера» / «5 июня» (+год для прошлых).
@@ -139,6 +141,10 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
   ChatMessage? _replyingTo;
   List<MentionableUser> _mentionable = const [];
   bool _isAdmin = false;
+
+  /// «Вопросы» у Анны (15.11.2026): новых вопросов с последнего открытия
+  /// списка. С сервера при входе, дальше +1 по сокету на чужой вопрос.
+  int _newQuestionsCount = 0;
   final Set<String> _adminIds = {};
   final Set<String> _readSent = {};
   Timer? _readDebounce;
@@ -421,6 +427,7 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
       await _socketService!.connect(widget.club.id);
 
       _scheduleMarkRead();
+      if (_isAnna) _refreshNewQuestionsCount();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -442,6 +449,10 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
       final isMine = event.message.isMine(_currentUserId);
       setState(() {
         _messages.insert(0, event.message);
+        // У Анны: новый вопрос → +1 на кнопке «Вопросы».
+        if (_isAnna && event.message.isQuestion && !isMine) {
+          _newQuestionsCount += 1;
+        }
       });
       if (isMine) _scrollToBottomAfterSend();
       _scheduleMarkRead();
@@ -940,6 +951,53 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
         backgroundColor: AppColors.error,
       ));
     }
+  }
+
+  /// Анна (админ клуба): вместо «Вопрос Анне» у неё кнопка «Вопросы».
+  bool get _isAnna =>
+      widget.access.kind == ClubAccessKind.admin || _isAdmin;
+
+  /// Цифра на кнопке «Вопросы» у Анны — newCount с сервера. Ошибку глушим:
+  /// цифры просто не будет до следующего входа.
+  Future<void> _refreshNewQuestionsCount() async {
+    try {
+      final api = ref.read(clubApiServiceProvider);
+      final result = await api.fetchChatQuestions(widget.club.id);
+      if (!mounted) return;
+      setState(() => _newQuestionsCount = result.newCount);
+    } catch (_) {}
+  }
+
+  /// Участница: шторка «Вопрос Анне». Вопрос уходит обычным сообщением в чат
+  /// с пометкой; шторка возвращает отправленное — ставим его в ленту.
+  Future<void> _openAskQuestion() async {
+    FocusScope.of(context).unfocus();
+    final sent = await showModalBottomSheet<ChatMessage>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => AskQuestionSheet(clubMonthId: widget.club.id),
+    );
+    if (sent == null || !mounted) return;
+    _insertOwnMessage(sent);
+  }
+
+  /// Анна: шторка со списком вопросов клуба. Открыла — цифра обнуляется
+  /// (на сервере questionsSeenAt = now). Тап по вопросу → переход к
+  /// сообщению в ленте с подсветкой (как к закрепу).
+  Future<void> _openQuestions() async {
+    FocusScope.of(context).unfocus();
+    setState(() => _newQuestionsCount = 0);
+    final api = ref.read(clubApiServiceProvider);
+    unawaited(api.markChatQuestionsSeen(widget.club.id));
+    final messageId = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ChatQuestionsSheet(clubMonthId: widget.club.id),
+    );
+    if (messageId == null || !mounted) return;
+    await _jumpToMessage(messageId);
   }
 
   Future<void> _sendVoice(
@@ -1835,11 +1893,10 @@ class _ChatTabState extends ConsumerState<ChatTab> with WidgetsBindingObserver {
                 ? null
                 : _replyPreviewText(_replyingTo!),
             onCancelReply: _replyingTo == null ? null : _cancelReply,
-            // D7: «Вопрос Анне» — участницам, не Анне.
-            askQuestionClubMonthId:
-                widget.access.kind == ClubAccessKind.admin || _isAdmin
-                    ? null
-                    : widget.club.id,
+            // 15.11.2026: участнице — «Вопрос Анне», Анне — «Вопросы» с цифрой.
+            onAskQuestion: _isAnna ? null : _openAskQuestion,
+            onOpenQuestions: _isAnna ? _openQuestions : null,
+            newQuestionsCount: _newQuestionsCount,
           ),
         ],
       ),
