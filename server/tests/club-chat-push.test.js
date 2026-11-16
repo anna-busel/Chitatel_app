@@ -1,13 +1,13 @@
 /**
- * Пуши чата клуба (решение Анны 07.11.2026, UPDATES-PLAN U).
+ * Пуши чата клуба.
  *
  * Проверяем services/club-chat-push.service.js:
- * - пуш «Анна написала в чате клуба» уходит при сообщении админа и не уходит
- *   при сообщении участницы;
- * - антиспам 30 минут (отметка lastAnnaPushAt в ClubMonth);
- * - тем, кому уже ушёл reply/mention, второй пуш не шлём; себе не шлём;
- * - получатели — по computeClubAccess (текущий/архив), чужой месяц — нет;
- * - настройки clubAnna / clubDigest (chatMessages гейтит push.sendToUsers);
+ * - пуш о КАЖДОМ сообщении в чате (решение Анны 15.11.2026): получатели —
+ *   все с доступом к клубу (computeClubAccess, плюс админы как в E1), без
+ *   автора, без заблокировавших автора, без исключённых (reply/mention,
+ *   онлайн в комнате); настройки clubAll / clubAnna (chatMessages гейтит
+ *   push.sendToUsers); старые аккаунты без полей — получают; один пуш на
+ *   получателя; текст для фото/голосового; скрытые/удалённые — без пуша;
  * - вечерняя сводка: склонение, N=0 не шлёт, повтор отсекается.
  *
  * БД не нужна: модели и push.service подменены jest.mock.
@@ -34,6 +34,7 @@ const NOV = {
   _id: 'club-nov',
   year: 2026,
   month: 11,
+  title: 'Бегство от свободы',
   startsAt: new Date(Date.UTC(2026, 10, 1)),
   endsAt: new Date(Date.UTC(2026, 10, 30, 23, 59, 59, 999)),
 };
@@ -45,8 +46,8 @@ const OCT = {
   endsAt: new Date(Date.UTC(2026, 9, 31, 23, 59, 59, 999)),
 };
 
-const ANNA = { _id: 'anna', role: 'admin' };
-const MEMBER = { _id: 'm1', role: 'user' };
+const ANNA = { _id: 'anna', role: 'admin', name: 'Анна' };
+const MEMBER = { _id: 'm1', role: 'user', name: 'Оля' };
 
 function reader(id, extra = {}) {
   return {
@@ -77,96 +78,132 @@ beforeEach(() => {
   ClubMonth.updateOne.mockResolvedValue({ modifiedCount: 1 });
 });
 
-describe('пуш «Анна написала в чате клуба»', () => {
-  const textMsg = { type: 'text', text: '  Девочки, завтра эфир!  ', userId: 'anna' };
+describe('пуш о новом сообщении в чате клуба', () => {
+  const memberMsg = { _id: 'msg1', type: 'text', text: '  Мне понравилась глава  ', userId: 'm1' };
+  const annaMsg = { _id: 'msg2', type: 'text', text: 'Девочки, завтра эфир!', userId: 'anna' };
 
-  test('сообщение Анны — пуш всем читателям клуба, себе нет', async () => {
-    mockUsers([reader('r1'), reader('r2'), reader('anna', { role: 'admin' })]);
-    const r = await svc.notifyAnnaMessage({ club: NOV, author: ANNA, message: textMsg, now: NOW });
+  test('сообщение участницы — всем с доступом, кроме автора; текст «Имя: текст»', async () => {
+    mockUsers([reader('r1'), reader('m1'), reader('anna', { role: 'admin', clubMonthsEntitled: [] })]);
+    const r = await svc.notifyChatMessage({ club: NOV, author: MEMBER, message: memberMsg, now: NOW });
 
     expect(r.sent).toBe(2);
-    expect(sentIds()).toEqual(['r1', 'r2']);
+    expect(sentIds()).toEqual(['r1', 'anna']);
+    expect(push.sendToUsers).toHaveBeenCalledTimes(1);
     const [, payload, key] = push.sendToUsers.mock.calls[0];
     expect(key).toBe('chatMessages');
     expect(payload).toEqual({
-      title: 'Анна написала в чате клуба',
-      body: 'Девочки, завтра эфир!',
-      data: { type: 'mention', clubMonthId: 'club-nov' },
+      title: 'Бегство от свободы',
+      body: 'Оля: Мне понравилась глава',
+      data: { type: 'mention', clubMonthId: 'club-nov', messageId: 'msg1' },
+      threadId: 'club-club-nov',
     });
-    // Кандидаты — по месяцу клуба, без бана/удалённых.
+    // Кандидаты — как список участниц E1: месяц клуба или админ, без бана/
+    // удалённых, с устройством; без тех, кто заблокировал автора.
     const filter = User.find.mock.calls[0][0];
-    expect(filter.clubMonthsEntitled).toBe('2026-11');
-    expect(filter.isBanned).toEqual({ $ne: true });
-    expect(filter.isDeleted).toEqual({ $ne: true });
+    const [members, hasDevice] = filter.$and;
+    expect(members.$or).toEqual([{ clubMonthsEntitled: '2026-11' }, { role: 'admin' }]);
+    expect(members.isBanned).toEqual({ $ne: true });
+    expect(members.isDeleted).toEqual({ $ne: true });
+    expect(hasDevice.$or).toHaveLength(2);
+    expect(filter.blockedUsers).toEqual({ $ne: 'm1' });
   });
 
-  test('сообщение участницы — пуша нет, отметку не трогаем', async () => {
-    mockUsers([reader('r1')]);
-    const r = await svc.notifyAnnaMessage({ club: NOV, author: MEMBER, message: textMsg, now: NOW });
-
-    expect(r.sent).toBe(0);
-    expect(ClubMonth.updateOne).not.toHaveBeenCalled();
-    expect(push.sendToUsers).not.toHaveBeenCalled();
-  });
-
-  test('антиспам: окно 30 минут занято → пуша нет', async () => {
-    mockUsers([reader('r1')]);
-    ClubMonth.updateOne.mockResolvedValue({ modifiedCount: 0 });
-    const r = await svc.notifyAnnaMessage({ club: NOV, author: ANNA, message: textMsg, now: NOW });
-
-    expect(r.skipped).toBe('cooldown');
-    expect(push.sendToUsers).not.toHaveBeenCalled();
-    // Условие отметки: пусто или старше 30 минут.
-    const [filter, update] = ClubMonth.updateOne.mock.calls[0];
-    expect(filter._id).toBe('club-nov');
-    expect(filter.$or).toEqual([
-      { lastAnnaPushAt: null },
-      { lastAnnaPushAt: { $lte: new Date(NOW.getTime() - 30 * 60 * 1000) } },
-    ]);
-    expect(update).toEqual({ $set: { lastAnnaPushAt: NOW } });
-  });
-
-  test('кому ушёл reply/mention — второй пуш не шлём', async () => {
-    mockUsers([reader('r1'), reader('r2'), reader('r3')]);
-    await svc.notifyAnnaMessage({
-      club: NOV,
-      author: ANNA,
-      message: textMsg,
-      excludeUserIds: ['r2'],
-      now: NOW,
-    });
-    expect(sentIds()).toEqual(['r1', 'r3']);
-  });
-
-  test('доступ по computeClubAccess: архивное окно — да, чужой месяц — нет', async () => {
+  test('сообщение Анны — прежний текст, один пуш на получателя', async () => {
     mockUsers([
-      // октябрь оплачен, 10 ноября — архивное окно октябрьского клуба
-      reader('arch', { clubMonthsEntitled: ['2026-10'], subscriptionExpiresAt: new Date(Date.UTC(2026, 9, 31)) }),
-      // ноябрь оплачен, но подписка кончилась — текущий клуб закрыт
-      reader('expired', { subscriptionExpiresAt: new Date(Date.UTC(2026, 10, 5)) }),
+      reader('r1'),
+      reader('r2', { pushSettings: { clubAll: true, clubAnna: true } }),
+      reader('anna', { role: 'admin' }),
     ]);
-    await svc.notifyAnnaMessage({ club: OCT, author: ANNA, message: textMsg, now: NOW });
-    // 'expired' не оплачивала октябрь — в выборку по месяцу не попадёт и в
-    // computeClubAccess тоже: шлём только архивной.
-    expect(sentIds()).toEqual(['arch']);
+    await svc.notifyChatMessage({ club: NOV, author: ANNA, message: annaMsg, now: NOW });
+
+    expect(push.sendToUsers).toHaveBeenCalledTimes(1);
+    expect(sentIds()).toEqual(['r1', 'r2']);
+    const [, payload] = push.sendToUsers.mock.calls[0];
+    expect(payload.title).toBe('Анна написала в чате клуба');
+    expect(payload.body).toBe('Девочки, завтра эфир!');
+    expect(payload.data).toEqual({ type: 'mention', clubMonthId: 'club-nov', messageId: 'msg2' });
+  });
+
+  test('настройки: clubAll=false — только сообщения Анны при clubAnna; оба false — ничего', async () => {
+    const users = [
+      reader('all'), // старый аккаунт без полей — получает всё
+      reader('annaOnly', { pushSettings: { clubAll: false } }),
+      reader('none', { pushSettings: { clubAll: false, clubAnna: false } }),
+      reader('allNoAnna', { pushSettings: { clubAnna: false } }),
+    ];
+    mockUsers(users);
+    await svc.notifyChatMessage({ club: NOV, author: MEMBER, message: memberMsg, now: NOW });
+    expect(sentIds()).toEqual(['all', 'allNoAnna']);
 
     jest.clearAllMocks();
-    ClubMonth.updateOne.mockResolvedValue({ modifiedCount: 1 });
-    await svc.notifyAnnaMessage({ club: NOV, author: ANNA, message: textMsg, now: NOW });
-    expect(sentIds()).toEqual([]);
+    mockUsers(users);
+    await svc.notifyChatMessage({ club: NOV, author: ANNA, message: annaMsg, now: NOW });
+    expect(sentIds()).toEqual(['all', 'annaOnly', 'allNoAnna']);
   });
 
-  test('настройка clubAnna=false — не шлём; chatMessages гейтит sendToUsers', async () => {
-    mockUsers([reader('r1', { pushSettings: { clubAnna: false } }), reader('r2')]);
-    await svc.notifyAnnaMessage({ club: NOV, author: ANNA, message: textMsg, now: NOW });
-    expect(sentIds()).toEqual(['r2']);
+  test('chatMessages=false — отсекает sendToUsers (гейт передаётся)', async () => {
+    mockUsers([reader('r1', { pushSettings: { chatMessages: false } })]);
+    await svc.notifyChatMessage({ club: NOV, author: MEMBER, message: memberMsg, now: NOW });
     expect(push.sendToUsers.mock.calls[0][2]).toBe('chatMessages');
   });
 
-  test('превью: текст до 140 символов, фото, голосовое', () => {
-    expect(svc.messagePreview({ type: 'text', text: 'а'.repeat(300) })).toHaveLength(140);
-    expect(svc.messagePreview({ type: 'image', text: 'подпись' })).toBe('Фото');
-    expect(svc.messagePreview({ type: 'voice' })).toBe('Голосовое сообщение');
+  test('старый аккаунт: pushSettings нет совсем — получает', async () => {
+    mockUsers([reader('old', { pushSettings: undefined })]);
+    await svc.notifyChatMessage({ club: NOV, author: MEMBER, message: memberMsg, now: NOW });
+    expect(sentIds()).toEqual(['old']);
+  });
+
+  test('исключённые (reply/mention, онлайн в комнате) — не получают', async () => {
+    mockUsers([reader('r1'), reader('r2'), reader('r3')]);
+    await svc.notifyChatMessage({
+      club: NOV,
+      author: MEMBER,
+      message: memberMsg,
+      excludeUserIds: ['r2', 'r3'],
+      now: NOW,
+    });
+    expect(sentIds()).toEqual(['r1']);
+  });
+
+  test('доступ по computeClubAccess: архивное окно — да, истёкшая подписка — нет', async () => {
+    mockUsers([
+      reader('arch', { clubMonthsEntitled: ['2026-10'], subscriptionExpiresAt: new Date(Date.UTC(2026, 9, 31)) }),
+    ]);
+    await svc.notifyChatMessage({ club: OCT, author: MEMBER, message: memberMsg, now: NOW });
+    expect(sentIds()).toEqual(['arch']);
+
+    jest.clearAllMocks();
+    mockUsers([reader('expired', { subscriptionExpiresAt: new Date(Date.UTC(2026, 10, 5)) })]);
+    await svc.notifyChatMessage({ club: NOV, author: MEMBER, message: memberMsg, now: NOW });
+    expect(sentIds()).toEqual([]);
+  });
+
+  test('скрытое или удалённое сообщение — пуша нет', async () => {
+    mockUsers([reader('r1')]);
+    const a = await svc.notifyChatMessage({ club: NOV, author: MEMBER, message: { ...memberMsg, isHidden: true }, now: NOW });
+    const b = await svc.notifyChatMessage({ club: NOV, author: MEMBER, message: { ...memberMsg, deletedAt: NOW }, now: NOW });
+    expect(a.skipped).toBe('not_live');
+    expect(b.skipped).toBe('not_live');
+    expect(User.find).not.toHaveBeenCalled();
+    expect(push.sendToUsers).not.toHaveBeenCalled();
+  });
+
+  test('текст: фото, голосовое, обрезка, без имени и названия клуба', () => {
+    const club = { _id: 'c' };
+    expect(svc.chatPushPayload(NOV, MEMBER, { _id: 'x', type: 'image', text: 'подпись' }).body)
+      .toBe('Оля: 📷 Фото');
+    expect(svc.chatPushPayload(NOV, ANNA, { _id: 'x', type: 'voice' }).body).toBe('🎤 Голосовое');
+    const p = svc.chatPushPayload(club, { _id: 'u', role: 'user' }, { _id: 'x', type: 'text', text: 'а'.repeat(300) });
+    expect(p.title).toBe('Чат клуба');
+    expect(p.body).toBe(`Участница: ${'а'.repeat(100)}…`);
+    expect(svc.messagePreview({ type: 'text', text: 'коротко' })).toBe('коротко');
+  });
+
+  test('wantsChatPush', () => {
+    expect(svc.wantsChatPush({}, false)).toBe(true);
+    expect(svc.wantsChatPush({ pushSettings: { clubAll: false } }, false)).toBe(false);
+    expect(svc.wantsChatPush({ pushSettings: { clubAll: false } }, true)).toBe(true);
+    expect(svc.wantsChatPush({ pushSettings: { clubAll: false, clubAnna: false } }, true)).toBe(false);
   });
 });
 
