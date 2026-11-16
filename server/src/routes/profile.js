@@ -25,7 +25,8 @@ const HIDDEN_FIELDS = '-passwordHash -refreshTokens';
  *   приложение показывает экран-согласие перед первой публикацией;
  * - authProvider — 'email' | 'apple' | 'google': «Сменить пароль» (P4)
  *   показывается только при входе по почте;
- * - pushSettings.offers — «Предложения и акции» (K0), по умолчанию false.
+ * - pushSettings.offers — «Предложения и акции» (K0), по умолчанию false;
+ * - pushSettings.clubAll — «Все сообщения в чате» (15.11.2026), по умолчанию true.
  */
 function forClient(user) {
   return {
@@ -37,6 +38,8 @@ function forClient(user) {
     pushSettings: {
       ...(user.pushSettings || {}),
       offers: !!(user.pushSettings && user.pushSettings.offers === true),
+      // clubAll (15.11.2026): нет поля → включено (как считает сервер пушей).
+      clubAll: !(user.pushSettings && user.pushSettings.clubAll === false),
     },
   };
 }
@@ -222,6 +225,8 @@ const pushSettingsSchema = z.object({
   reminders: z.boolean().optional(),
   // Пуши чата клуба (07.11.2026), см. services/club-chat-push.service.js.
   clubAnna: z.boolean().optional(),
+  // «Все сообщения в чате» (15.11.2026): пуш о каждом сообщении.
+  clubAll: z.boolean().optional(),
   clubDigest: z.boolean().optional(),
   // «Предложения и акции» (K0, Apple 4.5.4): по умолчанию выкл.
   offers: z.boolean().optional(),
