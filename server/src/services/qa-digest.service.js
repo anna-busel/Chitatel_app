@@ -2,17 +2,18 @@ const logger = require('../config/logger');
 const pushService = require('./push.service');
 const User = require('../models/User');
 const ClubMonth = require('../models/ClubMonth');
-const QAQuestion = require('../models/QAQuestion');
+const ChatMessage = require('../models/ChatMessage');
 
 /**
- * Дайджест новых вопросов Анне (UPDATES-PLAN D6, 15.11.2026).
+ * Дайджест новых вопросов Анне (UPDATES-PLAN D6, 15.11.2026; с 15.11 вопросы —
+ * сообщения чата с isQuestion, решение Анны).
  *
  * Раз в день (cron в jobs/push-scheduler.js, по умолчанию 10:00 МСК —
  * QA_DIGEST_HOUR_MSK) — пуш всем role=admin: «Новые вопросы в клубе»,
- * «N новых вопросов, самый популярный: «…»». Считаем вопросы текущего клуба
+ * «N новых вопросов в чате клуба, самый первый: «…»». Считаем вопросы
+ * (ChatMessage isQuestion, не удалённые и не скрытые) текущего клуба
  * (startsAt <= now <= endsAt, как сводка чата) за последние 24 часа; самый
- * популярный — по числу «тоже интересно» среди них (при равенстве — более
- * ранний). N = 0 → не шлём.
+ * первый — самый ранний из них. N = 0 → не шлём.
  *
  * Повтор при рестарте отсекает ClubMonth.lastQaDigestAt (как lastDigestAt у
  * сводки чата): отметка ставится атомарно ДО рассылки.
@@ -44,22 +45,6 @@ function questionPreview(text) {
   return `${t.slice(0, PREVIEW_MAX - 1).trimEnd()}…`;
 }
 
-/** Самый популярный вопрос: больше «тоже интересно», при равенстве — ранний. */
-function mostPopular(questions) {
-  let best = null;
-  let bestCount = -1;
-  for (const q of questions || []) {
-    const n = Array.isArray(q.interestedUserIds) ? q.interestedUserIds.length : 0;
-    if (
-      n > bestCount ||
-      (n === bestCount && new Date(q.createdAt) < new Date(best.createdAt))
-    ) {
-      best = q;
-      bestCount = n;
-    }
-  }
-  return best;
-}
 
 async function sendQaDigest(now = new Date()) {
   const club = await ClubMonth.findOne({
@@ -70,11 +55,15 @@ async function sendQaDigest(now = new Date()) {
     .lean();
   if (!club) {return { sent: 0, skipped: 'no_club' };}
 
-  const questions = await QAQuestion.find({
+  const questions = await ChatMessage.find({
     clubMonthId: club._id,
+    isQuestion: true,
+    isHidden: { $ne: true },
+    deletedAt: null,
     createdAt: { $gte: new Date(now.getTime() - DIGEST_WINDOW_MS) },
   })
-    .select('questionText interestedUserIds createdAt')
+    .select('text createdAt')
+    .sort({ createdAt: 1 })
     .lean();
   const count = questions.length;
   if (!count) {return { sent: 0, skipped: 'empty', count: 0 };}
@@ -91,13 +80,13 @@ async function sendQaDigest(now = new Date()) {
   );
   if (!mark || !mark.modifiedCount) {return { sent: 0, skipped: 'already_sent', count };}
 
-  const top = mostPopular(questions);
+  const first = questions[0];
   const admins = await User.find({ role: 'admin', isDeleted: { $ne: true } })
     .select('_id devices pushToken pushSettings isDeleted')
     .lean();
   const payload = {
     title: 'Новые вопросы в клубе',
-    body: `${newQuestionsLabel(count)}, самый популярный: «${questionPreview(top.questionText)}»`,
+    body: `${newQuestionsLabel(count)} в чате клуба, самый первый: «${questionPreview(first.text)}»`,
     data: { type: 'qa_digest', clubMonthId: String(club._id) },
   };
   const { sent } = await pushService.sendToUsers(admins, payload, null);
@@ -114,6 +103,5 @@ module.exports = {
   sendQaDigest,
   newQuestionsLabel,
   questionPreview,
-  mostPopular,
   PREVIEW_MAX,
 };
