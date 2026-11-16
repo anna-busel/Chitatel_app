@@ -119,6 +119,25 @@ function clubMonthKey(club) {
 }
 
 /**
+ * Фильтр Mongo «участницы клуба»: ключ месяца в clubMonthsEntitled (с
+ * includeAdmins — или role=admin), без бана и удалённых. Общий для списка
+ * участниц E1 (routes/club.js, GET /:clubMonthId/members) и пушей чата
+ * (services/club-chat-push.service.js). Чистая функция.
+ */
+function clubMembersFilter(club, { includeAdmins = true } = {}) {
+  const filter = {
+    isBanned: { $ne: true },
+    isDeleted: { $ne: true },
+  };
+  if (includeAdmins) {
+    filter.$or = [{ clubMonthsEntitled: clubMonthKey(club) }, { role: 'admin' }];
+  } else {
+    filter.clubMonthsEntitled = clubMonthKey(club);
+  }
+  return filter;
+}
+
+/**
  * Middleware проверки подписки на клуб.
  *
  * Стек проверок:
@@ -544,4 +563,5 @@ module.exports = {
   clubMonthKeysForPurchase,
   coveredClubMonthKeys,
   clubMonthKey,
+  clubMembersFilter,
 };
