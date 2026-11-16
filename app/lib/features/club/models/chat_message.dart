@@ -122,6 +122,7 @@ class ChatMessage {
     this.readBy = const [],
     this.isPinned = false,
     this.reportCount = 0,
+    this.isQuestion = false,
   });
 
   /// MongoDB ObjectId.
@@ -174,6 +175,9 @@ class ChatMessage {
 
   /// Счётчик жалоб (для админки).
   final int reportCount;
+
+  /// «Вопрос Анне» (15.11.2026) — в ленте плашка над текстом.
+  final bool isQuestion;
 
   /// Время создания (сортировка чата).
   final DateTime createdAt;
@@ -249,6 +253,7 @@ class ChatMessage {
       readBy: readBy,
       isPinned: json['isPinned'] == true,
       reportCount: (json['reportCount'] as num?)?.toInt() ?? 0,
+      isQuestion: json['isQuestion'] == true,
       createdAt: _parseDate(json['createdAt']) ?? DateTime.now(),
     );
   }
@@ -283,6 +288,7 @@ class ChatMessage {
       readBy: readBy,
       isPinned: isPinned ?? this.isPinned,
       reportCount: reportCount,
+      isQuestion: isQuestion,
     );
   }
 
