@@ -10,6 +10,7 @@ const {
   resolveClubAccess,
   computeClubAccess,
   clubMonthKey,
+  clubMembersFilter,
 } = require('../middleware/subscription');
 const { success } = require('../utils/response');
 const { AppError } = require('../middleware/error');
@@ -20,6 +21,7 @@ const pushService = require('../services/push.service');
 const clubChatPush = require('../services/club-chat-push.service');
 const chatUnread = require('../services/chat-unread.service');
 const qaService = require('../services/qa.service');
+const chatQuestions = require('../services/chat-questions.service');
 const logger = require('../config/logger');
 const User = require('../models/User');
 const ClubMonth = require('../models/ClubMonth');
@@ -521,12 +523,9 @@ const membersSchema = z.object({
   page: z.coerce.number().int().min(1).max(10000).default(1),
 });
 
+// Общий фильтр с пушами чата (middleware/subscription.clubMembersFilter).
 function membersFilter(club) {
-  return {
-    $or: [{ clubMonthsEntitled: clubMonthKey(club) }, { role: 'admin' }],
-    isBanned: { $ne: true },
-    isDeleted: { $ne: true },
-  };
+  return clubMembersFilter(club, { includeAdmins: true });
 }
 
 async function membersCount(club, now = Date.now()) {
@@ -852,6 +851,8 @@ const chatCreateSchema = z
       .max(10)
       .optional()
       .default([]),
+    // «Вопрос Анне» (15.11.2026): лимит 3 в неделю, у админа игнорируется.
+    isQuestion: z.boolean().optional().default(false),
   })
   .refine(
     (data) => {
@@ -884,17 +885,32 @@ async function sanitizeMentions(rawMentions) {
   return admins.map((u) => u._id);
 }
 
-// Пуш «Анна написала в чате клуба» (решение Анны 07.11.2026). Без await:
-// ответ на отправку не ждёт рассылку; ошибки — только в лог. Для не-админа
-// сервис сразу выходит. excludeUserIds — кому уже ушёл reply/mention.
-function notifyAnnaMessageAsync(club, author, message, excludeUserIds = []) {
-  if (!author || author.role !== 'admin') {
-    return;
+// Пуш о новом сообщении в чате клуба (решение Анны 15.11.2026): всем
+// участницам по их настройкам (clubAll / clubAnna), кроме автора, тех, кто
+// сейчас в комнате чата по сокету, и excludeUserIds (кому уже ушёл reply/
+// mention). Без await: ответ на отправку не ждёт рассылку; ошибки — в лог.
+async function onlineUserIds(io, clubId) {
+  if (!io) {return [];}
+  try {
+    const sockets = await io.in(`club:${String(clubId)}`).fetchSockets();
+    return sockets.map((s) => s.data && s.data.userId).filter(Boolean).map(String);
+  } catch (_err) {
+    return [];
   }
-  clubChatPush
-    .notifyAnnaMessage({ club, author, message, excludeUserIds })
+}
+
+function notifyChatMessageAsync(io, club, author, message, excludeUserIds = []) {
+  onlineUserIds(io, club._id)
+    .then((online) =>
+      clubChatPush.notifyChatMessage({
+        club,
+        author,
+        message,
+        excludeUserIds: [...excludeUserIds, ...online],
+      })
+    )
     .catch((err) => {
-      logger.error('Club chat Anna push error', {
+      logger.error('Club chat message push error', {
         clubMonthId: String(club._id),
         message: err.message,
       });
@@ -943,6 +959,15 @@ router.post(
       const isAdmin = author && author.role === 'admin';
       assertNoLinkForNonAdmin(req.body.text, isAdmin);
 
+      // «Вопрос Анне»: админ вопросы себе не задаёт — флаг игнорируем.
+      const isQuestion = !isAdmin && req.body.isQuestion === true;
+      if (isQuestion) {
+        await chatQuestions.assertCanAsk({
+          userId: req.user.userId,
+          clubMonthId: req.club._id,
+        });
+      }
+
       let parentAuthorId = null;
       if (req.body.replyToId) {
         const parent = await ChatMessage.findById(req.body.replyToId)
@@ -971,6 +996,7 @@ router.post(
         voiceWaveform: [],
         replyToId: req.body.replyToId || null,
         mentions,
+        isQuestion,
       });
 
       await ClubMonth.updateOne(
@@ -1019,7 +1045,7 @@ router.post(
             .catch(() => {});
         }
 
-        notifyAnnaMessageAsync(req.club, author, message, [...targets.keys()]);
+        notifyChatMessageAsync(io, req.club, author, message, [...targets.keys()]);
       }
 
       return success(res, { message: populated }, 201);
@@ -1088,7 +1114,7 @@ router.post(
 
       // Запрет ссылок для не-админов (в подписи картинки).
       const author = await User.findById(req.user.userId)
-        .select('role')
+        .select('role name')
         .lean();
       const isAdmin = author && author.role === 'admin';
       assertNoLinkForNonAdmin(caption, isAdmin);
@@ -1156,7 +1182,7 @@ router.post(
       const io = req.app.get('io');
       emitToClub(io, req.club._id, 'chat:new_message', { message: populated });
 
-      notifyAnnaMessageAsync(req.club, author, message);
+      notifyChatMessageAsync(io, req.club, author, message);
 
       return success(res, { message: populated }, 201);
     } catch (err) {
@@ -1216,7 +1242,7 @@ router.post(
 
       // Только Анна-admin отправляет голосовые.
       const author = await User.findById(req.user.userId)
-        .select('role')
+        .select('role name')
         .lean();
       if (!author || author.role !== 'admin') {
         throw new AppError(
@@ -1328,7 +1354,7 @@ router.post(
       const io = req.app.get('io');
       emitToClub(io, req.club._id, 'chat:new_message', { message: populated });
 
-      notifyAnnaMessageAsync(req.club, author, message);
+      notifyChatMessageAsync(io, req.club, author, message);
 
       return success(res, { message: populated }, 201);
     } catch (err) {
@@ -1858,6 +1884,108 @@ router.post(
         ok: true,
         lastReadAt: state ? state.lastReadAt : null,
         lastReadMessageId: state ? state.lastReadMessageId : null,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/* ------------------------------------------------------------------ *
+ *                  ВОПРОСЫ АННЕ В ЧАТЕ (15.11.2026)                  *
+ * ------------------------------------------------------------------ */
+
+/**
+ * GET /api/club/:clubMonthId/chat/questions?page=1
+ * Вопросы клуба (сообщения чата с isQuestion) — новые сверху, по 20.
+ * Видят все с доступом к клубу. Без скрытых, удалённых и от заблокированных.
+ *
+ * Ответ: { questions: [сообщение в формате /chat], hasMore, newCount }.
+ * newCount — вопросы новее questionsSeenAt текущего пользователя
+ * (ChatReadState); отметки нет — все вопросы клуба.
+ */
+const QUESTIONS_PAGE_SIZE = 20;
+const questionsListSchema = z.object({
+  page: z.coerce.number().int().min(1).max(10000).default(1),
+});
+
+router.get(
+  '/:clubMonthId/chat/questions',
+  validate(questionsListSchema, 'query'),
+  resolveClubAccess,
+  async (req, res, next) => {
+    try {
+      const { page } = req.query;
+      const blockedIds = await getBlockedIds(req.user.userId);
+      const blockedSet = new Set(blockedIds.map(String));
+
+      const [rows, newCount] = await Promise.all([
+        ChatMessage.find(chatQuestions.questionsFilter(req.club._id, blockedIds))
+          .select('-readBy')
+          .sort({ createdAt: -1 })
+          .skip((page - 1) * QUESTIONS_PAGE_SIZE)
+          .limit(QUESTIONS_PAGE_SIZE + 1)
+          .populate('userId', 'name avatarUrl')
+          .populate(REPLY_POPULATE)
+          .lean(),
+        chatQuestions.countNew({
+          userId: req.user.userId,
+          clubMonthId: req.club._id,
+          blockedIds,
+        }),
+      ]);
+
+      const hasMore = rows.length > QUESTIONS_PAGE_SIZE;
+      const questions = rows.slice(0, QUESTIONS_PAGE_SIZE);
+      questions.forEach(withFreshMedia);
+      questions.forEach((m) => stripBlockedReply(m, blockedSet));
+
+      return success(res, { questions, hasMore, newCount });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/club/:clubMonthId/chat/questions/seen
+ * Открыла список вопросов — questionsSeenAt = now (newCount обнуляется).
+ * Ответ: { questionsSeenAt }.
+ */
+router.post(
+  '/:clubMonthId/chat/questions/seen',
+  resolveClubAccess,
+  async (req, res, next) => {
+    try {
+      const questionsSeenAt = await chatQuestions.markSeen(
+        req.user.userId,
+        req.club._id
+      );
+      return success(res, { questionsSeenAt });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/**
+ * GET /api/club/:clubMonthId/chat/questions/remaining
+ * Сколько вопросов Анне участница ещё может задать на этой неделе.
+ * Ответ: { remainingThisWeek, weeklyLimit: 3 } (у админа remainingThisWeek null).
+ */
+router.get(
+  '/:clubMonthId/chat/questions/remaining',
+  resolveClubAccess,
+  async (req, res, next) => {
+    try {
+      const remainingThisWeek = await chatQuestions.remainingThisWeek({
+        userId: req.user.userId,
+        clubMonthId: req.club._id,
+        isAdmin: req.clubAccess.kind === 'admin',
+      });
+      return success(res, {
+        remainingThisWeek,
+        weeklyLimit: chatQuestions.QUESTION_WEEKLY_LIMIT,
       });
     } catch (err) {
       return next(err);
