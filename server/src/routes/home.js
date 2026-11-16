@@ -11,6 +11,15 @@ const {
 } = require('../services/home-banner.service');
 const { ownedBookIdsFor, markOwned } = require('./books');
 
+// Бесплатные разборы на главной: все, без лимита. «Маленький принц» —
+// основной бесплатный разбор, всегда первый (16.11).
+const FREE_FIRST_TITLE = 'Маленький принц';
+function pinFreeFirst(books) {
+  const i = books.findIndex((b) => b.title === FREE_FIRST_TITLE);
+  if (i > 0) books.unshift(books.splice(i, 1)[0]);
+  return books;
+}
+
 const router = Router();
 
 /**
@@ -50,11 +59,10 @@ router.get('/', optionalAuth, async (req, res, next) => {
     const bookFields = BOOK_CARD_FIELDS;
 
     // Бесплатные разборы
-    const freeBooks = await Book.find({ isPublished: true, isFree: true })
+    const freeBooks = pinFreeFirst(await Book.find({ isPublished: true, isFree: true })
       .select(bookFields)
       .sort({ publishedAt: -1 })
-      .limit(6)
-      .lean();
+      .lean());
 
     // Книга клуба текущего месяца — через ClubMonth.bookId (как в самом клубе)
     const now = new Date();

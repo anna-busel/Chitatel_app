@@ -11,6 +11,15 @@ const { generateSignedUrl } = require('../services/audio.service');
 const { userHasBookAccess } = require('../services/book-access.service');
 const reviewRoutes = require('./reviews');
 
+// Бесплатные разборы на главной: все, без лимита. «Маленький принц» —
+// основной бесплатный разбор, всегда первый (16.11).
+const FREE_FIRST_TITLE = 'Маленький принц';
+function pinFreeFirst(books) {
+  const i = books.findIndex((b) => b.title === FREE_FIRST_TITLE);
+  if (i > 0) books.unshift(books.splice(i, 1)[0]);
+  return books;
+}
+
 const router = Router();
 
 /**
@@ -105,11 +114,10 @@ router.get('/', optionalAuth, async (req, res, next) => {
  */
 router.get('/featured', optionalAuth, async (req, res, next) => {
   try {
-    const freeBooks = await Book.find({ isPublished: true, isFree: true })
+    const freeBooks = pinFreeFirst(await Book.find({ isPublished: true, isFree: true })
       .select('-parts.audioFilename')
       .sort({ publishedAt: -1 })
-      .limit(6)
-      .lean();
+      .lean());
 
     const popularBooks = await Book.find({ isPublished: true, isFree: false, isPartOfClub: false })
       .select('-parts.audioFilename')
