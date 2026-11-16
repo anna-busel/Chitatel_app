@@ -138,6 +138,11 @@ const chatMessageSchema = new mongoose.Schema(
     // Модерация
     isHidden: { type: Boolean, default: false }, // скрыто модератором
     reportCount: { type: Number, default: 0 }, // счётчик жалоб
+
+    // «Вопрос Анне» (решение Анны 15.11.2026): обычное сообщение чата с
+    // пометкой. Лимит 3 в неделю на участницу (chat-questions.service).
+    // У админа не ставится.
+    isQuestion: { type: Boolean, default: false },
   },
   {
     timestamps: true,
@@ -152,6 +157,9 @@ chatMessageSchema.index({ clubMonthId: 1, createdAt: 1 });
 
 // Для модерации в админке (4.4): сообщения с жалобами.
 chatMessageSchema.index({ reportCount: -1, createdAt: -1 });
+
+// Вопросы Анне в чате: список и лимит (chat-questions.service).
+chatMessageSchema.index({ clubMonthId: 1, isQuestion: 1, createdAt: -1 });
 
 // Экспортируем модель и константу — оба нужны в роутах/Zod-схемах (4.2).
 const ChatMessage = mongoose.model('ChatMessage', chatMessageSchema);

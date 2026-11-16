@@ -34,6 +34,9 @@ const chatReadStateSchema = new mongoose.Schema(
       ref: 'ChatMessage',
       default: null,
     },
+    // Когда Анна последний раз открывала список «Вопросы» в чате (15.11.2026).
+    // Новые вопросы = вопросы клуба новее этой отметки.
+    questionsSeenAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
