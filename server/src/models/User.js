@@ -146,6 +146,10 @@ const userSchema = new mongoose.Schema(
       // сводка. Работают только вместе с chatMessages — старые версии
       // приложения знают лишь его, выключив его, участница глушит всё про чат.
       clubAnna: { type: Boolean, default: true },
+      // «Все сообщения в чате» (решение Анны 15.11.2026): пуш о каждом
+      // сообщении в чате клуба. Тоже только вместе с chatMessages; у старых
+      // аккаунтов поля нет → считаем включённым.
+      clubAll: { type: Boolean, default: true },
       clubDigest: { type: Boolean, default: true },
       // «Предложения и акции» (UPDATES-PLAN K0, 15.11.2026): пуши о покупке
       // (с target). Apple 4.5.4 — рекламные пуши только с явного согласия,
