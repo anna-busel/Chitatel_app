@@ -102,6 +102,11 @@ const sendOne = async (token, payload, accessToken) => {
       },
     },
   };
+  // payload.threadId (15.11.2026, чат клуба): tag — новый пуш с тем же тегом
+  // заменяет прежний в шторке, пуши одного клуба не копятся десятками.
+  if (payload.threadId) {
+    message.android.notification.tag = String(payload.threadId);
+  }
 
   try {
     const res = await fetch(
