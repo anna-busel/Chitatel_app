@@ -312,7 +312,18 @@ describe('маршруты: /api/admin/news с target, /api/profile/push-setting
     USERS[ME] = { _id: ME, role: 'user', pushSettings: { news: true } };
     const r = await call('GET', '/api/profile', { user: ME });
     expect(r.status).toBe(200);
-    expect(r.body.data.user.pushSettings).toEqual({ news: true, offers: false });
+    // clubAll (15.11.2026): нет поля → true.
+    expect(r.body.data.user.pushSettings).toEqual({ news: true, offers: false, clubAll: true });
+  });
+
+  test('clubAll: PATCH push-settings сохраняет, GET отдаёт false как есть', async () => {
+    const r = await call('PATCH', '/api/profile/push-settings', {
+      user: ME,
+      body: { clubAll: false },
+    });
+    expect(r.status).toBe(200);
+    const [, update] = USERS.__UserM.findByIdAndUpdate.mock.calls.pop();
+    expect(update).toEqual({ $set: { 'pushSettings.clubAll': false } });
   });
 
   test('K1: target book → bookSlug ищется, sendPurchase с bookId и androidBody', async () => {
