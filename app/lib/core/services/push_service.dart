@@ -5,6 +5,7 @@ import '../router/app_router.dart';
 import '../router/routes.dart';
 import 'purchase_target.dart';
 import '../../features/auth/providers/auth_provider.dart';
+import '../../features/club/providers/club_provider.dart';
 
 /// APNs push (задача 6.1). Только iOS, без Firebase.
 ///
@@ -130,6 +131,10 @@ class PushService {
       case 'qa_answer':
       // Тариф 2: «через час встреча с Анной» — карточка встречи в клубе.
       case 'club_meeting':
+        router.go(Routes.club);
+      // Дайджест Анне «N новых вопросов в чате клуба» — сразу вкладка «Чат».
+      case 'qa_digest':
+        _ref.read(clubOpenChatRequestProvider.notifier).state = true;
         router.go(Routes.club);
       // K2: пуш о покупке — экран книги / пейвол клуба (на Android — клуб).
       case 'purchase':
