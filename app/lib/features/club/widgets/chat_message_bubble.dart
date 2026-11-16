@@ -376,6 +376,11 @@ class ChatMessageBubble extends StatelessWidget {
               ),
               const SizedBox(height: 6),
             ],
+            // «Вопрос Анне» (15.11.2026) — плашка над текстом вопроса.
+            if (message.isQuestion) ...[
+              _QuestionBadge(isMine: isMine),
+              const SizedBox(height: 6),
+            ],
             _MessageContent(
               message: message,
               textColor: textColor,
@@ -1333,6 +1338,41 @@ class _AuthorBadge extends StatelessWidget {
           letterSpacing: 0.3,
           fontSize: 9,
         ),
+      ),
+    );
+  }
+}
+
+/// Плашка «Вопрос Анне» над текстом сообщения-вопроса (15.11.2026).
+/// В своём (терракотовом) пузыре — белая, в чужом — терракотовая.
+class _QuestionBadge extends StatelessWidget {
+  const _QuestionBadge({required this.isMine});
+  final bool isMine;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isMine ? Colors.white : AppColors.terracotta;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: isMine
+            ? Colors.white.withOpacity(0.18)
+            : AppColors.terracotta.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.help_outline, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            'Вопрос Анне',
+            style: AppTypography.micro.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
