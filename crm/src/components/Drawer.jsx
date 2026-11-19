@@ -12,21 +12,30 @@ import { createPortal } from 'react-dom';
  *   </Drawer>
  *
  * header — полностью своя шапка вместо title/subtitle (вкладки и т.п.).
+ * Шторки могут открываться одна поверх другой (заказ из карточки клиентки):
+ * Esc закрывает только верхнюю.
  */
+const openStack = [];
+
 export default function Drawer({ open, onClose, title, subtitle, actions, header, label, children }) {
   const ref = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   useEffect(() => {
     if (!open) return undefined;
     const prev = document.activeElement;
+    const token = {};
+    openStack.push(token);
     if (ref.current) ref.current.focus();
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e) => { if (e.key === 'Escape' && openStack[openStack.length - 1] === token) closeRef.current(); };
     document.addEventListener('keydown', onKey);
     return () => {
+      openStack.splice(openStack.indexOf(token), 1);
       document.removeEventListener('keydown', onKey);
       if (prev && prev.focus) prev.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

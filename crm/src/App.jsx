@@ -6,6 +6,7 @@ import NoAccess from './pages/NoAccess';
 import SectionStub from './pages/SectionStub';
 import Clients from './pages/Clients';
 import Orders from './pages/Orders';
+import Today from './pages/Today';
 import { SECTIONS } from './sections';
 
 function RequireAuth({ children }) {
@@ -32,8 +33,8 @@ function RequireAuth({ children }) {
   return children;
 }
 
-// Готовые экраны (CRM-PLAN D1, D4); остальные разделы — заглушка до своей задачи.
-const PAGES = { clients: Clients, orders: Orders };
+// Готовые экраны (CRM-PLAN D1, D4, D7); остальные разделы — заглушка до своей задачи.
+const PAGES = { today: Today, clients: Clients, orders: Orders };
 
 function Section({ section }) {
   const { can } = useAuth();
