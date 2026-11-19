@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import Soon from '../components/Soon';
 import ClientDrawer from '../components/ClientDrawer';
+import OrderDrawer from '../components/OrderDrawer';
+import NewOrderDrawer from '../components/NewOrderDrawer';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../auth/AuthContext';
 import { exportOrders, listOrders } from '../api/crm';
@@ -12,8 +15,10 @@ import { fmtD, money, moneyR, orderStatus, pill, plural } from '../utils';
  * component.js). Вкладки — как в плане: Все, Не оплачены, Ждут
  * подтверждения, Оплачены, Без оплаты, Ложные, Возвраты.
  *
- * Клик по строке пока открывает карточку клиентки (карточка заказа — D5).
- * Неактивны «скоро»: «+ Новый заказ» (D6), «Напомнить об оплате» (письма, F).
+ * Клик по строке открывает карточку заказа (D5); «+ Новый заказ» — D6.
+ * /orders?open=<id> открывает карточку заказа (ссылки из «Сегодня», поиска
+ * и уведомлений); при закрытии параметр убирается.
+ * Неактивно «скоро»: «Напомнить об оплате» (письма, F).
  */
 const PAGE = 15;
 
@@ -82,6 +87,9 @@ export default function Orders() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [clientId, setClientId] = useState(null);
+  const [newOpen, setNewOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const orderId = searchParams.get('open');
   const [busy, setBusy] = useState(false);
   const reqId = useRef(0);
 
@@ -114,6 +122,15 @@ export default function Orders() {
   const set = (fn) => (v) => { fn(v); setPage(1); };
   const reset = () => { setTab('all'); setQInput(''); setQ(''); setSource('all'); setManager('all'); setPeriod('all'); setPage(1); };
   const closeDrawer = useCallback(() => setClientId(null), []);
+  const openOrder = useCallback((id) => {
+    setSearchParams((prev) => { const sp = new URLSearchParams(prev); sp.set('open', id); return sp; });
+  }, [setSearchParams]);
+  const closeOrder = useCallback(() => {
+    setSearchParams((prev) => { const sp = new URLSearchParams(prev); sp.delete('open'); return sp; }, { replace: true });
+  }, [setSearchParams]);
+  const openClientFromOrder = useCallback((id) => { closeOrder(); setClientId(id); }, [closeOrder]);
+  const closeNew = useCallback(() => setNewOpen(false), []);
+  const onCreated = useCallback((o) => { setNewOpen(false); load(); openOrder(o.id); }, [load, openOrder]);
 
   const doExport = async (ids) => {
     setBusy(true);
@@ -145,7 +162,7 @@ export default function Orders() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16" /></svg>
             Выгрузить в Excel
           </button>
-          {can('orders') && <Soon className="btn-p" hint="новый заказ — задача D6">+ Новый заказ</Soon>}
+          {can('orders') && <button className="btn-p" type="button" onClick={() => setNewOpen(true)}>+ Новый заказ</button>}
         </div>
       </div>
 
@@ -196,7 +213,7 @@ export default function Orders() {
         onSort={set(setSort)}
         remote={{ total, page, onPage: setPage }}
         loading={loading}
-        onRowClick={(o) => setClientId(o.clientId)}
+        onRowClick={(o) => openOrder(o.id)}
         empty="По этим условиям заказов нет."
         bulkActions={(ids) => (
           <>
@@ -207,6 +224,8 @@ export default function Orders() {
       />
 
       <ClientDrawer id={clientId} onClose={closeDrawer} onChanged={load} />
+      <OrderDrawer id={orderId} onClose={closeOrder} onChanged={load} onOpenClient={openClientFromOrder} />
+      <NewOrderDrawer open={newOpen} onClose={closeNew} onCreated={onCreated} />
     </div>
   );
 }

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DataTable from '../components/DataTable';
 import Soon from '../components/Soon';
 import ClientDrawer from '../components/ClientDrawer';
+import DupGroups from '../components/DupGroups';
+import { useAuth } from '../auth/AuthContext';
 import { useToast } from '../components/Toast';
 import { bulkTags, exportClients, listClients } from '../api/crm';
 import { avStyle, fmtD, initials, lastDay, mLabel, moneyR, pill, plural } from '../utils';
@@ -10,6 +12,9 @@ import { avStyle, fmtD, initials, lastDay, mLabel, moneyR, pill, plural } from '
  * «Клиенты» (CRM-PLAN D1) — экран «Клиентки» прототипа (markup.html,
  * CL в component.js): поиск, чипы сегментов с количеством, «Колонки»,
  * сортировка и страницы на сервере, массовый выбор.
+ *
+ * Чип «Дубли» (D3) — группы карточек с тем же телефоном или почтой,
+ * «Объединить» (components/DupGroups.jsx).
  *
  * Неактивны «скоро»: «+ Сегмент» и «Рассылка» (блок J), «+ Задача» и
  * «В план продаж» (блок K). Сохранённых сегментов пока нет (J2).
@@ -65,6 +70,9 @@ const COLUMNS = [
 
 export default function Clients() {
   const toast = useToast();
+  const { can } = useAuth();
+  const [dupMode, setDupMode] = useState(false);
+  const [dupKey, setDupKey] = useState(0);
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
   const [seg, setSeg] = useState('all');
@@ -105,7 +113,8 @@ export default function Clients() {
   useEffect(() => { load(); }, [load]);
 
   const closeDrawer = useCallback(() => setOpenId(null), []);
-  const pickSeg = (k) => { setSeg(k); setPage(1); };
+  const onDrawerChanged = useCallback(() => { load(); setDupKey((k) => k + 1); }, [load]);
+  const pickSeg = (k) => { setDupMode(false); setSeg(k); setPage(1); };
   const onSort = (s) => { setSort(s); setPage(1); };
 
   const doExport = async (ids) => {
@@ -160,15 +169,22 @@ export default function Clients() {
 
       <div className="chips" role="tablist" aria-label="Сегменты">
         {chips.map(([k, label]) => (
-          <button key={k} type="button" role="tab" aria-selected={seg === k} className={`chip${seg === k ? ' on' : ''}`} onClick={() => pickSeg(k)}>
+          <button key={k} type="button" role="tab" aria-selected={!dupMode && seg === k} className={`chip${!dupMode && seg === k ? ' on' : ''}`} onClick={() => pickSeg(k)}>
             {label}{counts[k] !== undefined ? ` · ${counts[k]}` : ''}
           </button>
         ))}
+        <button type="button" role="tab" aria-selected={dupMode} className={`chip${dupMode ? ' on' : ''}`} onClick={() => setDupMode(true)}>
+          Дубли
+        </button>
       </div>
 
       {error && <div className="auth-err" role="alert">{error} <button className="lnk" type="button" onClick={load}>Повторить</button></div>}
 
-      <DataTable
+      {dupMode && (
+        <DupGroups canOrders={can('orders')} onOpen={setOpenId} onChanged={load} refreshKey={dupKey} />
+      )}
+
+      {!dupMode && <DataTable
         columns={COLUMNS}
         rows={data ? data.items : []}
         rowKey="id"
@@ -198,9 +214,9 @@ export default function Clients() {
             <button className="btn-s" type="button" disabled={busy} onClick={() => doExport(ids)}>Выгрузить</button>
           </>
         )}
-      />
+      />}
 
-      <ClientDrawer id={openId} onClose={closeDrawer} onChanged={load} />
+      <ClientDrawer id={openId} onClose={closeDrawer} onChanged={onDrawerChanged} onOpenClient={setOpenId} />
     </div>
   );
 }
