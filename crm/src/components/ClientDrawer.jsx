@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import Drawer from './Drawer';
 import Soon from './Soon';
+import OrderDrawer from './OrderDrawer';
+import NewOrderDrawer from './NewOrderDrawer';
+import DupBanner from './DupBanner';
 import { useToast } from './Toast';
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -15,7 +18,9 @@ import {
  * (markup.html «DR.client», component.js). Вкладки Обзор / Заказы /
  * История / Комментарии.
  *
- * Неактивны «скоро»: «+ Заказ» и «Выдать без оплаты» (D6), «Написать»
+ * «+ Заказ» и «Выдать без оплаты» открывают новый заказ (D6), клик по
+ * заказу во вкладке «Заказы» — карточку заказа (D5).
+ * Неактивны «скоро»: «Написать»
  * (входящие, блок I), «+ Задача» и «В план продаж» (K), «Отправить
  * инструкцию для входа» (письма, F), Telegram-каналы (G4).
  * Кода активации нет (L5): привязка — по почте аккаунта приложения.
@@ -323,14 +328,16 @@ function Overview({ card, setCard, reload, canOrders }) {
   );
 }
 
-function OrdersTab({ card }) {
+function OrdersTab({ card, onOpen }) {
   if (!card.orders.length) return <div className="sec"><div className="muted">Заказов нет.</div></div>;
   return (
     <div className="sec" style={{ padding: 0, gap: 0 }}>
       {card.orders.map((o) => {
         const [st, tone] = orderStatus(o);
         return (
-          <div key={o.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: '4px 12px', padding: '12px 16px', borderBottom: '1px solid var(--border-soft)' }}>
+          <div key={o.id} role="button" tabIndex={0} onClick={() => onOpen(o.id)}
+            onKeyDown={(e) => { if (e.key === 'Enter') onOpen(o.id); }}
+            style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: '4px 12px', padding: '12px 16px', borderBottom: '1px solid var(--border-soft)', cursor: 'pointer' }}>
             <span className="cell" style={{ fontWeight: 600 }}>
               {o.product}{o.productUnmatched && <span className="unmatched">продукт не сопоставлен</span>}
             </span>
@@ -409,13 +416,15 @@ function CommentsTab({ card, setCard }) {
   );
 }
 
-export default function ClientDrawer({ id, onClose, onChanged }) {
+export default function ClientDrawer({ id, onClose, onChanged, onOpenClient }) {
   const { can } = useAuth();
   const toast = useToast();
   const [card, setCardState] = useState(null);
   const [tab, setTab] = useState('overview');
   const [error, setError] = useState('');
   const canOrders = can('orders');
+  const [orderId, setOrderId] = useState(null);
+  const [newPreset, setNewPreset] = useState(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -429,10 +438,15 @@ export default function ClientDrawer({ id, onClose, onChanged }) {
 
   useEffect(() => {
     setCardState(null);
+    setOrderId(null);
+    setNewPreset(null);
     setTab('overview');
     setError('');
     load();
   }, [load]);
+
+  const closeOrder = useCallback(() => setOrderId(null), []);
+  const closeNew = useCallback(() => setNewPreset(null), []);
 
   // Любое изменение в карточке — обновить и строку списка.
   const setCard = (c) => { setCardState(c); if (onChanged) onChanged(); };
@@ -457,8 +471,8 @@ export default function ClientDrawer({ id, onClose, onChanged }) {
       <div className="row-actions">
         {canOrders && (
           <>
-            <Soon className="btn-p" hint="новый заказ — задача D6">+ Заказ</Soon>
-            <Soon hint="новый заказ без оплаты — задача D6">Выдать без оплаты</Soon>
+            <button className="btn-p" type="button" onClick={() => setNewPreset({ clientId: card.id })}>+ Заказ</button>
+            <button className="btn" type="button" onClick={() => setNewPreset({ clientId: card.id, mode: 'free' })}>Выдать без оплаты</button>
           </>
         )}
         <Soon hint="входящие — блок I">Написать ▾</Soon>
@@ -480,10 +494,14 @@ export default function ClientDrawer({ id, onClose, onChanged }) {
     <Drawer open={Boolean(id)} onClose={onClose} title={title} subtitle={sub} header={header}
       label={card ? `Карточка: ${card.name}` : 'Карточка клиентки'}>
       {error && <div className="auth-err" role="alert">{error}</div>}
+      {card && <DupBanner key={card.id} card={card} canOrders={canOrders} onOpen={onOpenClient} onMerged={reload} />}
       {card && tab === 'overview' && <Overview card={card} setCard={setCard} reload={reload} canOrders={canOrders} />}
-      {card && tab === 'orders' && <OrdersTab card={card} />}
+      {card && tab === 'orders' && <OrdersTab card={card} onOpen={setOrderId} />}
       {card && tab === 'hist' && <HistoryTab id={card.id} />}
       {card && tab === 'comments' && <CommentsTab card={card} setCard={setCard} />}
+      <OrderDrawer id={orderId} onClose={closeOrder} onChanged={reload} onOpenClient={closeOrder} />
+      <NewOrderDrawer open={Boolean(newPreset)} preset={newPreset} onClose={closeNew}
+        onCreated={(o) => { setNewPreset(null); reload(); setOrderId(o.id); }} />
     </Drawer>
   );
 }
