@@ -2,6 +2,8 @@ import { useCallback, useRef, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import useOutside from '../components/useOutside';
+import GlobalSearch from '../components/GlobalSearch';
+import NotificationsBell from '../components/NotificationsBell';
 import { GROUPS, ROLES, SECTIONS } from '../sections';
 import { avStyle, initials } from '../utils';
 
@@ -10,8 +12,8 @@ import { avStyle, initials } from '../utils';
  * header.top). Пункты меню скрываются по правам из GET /api/crm/me
  * (как nav.*.show = can(...) в component.js); заголовок группы — только
  * если в ней есть видимые пункты.
- * Поиск, «Новый заказ» и уведомления в шапке появятся с экранами D/K;
- * переключатель ролей «для демо» не переносим (CRM-PLAN A4).
+ * В шапке — поиск по всей базе (Ctrl K) и колокольчик (D8); «Новый заказ» —
+ * с D6. Переключатель ролей «для демо» не переносим (CRM-PLAN A4).
  */
 export default function Shell() {
   const { member, can, logout } = useAuth();
@@ -48,7 +50,9 @@ export default function Shell() {
 
       <div className="main">
         <header className="top">
+          <GlobalSearch />
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <NotificationsBell />
             <div style={{ position: 'relative' }} ref={userRef}>
               <button type="button" className="userbtn" aria-label="Профиль" aria-expanded={userOpen}
                 onClick={() => setUserOpen((v) => !v)}>
