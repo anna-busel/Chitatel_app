@@ -202,3 +202,8 @@ h1,h2,h3,p{margin:0}
 .tag-x{font:inherit;border:0;background:none;cursor:pointer;padding:0 0 0 2px;color:var(--muted)}
 .tag-inp{width:110px;min-height:26px;padding:2px 8px;font-size:12px;border-radius:999px}
 .unmatched{font-size:11px;font-weight:600;color:#7A4A0B;background:#FDF0D8;border-radius:999px;padding:1px 6px;margin-left:6px;white-space:nowrap}
+/* D3 дубли — плашка как DC.dup в прототипе */
+.dupbox{padding:12px 14px;background:#FFF6E8;border:1px solid #F0D9AE;border-radius:8px;display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.duprow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.dupgroup{border:1px solid var(--border-soft);border-radius:var(--radius);padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.dupclient{display:grid;grid-template-columns:auto minmax(0,1.3fr) minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--border-soft)}
