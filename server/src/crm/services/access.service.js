@@ -43,6 +43,7 @@ const CrmBalanceOp = require('../models/CrmBalanceOp');
 const GRANTING = ['paid', 'free'];
 const REVOKING = ['fake', 'refund'];
 const PENDING_GRANT = ['paid', 'free', 'partial'];
+const UNPAID = ['new', 'partial', 'confirm'];
 
 const PLAN_BY_COUNT = { 1: 'monthly', 3: 'season', 6: 'semiannual', 12: 'annual' };
 
@@ -442,7 +443,15 @@ async function applyOrder(order, { who = 'Система' } = {}) {
       who,
     });
   }
-  if (!shouldGrant(order, product)) {return { action: 'noop', reason: 'not_paid' };}
+  if (!shouldGrant(order, product)) {
+    // D5 (19.11.2026): удалили ошибочный платёж — заказ снова не оплачен
+    // (или рассрочка без доступа после первого платежа), а доступ уже выдан:
+    // снять ровно выданное, как при возврате.
+    if (granted.at && UNPAID.includes(order.status)) {
+      return undoGrant(order, { money: true, reason: 'Оплата отменена', who });
+    }
+    return { action: 'noop', reason: 'not_paid' };
+  }
   if (granted.at) {return { action: 'noop', reason: 'already_granted' };}
   return grantOrder(order, product, who);
 }
@@ -673,6 +682,8 @@ async function expireTerms(now = new Date()) {
 
 module.exports = {
   applyOrder,
+  // D3: отмена объединения дублей снимает выданное объединением.
+  undoGrant,
   applyClientOrders,
   attachClient,
   linkUser,
