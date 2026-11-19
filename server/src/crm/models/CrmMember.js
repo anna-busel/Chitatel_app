@@ -25,6 +25,12 @@ const crmMemberSchema = new mongoose.Schema(
     lastAt: { type: Date, default: null },
     active: { type: Boolean, default: true },
     refreshTokens: { type: [String], default: [], select: false },
+    // D8 (19.11.2026): колокольчик. Уведомления вычисляются из данных
+    // (crm/services/notifications.service.js); здесь — что прочитано:
+    // id прочитанных (не больше 500, только ещё актуальные) и время
+    // последнего «Прочитать все».
+    notificationsSeenAt: { type: Date, default: null },
+    notificationsRead: { type: [String], default: [], select: false },
   },
   { timestamps: true }
 );

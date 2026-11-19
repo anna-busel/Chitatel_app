@@ -6,6 +6,9 @@ const { permsOf } = require('../services/permissions');
 const authRoutes = require('./auth');
 const clientsRoutes = require('./clients');
 const ordersRoutes = require('./orders');
+const todayRoutes = require('./today');
+const searchRoutes = require('./search');
+const notificationsRoutes = require('./notifications');
 
 /**
  * Корневой роутер CRM, монтируется в app.js: app.use('/api/crm', crmRouter).
@@ -40,5 +43,9 @@ router.get('/me', (req, res) => {
 router.use('/clients', clientsRoutes);
 // Заказы: список и выгрузка (D4).
 router.use('/orders', ordersRoutes);
+// «Сегодня» (D7), поиск в шапке и колокольчик (D8).
+router.use('/today', todayRoutes);
+router.use('/search', searchRoutes);
+router.use('/notifications', notificationsRoutes);
 
 module.exports = router;
