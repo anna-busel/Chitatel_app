@@ -18,6 +18,7 @@ const { listClients, exportClients } = require('../services/client-list.service'
 const { clientCard, clientHistory, commentView } = require('../services/client-card.service');
 const { idsParam, round2, paging } = require('../services/view.helpers');
 const { sendCsv } = require('../services/csv');
+const { findDuplicates, duplicatesOf, merge, undoMerge } = require('../services/client-merge.service');
 
 /**
  * Клиентки CRM.
@@ -33,6 +34,12 @@ const { sendCsv } = require('../services/csv');
  *   POST  /api/crm/clients/:id/balance { op: topup|spend, amount, reason } → { balance, op }
  *   GET   /api/crm/clients/:id/history?page → события CrmEvent
  * B6 (05.11.2026): /:id/link, /:id/unlink — ручная привязка к аккаунту приложения.
+ * D3 дубли (19.11.2026, crm/services/client-merge.service.js):
+ *   GET  /api/crm/clients/duplicates?page&limit → { items: [{ key, reasons, clients }], total, page, limit }
+ *   GET  /api/crm/clients/:id/duplicates → { items, mergedInto }
+ *   POST /api/crm/clients/:id/merge { intoId } → { mergeId, fromId, intoId, moved, balance, … }
+ *        (карточка :id вливается в intoId и скрывается)
+ *   POST /api/crm/clients/merge/:mergeId/undo → { fromId, intoId, revoked } — 30 минут
  *
  * Права (матрица прототипа, crm/services/permissions.js): просмотр, выгрузка,
  * теги и комментарии — всем ролям; контакты, баланс, привязка — 'orders'
@@ -162,6 +169,62 @@ router.post('/tags', requireCrm(), validate(bulkTagsSchema), async (req, res, ne
       after: { tag, ids: changedIds.map(String) },
     });
     return success(res, { tag, changed: changedIds.length, ids: changedIds.map(String) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/* --------------------------- D3: дубли ---------------------------- */
+
+router.get('/duplicates', requireCrm(), async (req, res, next) => {
+  try {
+    const { page } = paging(req.query);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    return success(res, await findDuplicates({ page, limit }));
+  } catch (err) {
+    return next(err);
+  }
+});
+
+const mergeSchema = z.object({
+  intoId: z.string().regex(/^[a-f0-9]{24}$/i, 'Неверный id карточки'),
+});
+
+router.post('/merge/:mergeId/undo', requireCrm('orders'), async (req, res, next) => {
+  try {
+    const r = await undoMerge(req.params.mergeId, req.crmMember);
+    setAudit(res, {
+      action: 'client.merge.undo',
+      entity: 'CrmClient',
+      entityId: r.intoId,
+      before: { mergeId: req.params.mergeId },
+      after: r,
+    });
+    return success(res, r);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/:id/duplicates', requireCrm(), async (req, res, next) => {
+  try {
+    return success(res, await duplicatesOf(req.params.id));
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/:id/merge', requireCrm('orders'), validate(mergeSchema), async (req, res, next) => {
+  try {
+    const r = await merge(req.params.id, req.body.intoId, req.crmMember);
+    setAudit(res, {
+      action: 'client.merge',
+      entity: 'CrmClient',
+      entityId: r.intoId,
+      before: { fromId: r.fromId },
+      after: r,
+    });
+    return success(res, r);
   } catch (err) {
     return next(err);
   }
