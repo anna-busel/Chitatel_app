@@ -234,3 +234,26 @@ UPDATES-PLAN V1–V4, выходит в 1.0.5 (iOS `codemagic.yaml --build-name=
 - Поиск: клиентки — `searchMatch` «Клиентов» (имя, почты, телефон, @ник), до 6; заказы — начало номера (диапазоны по индексу `num`), до 3; «#5001» — только заказы.
 - Фронт: `pages/Today.jsx`, `components/{GlobalSearch,NotificationsBell}.jsx` в `layout/Shell.jsx` (Ctrl K / Cmd K), `App.jsx` (`today`), `api/crm.js` (раздел D7, D8). Клиентка — шторка `ClientDrawer`; заказ — переход на `/orders?open=<id>` (открывает карточка заказа D5). Колокольчик обновляется раз в минуту.
 - Пусто до своих блоков: задачи (K), «Входящие» (I), заявки в каналы (G) — модели читаются, но их никто не создаёт. Неактивно «скоро»: отметка задачи (K), «Скопировать ссылку» (E), «Отправить инструкцию для входа» (F), «Одобрить»/«Отклонить» заявку (G). KPI «Неоплаченных счетов» ведёт в «Заказы» без вкладки (Orders.jsx не читает параметры), «Оплат без привязки» и «Заявок» — к блоку на этой же странице.
+
+## 16. 22–23.11.2026 — выпуск 1.0.6, CRM на проде, безопасность сервера
+
+**1.0.6** вышла 22.11 в App Store и Google Play. Пуш участницам: заголовок «Вышло обновление!», текст «[главное], а ещё [...]. Обновите приложение в App Store или Google Play.», всем, без номера версии. В следующую сборку Android (ветка `android`): в `AndroidManifest` добавить `<uses-feature android:name="android.hardware.screen.portrait" android:required="false"/>` — предупреждение Play из-за `UCropActivity` (portrait), при выпуске 1.0.6 пропущено как «исправление запланировано».
+
+**CRM на проде (A5/A6), 23.11.** DNS crm/pay → 161.97.102.73 (Namecheap), nginx `deploy/nginx/*.conf`, certbot до 21.02.2027, `/api/health` ok. Учётки CRM (crm-create-member.js): Анна bebusel@bk.ru owner, Гульнара gbukhtina@gmail.com admin, Вероника veronika038177@gmail.com admin, Тамуна tmachavariani3@gmail.com manager, Георгий g.ahmeteli@gmail.com owner. Разосланы лично 23.11. База пустая до C3/H (backfill — неделя 23–29.11).
+- Исправлено (b3fadf0): 500 на `GET /api/crm/clients` — `segmentResolver` кэшировал Query Mongoose, «В клубе» и «Без доступа» ждали его оба, второй await падал «Query was already executed». Кэш теперь хранит промис. Тест `tests/crm-segment-cache.test.js`.
+
+**Служебные админы (573c53f, 3644a15).** `User.staffOnly` — вход в админку без показа в клубе: исключены из `clubMembersFilter` (участницы и пуши чата), `mentionable`, `sanitizeMentions`. Скрипт `src/scripts/staff-admin.js add <email> "<Имя>" <пароль>` / `remove <email>` (remove — роль user, случайный пароль, сброс сессий). Аккаунт участницы служебным не делается. Созданы: Тамуна tmachavariani3@gmail.com, Гульнара gulnara@chitatel.app (её gmail — аккаунт участницы). Общий anna@chitatel.app (пароль anna123456 из seed-club.js, аудит 07.2026) — права сняты, пароль сброшен. Админы приложения теперь: misswoolly@yandex.ru (Анна, Apple) + два служебных. Тесты `tests/staff-admin.test.js`.
+
+**Сервер (VPS), 23.11** — до этого: вход по паролю и root разрешён, ~9800 неудачных попыток в auth.log, fail2ban нет, копий базы нет.
+- Чужих входов не было (`last`, auth.log: только deploy с 212.58.103.63).
+- fail2ban: `/etc/fail2ban/jail.local` (ignoreip 212.58.103.63, bantime 1h, maxretry 5), sshd jail работает.
+- SSH: `/etc/ssh/sshd_config.d/00-hardening.conf` — PermitRootLogin no, PasswordAuthentication no. Вход только по ключу (ключ Гиорги с Windows). Запасной вход — консоль Contabo.
+- ufw: открыты только 22, 80, 443 (3002 закрыт — reader-bot ходит через nginx).
+- Старый проект Гиорги reader-bot (pm2 `reader-bot`, порт 3002, домены *.unibotz.com) и его контейнеры (reader-bot-mongodb-secure-clean, qdrant-secure, reader-bot-redis) остановлены, автозапуск выключен, данные не удалены. Наша база — docker `chitatel-mongodb` (mongo 8.0, 127.0.0.1:27018, restart unless-stopped, /data/db 459 МБ); pm2-deploy enabled.
+- Перезагрузка для обновлений ядра — 24.11 03:00 CET (`shutdown -r`). Остальные ~133 обновления — потом, ночью.
+
+**Осталось:**
+- [ ] Ежедневная копия базы: mongodump из контейнера → шифрование → Google Диск Гиорги (rclone, доступ drive.file — только свои файлы) + 7 последних на сервере. Ключ шифрования хранят Гиорги и Анна.
+- [ ] Убрать из crontab пустую задачу `~/shrooms-support/backup.sh` (папки нет).
+- [ ] Предложение Анне: вход в админку по учёткам CRM (с кодом 2FA) вместо аккаунтов приложения — несколько часов, не в плане.
+- Секреты из переписки 12.07 (JWT и др.) решено не менять: смена выкинет всех из приложения, база закрыта снаружи.
