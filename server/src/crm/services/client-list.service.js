@@ -77,7 +77,9 @@ function segmentResolver(now = new Date()) {
   const cur = currentMonthKey(now);
   const cache = {};
   const userIds = (key, cond) => {
-    if (!cache[key]) {cache[key] = User.distinct('_id', cond);}
+    // Кэшируем промис с результатом, а не сам Query: повторный await Query
+    // запускает его ещё раз, и Mongoose падает «Query was already executed».
+    if (!cache[key]) {cache[key] = Promise.resolve(User.distinct('_id', cond));}
     return cache[key];
   };
   const inClubIds = () => userIds('club', inClubUser(now));
