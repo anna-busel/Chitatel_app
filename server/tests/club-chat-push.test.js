@@ -101,7 +101,7 @@ describe('пуш о новом сообщении в чате клуба', () =>
     // удалённых, с устройством; без тех, кто заблокировал автора.
     const filter = User.find.mock.calls[0][0];
     const [members, hasDevice] = filter.$and;
-    expect(members.$or).toEqual([{ clubMonthsEntitled: '2026-11' }, { role: 'admin' }]);
+    expect(members.$or).toEqual([{ clubMonthsEntitled: '2026-11' }, { role: 'admin', staffOnly: { $ne: true } }]);
     expect(members.isBanned).toEqual({ $ne: true });
     expect(members.isDeleted).toEqual({ $ne: true });
     expect(hasDevice.$or).toHaveLength(2);

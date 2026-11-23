@@ -130,7 +130,11 @@ function clubMembersFilter(club, { includeAdmins = true } = {}) {
     isDeleted: { $ne: true },
   };
   if (includeAdmins) {
-    filter.$or = [{ clubMonthsEntitled: clubMonthKey(club) }, { role: 'admin' }];
+    // Служебные админы команды (staffOnly) в клубе не показываются.
+    filter.$or = [
+      { clubMonthsEntitled: clubMonthKey(club) },
+      { role: 'admin', staffOnly: { $ne: true } },
+    ];
   } else {
     filter.clubMonthsEntitled = clubMonthKey(club);
   }

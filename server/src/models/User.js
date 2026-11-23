@@ -178,6 +178,10 @@ const userSchema = new mongoose.Schema(
     refreshTokens: [String],
 
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    // Служебный админ (23.11.2026): вход в админку для команды. В клубе не
+    // виден — нет в участницах, упоминаниях и пушах чата. Создаётся
+    // scripts/staff-admin.js, у участниц не ставится.
+    staffOnly: { type: Boolean, default: false },
 
     // Модерация (задача 4.4). Apple Guideline 1.2 — UGC moderation tools.
     // isBanned — полный бан, юзер не может ни писать, ни заходить в клуб.

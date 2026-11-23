@@ -158,7 +158,7 @@ describe('E1: GET /api/club/:clubMonthId/members', () => {
   test('фильтр: месяц клуба или admin, без бана/удалённых, без заблокированных мной', async () => {
     await call(`/api/club/${CLUB}/members`, ME);
     const filter = User.find.mock.calls[0][0];
-    expect(filter.$or).toEqual([{ clubMonthsEntitled: '2026-11' }, { role: 'admin' }]);
+    expect(filter.$or).toEqual([{ clubMonthsEntitled: '2026-11' }, { role: 'admin', staffOnly: { $ne: true } }]);
     expect(filter.isBanned).toEqual({ $ne: true });
     expect(filter.isDeleted).toEqual({ $ne: true });
     expect(filter._id.$nin.map(String)).toEqual([BLOCKED]);
