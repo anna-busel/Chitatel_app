@@ -479,7 +479,7 @@ router.get(
   resolveClubAccess,
   async (req, res, next) => {
     try {
-      const admins = await User.find({ role: 'admin' })
+      const admins = await User.find({ role: 'admin', staffOnly: { $ne: true } })
         .select('name avatarUrl')
         .sort({ name: 1 })
         .lean();
@@ -879,6 +879,7 @@ async function sanitizeMentions(rawMentions) {
   const admins = await User.find({
     _id: { $in: unique },
     role: 'admin',
+    staffOnly: { $ne: true },
   })
     .select('_id')
     .lean();
