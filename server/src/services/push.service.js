@@ -37,6 +37,9 @@ let providerInitTried = false;
 // Типы, которые сохраняются в ленту уведомлений (4.30) при отправке.
 // Персональные события + новости — да; массовые напоминания — нет (шум).
 const PERSIST_TYPES = new Set([
+  // Друзья (F3, 27.11.2026): заявка и «приняла заявку» — в ленту.
+  'friend_request',
+  'friend_accepted',
   'ai_ready',
   'weekly_report',
   'monthly_report',

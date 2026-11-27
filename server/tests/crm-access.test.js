@@ -457,6 +457,27 @@ describe('linkUser (B5)', () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 
+  test('почта оплаты (User.purchaseEmails) — ищем и по ней (27.11.2026)', async () => {
+    const client = { _id: 'c6', appUserId: null, emails: [], save: jest.fn(() => Promise.resolve()) };
+    CrmClient.find.mockImplementation((f) => q(f.$or[0]['emails.email'] === 'pay@mail.ru' ? [client] : []));
+    CrmClient.findById.mockImplementation((id) => q({ _id: id, appUserId: client.appUserId }));
+    CrmOrder.find.mockImplementation(() => q([]));
+    const user = makeUser('u3', { email: 'x1@privaterelay.appleid.com', purchaseEmails: ['Pay@Mail.ru'] });
+    const res = await access.linkUser(user);
+    expect(res).toEqual({ linked: 1, applied: 0 });
+    expect(client.appUserId).toBe('u3');
+    expect(CrmClient.find).toHaveBeenCalledTimes(2);
+  });
+
+  test('linkPurchaseEmail: клиентка уже у другого аккаунта — conflicts, не перепривязываем', async () => {
+    const client = { _id: 'c7', appUserId: 'u2', emails: [], save: jest.fn() };
+    CrmClient.find.mockImplementation(() => q([client]));
+    CrmOrder.find.mockImplementation(() => q([]));
+    const res = await access.linkPurchaseEmail(users.u1, 'pay@mail.ru');
+    expect(res).toEqual({ found: 1, linked: 0, applied: 0, conflicts: 1 });
+    expect(client.save).not.toHaveBeenCalled();
+  });
+
   test('без почты (Apple «Скрыть e-mail» без адреса) — ничего не ищем', async () => {
     const res = await access.linkUser(makeUser('u3', { email: undefined }));
     expect(res).toEqual({ linked: 0, applied: 0 });
