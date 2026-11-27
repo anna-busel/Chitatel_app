@@ -46,8 +46,9 @@ class ProfileNotifier extends StateNotifier<AsyncValue<UserProfile>> {
   }
 
   /// Имя / город (экран 4.46). Бросает исключение наверх — экран покажет ошибку.
-  Future<void> updateProfile({String? name, String? city}) async {
-    final updated = await _service.updateProfile(name: name, city: city);
+  Future<void> updateProfile({String? name, String? city, String? bio}) async {
+    final updated =
+        await _service.updateProfile(name: name, city: city, bio: bio);
     if (!mounted) return;
     state = AsyncValue.data(updated);
   }
@@ -101,7 +102,7 @@ final progressStatsProvider =
 /// мини-карточек под статистикой.
 ///
 /// ⚠️ 24.07.2026 — autoDispose по той же причине, что и статистика: свежие
-/// данные при каждом раскрытии списка, без ожидания перезапуска приложения.
+/// данные при каждом раскрытии списка, без ожидания перезапуска.
 final progressListProvider =
     FutureProvider.autoDispose<List<ProgressItem>>((ref) async {
   return ref.read(profileServiceProvider).fetchProgressList();

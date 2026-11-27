@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/network/api_client.dart';
+import '../../../core/network/api_endpoints.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/services/purchase_target.dart';
 import '../../../core/theme/app_colors.dart';
@@ -104,6 +106,14 @@ class NotificationsScreen extends ConsumerWidget {
         children: [
           const SizedBox(height: 2),
           Text(n.body, style: AppTypography.caption),
+          // F3 (27.11.2026): заявку в друзья можно принять прямо в ленте.
+          if (n.type == 'friend_request' &&
+              (n.data['requestId']?.toString() ?? '').isNotEmpty)
+            _FriendRequestActions(
+              requestId: n.data['requestId'].toString(),
+              onDone: () =>
+                  ref.read(notificationsProvider.notifier).markRead(n.id),
+            ),
           const SizedBox(height: 4),
           Text(
             _timeAgo(n.createdAt),
@@ -183,6 +193,10 @@ class NotificationsScreen extends ConsumerWidget {
         return (Icons.videocam_outlined, AppColors.terracotta);
       case 'purchase':
         return (Icons.local_offer_outlined, AppColors.terracotta);
+      case 'friend_request':
+        return (Icons.person_add_alt_1_outlined, AppColors.terracotta);
+      case 'friend_accepted':
+        return (Icons.people_outline, AppColors.success);
       default:
         return (Icons.notifications_none, AppColors.textSecondary);
     }
@@ -260,6 +274,82 @@ class _ErrorView extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Кнопки «Принять / Отклонить» у заявки в друзья (F3, 27.11.2026).
+/// После ответа вместо кнопок — короткий итог.
+class _FriendRequestActions extends ConsumerStatefulWidget {
+  const _FriendRequestActions({required this.requestId, required this.onDone});
+  final String requestId;
+  final VoidCallback onDone;
+
+  @override
+  ConsumerState<_FriendRequestActions> createState() =>
+      _FriendRequestActionsState();
+}
+
+class _FriendRequestActionsState extends ConsumerState<_FriendRequestActions> {
+  bool _busy = false;
+  String? _result;
+
+  Future<void> _answer(bool accept) async {
+    setState(() => _busy = true);
+    try {
+      final dio = ref.read(apiClientProvider).dio;
+      await dio.post(accept
+          ? ApiEndpoints.friendRequestAccept(widget.requestId)
+          : ApiEndpoints.friendRequestDecline(widget.requestId));
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _result = accept ? 'Вы теперь друзья' : 'Заявка отклонена';
+      });
+      widget.onDone();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _result = 'Заявка уже неактуальна';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_result != null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Text(
+          _result!,
+          style: AppTypography.small.copyWith(color: AppColors.textSecondary),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          TextButton(
+            onPressed: _busy ? null : () => _answer(true),
+            child: Text(
+              'Принять',
+              style: AppTypography.bodyMedium
+                  .copyWith(color: AppColors.terracotta),
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _busy ? null : () => _answer(false),
+            child: Text(
+              'Отклонить',
+              style: AppTypography.bodyMedium
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+          ),
+        ],
       ),
     );
   }

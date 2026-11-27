@@ -44,6 +44,7 @@ import '../../features/profile/screens/support_screen.dart';
 import '../../features/profile/screens/blocked_users_screen.dart';
 import '../../features/profile/screens/delete_account_screen.dart';
 import '../../features/profile/screens/change_password_screen.dart';
+import '../../features/profile/screens/purchase_email_screen.dart';
 
 // — Key для ShellRoute navigator —
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -360,6 +361,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const ChangePasswordScreen(),
       ),
+      // Покупки с другой почты (27.11.2026).
+      GoRoute(
+        path: Routes.purchaseEmail,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const PurchaseEmailScreen(),
+      ),
     ],
   );
 });
@@ -381,6 +388,7 @@ bool _authRequiresAccount(String location) {
     Routes.blockedUsers,
     Routes.deleteAccount,
     Routes.changePassword,
+    Routes.purchaseEmail,
   ];
   if (authOnly.contains(location)) return true;
   // Анализ цитаты — с path-параметром (/analysis/:quoteId).
