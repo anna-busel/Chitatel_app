@@ -487,12 +487,13 @@ describe('GET /orders и выгрузка', () => {
   test('export.csv — колонки плана и метка «продукт не сопоставлен», журнал', async () => {
     CrmOrder.aggregate.mockResolvedValueOnce([orderDoc]);
     CrmClient.find.mockImplementation(() => q([{ _id: CID, name: 'Мария Иванова', primaryEmail: 'm@mail.ru' }]));
-    const r = await call('GET', '/orders/export.csv?status=all', M1);
+    // 27.11.2026: выгрузка — только с правом stats, менеджеру запрещена.
+    const r = await call('GET', '/orders/export.csv?status=all', 'm3');
     expect(r.status).toBe(200);
     expect([...r.raw.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     expect(r.text).toContain('Источник / способ;Менеджер;Доступ в приложении');
     expect(r.text).toContain('8930;2026-11-14;Мария Иванова;m@mail.ru;book.atlant (продукт не сопоставлен);9,99;USD;9,99;Оплачен;App Store;;Выдано автоматически;');
     await flush();
-    expect(audits()).toEqual([expect.objectContaining({ action: 'orders.export', memberId: M1 })]);
+    expect(audits()).toEqual([expect.objectContaining({ action: 'orders.export', memberId: 'm3' })]);
   });
 });

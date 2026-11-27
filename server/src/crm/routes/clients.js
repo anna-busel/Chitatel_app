@@ -97,7 +97,13 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 router.get('/', requireCrm(), async (req, res, next) => {
   try {
-    return success(res, await listClients(req.query));
+    // 27.11.2026: суммы покупок видят только роли с правом «stats» (не менеджер).
+    const money = can(req.crmMember.role, 'stats');
+    const query = { ...req.query };
+    if (!money && /ltv/.test(String(query.sort || ''))) {delete query.sort;}
+    const data = await listClients(query);
+    if (!money) {data.items = data.items.map(({ ltv, ...rest }) => ({ ...rest, ltv: null }));}
+    return success(res, data);
   } catch (err) {
     return next(err);
   }
@@ -119,7 +125,7 @@ const CLIENT_CSV = [
   ['Теги', (r) => (r.tags || []).join(', ')],
 ];
 
-router.get('/export.csv', requireCrm(), async (req, res, next) => {
+router.get('/export.csv', requireCrm('stats'), async (req, res, next) => {
   try {
     const query = { ...req.query, ids: idsParam(req.query.ids, isId) };
     const rows = await exportClients(query);

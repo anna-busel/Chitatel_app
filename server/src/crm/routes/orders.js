@@ -8,6 +8,7 @@ const { validate } = require('../../middleware/validate');
 const { requireCrm } = require('../middleware/auth');
 const { setAudit } = require('../middleware/audit');
 const { listOrders, exportOrders } = require('../services/order-list.service');
+const { can } = require('../services/permissions');
 const actions = require('../services/order-actions.service');
 const { idsParam } = require('../services/view.helpers');
 const { sendCsv } = require('../services/csv');
@@ -74,13 +75,16 @@ const ORDER_CSV = [
 
 router.get('/', requireCrm(), async (req, res, next) => {
   try {
-    return success(res, await listOrders(req.query));
+    const data = await listOrders(req.query);
+    // 27.11.2026: выручку видят только роли с правом «stats» (не менеджер).
+    if (!can(req.crmMember.role, 'stats')) {data.receivedByn = null;}
+    return success(res, data);
   } catch (err) {
     return next(err);
   }
 });
 
-router.get('/export.csv', requireCrm(), async (req, res, next) => {
+router.get('/export.csv', requireCrm('stats'), async (req, res, next) => {
   try {
     const rows = await exportOrders({ ...req.query, ids: idsParam(req.query.ids, isId) });
     Promise.resolve()

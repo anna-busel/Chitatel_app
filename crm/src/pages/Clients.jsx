@@ -160,10 +160,10 @@ export default function Clients() {
         </div>
         <div className="row-actions">
           <Soon hint="сохранённые сегменты появятся с рассылками (блок J)">+ Сегмент</Soon>
-          <button className="btn" type="button" disabled={busy} onClick={() => doExport(null)}>
+          {can('stats') && <button className="btn" type="button" disabled={busy} onClick={() => doExport(null)}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16" /></svg>
             Выгрузить в Excel
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -185,7 +185,7 @@ export default function Clients() {
       )}
 
       {!dupMode && <DataTable
-        columns={COLUMNS}
+        columns={can('stats') ? COLUMNS : COLUMNS.filter((c) => c.key !== 'ltv')}
         rows={data ? data.items : []}
         rowKey="id"
         pageSize={PAGE}
@@ -211,7 +211,7 @@ export default function Clients() {
             <Soon className="btn-s" hint="задачи — блок K">+ Задача</Soon>
             <Soon className="btn-s" hint="рассылки — блок J">Рассылка</Soon>
             <button className="btn-s" type="button" disabled={busy} onClick={() => tagPromo(ids, clear)}>Тег «Акция»</button>
-            <button className="btn-s" type="button" disabled={busy} onClick={() => doExport(ids)}>Выгрузить</button>
+            {can('stats') && <button className="btn-s" type="button" disabled={busy} onClick={() => doExport(ids)}>Выгрузить</button>}
           </>
         )}
       />}

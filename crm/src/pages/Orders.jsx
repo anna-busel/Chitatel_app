@@ -154,14 +154,14 @@ export default function Orders() {
         <div className="pagehead">
           <h1 className="h1">Заказы</h1>
           <p className="muted">
-            {data ? `${total} ${plural(total, 'заказ', 'заказа', 'заказов')} · получено ${moneyR(data.receivedByn)} в пересчёте` : '…'}
+            {data ? `${total} ${plural(total, 'заказ', 'заказа', 'заказов')}${data.receivedByn != null ? ` · получено ${moneyR(data.receivedByn)} в пересчёте` : ''}` : '…'}
           </p>
         </div>
         <div className="row-actions">
-          <button className="btn" type="button" disabled={busy} onClick={() => doExport(null)}>
+          {can('stats') && <button className="btn" type="button" disabled={busy} onClick={() => doExport(null)}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16" /></svg>
             Выгрузить в Excel
-          </button>
+          </button>}
           {can('orders') && <button className="btn-p" type="button" onClick={() => setNewOpen(true)}>+ Новый заказ</button>}
         </div>
       </div>
@@ -218,7 +218,7 @@ export default function Orders() {
         bulkActions={(ids) => (
           <>
             <Soon className="btn-s" hint="напоминания — с письмами (блок F)">Напомнить об оплате</Soon>
-            <button className="btn-s" type="button" disabled={busy} onClick={() => doExport(ids)}>Выгрузить</button>
+            {can('stats') && <button className="btn-s" type="button" disabled={busy} onClick={() => doExport(ids)}>Выгрузить</button>}
           </>
         )}
       />
