@@ -148,7 +148,7 @@ function markRefund(order, who, at = new Date()) {
   order.history.push({ at, who, text: `Возврат через ${who}. Доступ снят приложением автоматически` });
 }
 
-async function createOrder({ client, purchase, tx, platform, key, revoked, product, who }) {
+async function createOrder({ client, purchase, tx, platform, key, revoked, product, who, backfill = false }) {
   const productId = purchase.appleProductId;
   const amount = purchase.priceUsd !== null && purchase.priceUsd !== undefined ? purchase.priceUsd : 0;
   const at = tx && tx.purchaseDate ? new Date(tx.purchaseDate) : purchase.purchasedAt || new Date();
@@ -168,6 +168,8 @@ async function createOrder({ client, purchase, tx, platform, key, revoked, produ
     storeTxId: key,
     payments: [{ amount, cur: 'USD', method: STORE[platform].method, at, extId: key }],
     history: [{ at: new Date(), who, text: `Оплачено в ${who}, доступ выдан автоматически` }],
+    // Перенос старых покупок: дата заказа = дата покупки, а не день переноса (27.11).
+    ...(backfill ? { createdAt: at } : {}),
   });
   if (revoked) {markRefund(order, who);}
   try {
@@ -237,7 +239,17 @@ async function ingestStorePurchase({ user, purchase, status, tx = null, platform
 
   const client = await clientForUser(user);
   const product = await matchProduct(purchase.appleProductId, plat);
-  const res = await createOrder({ client, purchase, tx, platform: plat, key, revoked, product, who });
+  const res = await createOrder({
+    client,
+    purchase,
+    tx,
+    platform: plat,
+    key,
+    revoked,
+    product,
+    who,
+    backfill,
+  });
   if (!res.created && res.order && revoked && res.order.status !== 'refund') {
     markRefund(res.order, who);
     await res.order.save();
@@ -250,7 +262,7 @@ async function ingestStorePurchase({ user, purchase, status, tx = null, platform
  * source 'admin'. Записи, созданные самой CRM (transactionId crm-…), — уже
  * заказы, пропускаем. Доступ не трогаем.
  */
-async function ingestManualPurchase({ user, purchase }) {
+async function ingestManualPurchase({ user, purchase, live = false }) {
   if (!purchase || !purchase._id || !user || !user._id) {return { action: 'skip', reason: 'no_purchase' };}
   if (String(purchase.transactionId || '').startsWith('crm-')) {return { action: 'skip', reason: 'crm' };}
   const existing = await CrmOrder.findOne({ purchaseId: purchase._id });
@@ -259,13 +271,19 @@ async function ingestManualPurchase({ user, purchase }) {
   const client = await clientForUser(user);
   const what =
     purchase.itemType === 'subscription'
-      ? `клуб (${PERIOD_RU[purchase.itemId] || purchase.itemId || '—'})`
+      ? purchase.itemId === 'tier2'
+        ? 'Тариф 2'
+        : `клуб (${PERIOD_RU[purchase.itemId] || purchase.itemId || '—'})`
       : purchase.itemType === 'book'
         ? `разбор ${purchase.itemId}`
         : purchase.itemType === 'package'
           ? `пакет ${purchase.itemId}`
           : purchase.itemType;
   const title = `Ручная выдача: ${what}`;
+  // Дата заказа = дата выдачи в админке (при переносе — не день переноса).
+  const at = purchase.purchasedAt || purchase.createdAt || new Date();
+  const who = live ? 'Админка' : 'Импорт';
+  const text = live ? `Выдано в админке: ${what}` : `Перенесено из админки: ${what}`;
   const order = new CrmOrder({
     num: await CrmCounter.nextOrderNum(),
     clientId: client._id,
@@ -275,10 +293,11 @@ async function ingestManualPurchase({ user, purchase }) {
     source: 'admin',
     purchaseId: purchase._id,
     note: purchase.status === 'cancelled' ? 'Выдача снята в админке' : null,
-    history: [{ at: new Date(), who: 'Импорт', text: `Перенесено из админки: ${what}` }],
+    history: [{ at: new Date(), who, text }],
+    createdAt: at,
   });
   await order.save();
-  await logEvent(client._id, order._id, 'Импорт', `Заказ №${order.num}: ${title}`, 'order');
+  await logEvent(client._id, order._id, who, `Заказ №${order.num}: ${title}`, 'order');
   return { action: 'created', order };
 }
 
@@ -397,6 +416,49 @@ async function storeWarnings(product) {
   return out;
 }
 
+/**
+ * Исправление дат после переноса 27.11.2026: у заказов, созданных
+ * backfillStorePurchases до этой правки, createdAt = день переноса.
+ * Ставит дату покупки (оплата стора — payments[0].at, ручная выдача —
+ * Purchase.purchasedAt). Трогает только заказы с purchaseId, у которых дата
+ * позже покупки больше чем на час. Повторный запуск ничего не меняет.
+ * createdAt в схеме неизменяемый — пишем напрямую в коллекцию.
+ */
+async function fixBackfillDates({ apply = false } = {}) {
+  const stats = { total: 0, fixed: 0, ok: 0, noDate: 0 };
+  const list = await CrmOrder.find({
+    purchaseId: { $ne: null },
+    source: { $in: ['admin', STORE.apple.source, STORE.google.source] },
+  })
+    .select('_id source purchaseId payments createdAt')
+    .lean();
+  for (const order of list) {
+    stats.total += 1;
+    let at = null;
+    if (order.source !== 'admin' && order.payments && order.payments[0] && order.payments[0].at) {
+      at = new Date(order.payments[0].at);
+    } else {
+      const p = await Purchase.findById(order.purchaseId).select('purchasedAt createdAt').lean();
+      at = p ? p.purchasedAt || p.createdAt || null : null;
+      at = at ? new Date(at) : null;
+    }
+    if (!at || Number.isNaN(at.getTime())) {
+      stats.noDate += 1;
+      continue;
+    }
+    const created = order.createdAt ? new Date(order.createdAt) : null;
+    if (created && created.getTime() - at.getTime() <= 60 * 60 * 1000) {
+      stats.ok += 1;
+      continue;
+    }
+    if (apply) {
+      await CrmOrder.collection.updateOne({ _id: order._id }, { $set: { createdAt: at } });
+    }
+    stats.fixed += 1;
+  }
+  return stats;
+}
+
 /** Для «Сегодня»: действующие продукты с предупреждением L8. */
 async function productsWithStoreWarnings() {
   const products = await CrmProduct.find({
@@ -418,6 +480,7 @@ module.exports = {
   ingestStorePurchase,
   ingestManualPurchase,
   backfillStorePurchases,
+  fixBackfillDates,
   storeWarnings,
   productsWithStoreWarnings,
   // для тестов
