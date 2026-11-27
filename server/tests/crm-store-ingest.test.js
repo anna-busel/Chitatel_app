@@ -559,3 +559,4 @@ describe('C3a: выдача в админке сразу попадает в CRM
     expect(logger.warn).toHaveBeenCalledWith('CRM: ручная выдача не записана заказом', expect.any(Object));
   });
 });
+
