@@ -167,9 +167,35 @@ async function recordPurchase(source, doc) {
     }
     return;
   }
-  Purchase.create({ ...doc, status: 'active' }).catch((e) =>
-    logger.warn(`manual ${doc.itemType} Purchase не записан`, { message: e.message })
-  );
+  Purchase.create({ ...doc, status: 'active' })
+    .then((purchase) => manualToCrm(purchase))
+    .catch((e) =>
+      logger.warn(`manual ${doc.itemType} Purchase не записан`, { message: e.message })
+    );
+}
+
+/**
+ * Ручная выдача админки сразу появляется в CRM заказом «Ручная выдача»
+ * (CRM-PLAN C3a, 27.11.2026). До этого такие заказы создавал только перенос
+ * (crm-backfill-store.js). Ошибка CRM выдачу в приложении не отменяет.
+ */
+async function manualToCrm(purchase) {
+  if (!purchase || !purchase._id) {return;}
+  try {
+    const user = await User.findById(purchase.userId);
+    if (!user || user.isDeleted) {return;}
+    const { ingestManualPurchase } = require('../crm/services/store-ingest.service');
+    await ingestManualPurchase({
+      user,
+      purchase: typeof purchase.toObject === 'function' ? purchase.toObject() : purchase,
+      live: true,
+    });
+  } catch (e) {
+    logger.warn('CRM: ручная выдача не записана заказом', {
+      purchaseId: String(purchase._id),
+      message: e.message,
+    });
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -592,6 +618,7 @@ module.exports = {
   revokePackage,
   // CRM
   revokeGranted,
+  manualToCrm,
   // помощники (и для тестов)
   monthKeyEnd,
   lastMonthEnd,
