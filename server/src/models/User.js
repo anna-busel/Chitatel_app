@@ -56,6 +56,23 @@ const userSchema = new mongoose.Schema(
       default: undefined,
     },
 
+    // Почты, с которыми участница оплачивала (27.11.2026, решение Гиорги):
+    // подтверждены кодом из письма. По ним CRM находит её оплаты, если почта
+    // аккаунта другая (вход через Apple со скрытой почтой и т.п.).
+    purchaseEmails: { type: [String], default: [] },
+    // Код подтверждения почты оплаты: как passwordReset, плюс сама почта.
+    purchaseEmailCode: {
+      type: {
+        email: String,
+        codeHash: String,
+        expiresAt: Date,
+        attempts: { type: Number, default: 0 },
+        sentAt: Date,
+      },
+      select: false,
+      default: undefined,
+    },
+
     subscriptionStatus: {
       type: String,
       enum: ['free', 'basic', 'premium', 'expired'],
@@ -156,6 +173,8 @@ const userSchema = new mongoose.Schema(
       // поэтому по умолчанию ВЫКЛ и проверяется строго === true (у старых
       // аккаунтов поля нет → не шлём).
       offers: { type: Boolean, default: false },
+      // Заявки в друзья и «приняла заявку» (UPDATES-PLAN F3, 27.11.2026).
+      friends: { type: Boolean, default: true },
     },
     surveyAnswers: mongoose.Schema.Types.Mixed,
     // Флаг прохождения персонализации (онбординг-опрос, задача 6.3). Ставится
@@ -196,6 +215,8 @@ const userSchema = new mongoose.Schema(
     // и reply-снапшоты; на клиенте — входящие сообщения по WebSocket.
     // Заблокировать администратора (автора клуба) нельзя — см. routes/users.js.
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    // Описание профиля (UPDATES-PLAN F1, 27.11.2026), до 300 символов.
+    bio: { type: String, default: '', maxlength: 300 },
 
     // Когда участница приняла правила сообщества (UPDATES-PLAN A3, Google UGC
     // policy, 05.11.2026). Без отметки публиковать нельзя: отзыв на разбор

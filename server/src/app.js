@@ -32,6 +32,8 @@ const aiRoutes = require('./routes/ai');
 const reportRoutes = require('./routes/reports');
 const contentReportRoutes = require('./routes/content-reports');
 const profileRoutes = require('./routes/profile');
+const purchaseEmailRoutes = require('./routes/purchase-email');
+const friendsRoutes = require('./routes/friends');
 const userRoutes = require('./routes/users');
 const notificationRoutes = require('./routes/notifications');
 const adminPushRoutes = require('./routes/admin-push');
@@ -100,6 +102,9 @@ app.post('/api/auth/refresh', refreshLimiter);
 app.post('/api/auth/forgot-password', forgotPasswordLimiter);
 app.post('/api/auth/reset-password', passwordLimiter);
 app.post('/api/auth/change-password', passwordLimiter);
+// Почта оплаты (27.11.2026): код на почту и его ввод — те же лимиты, что у пароля.
+app.post('/api/profile/purchase-email/request', forgotPasswordLimiter);
+app.post('/api/profile/purchase-email/confirm', passwordLimiter);
 // Загрузки: картинка/голосовое в чат клуба, аватар — 20/мин.
 app.post('/api/club/:clubMonthId/chat/image', uploadLimiter);
 app.post('/api/club/:clubMonthId/chat/voice', uploadLimiter);
@@ -128,7 +133,11 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/reports', reportRoutes);
 // Жалоба на отзыв/профиль: POST /api/reports (UPDATES-PLAN A1).
 app.use('/api/reports', contentReportRoutes);
+// Раньше profileRoutes: у того router.use(requireAuth) на весь префикс.
+app.use('/api/profile/purchase-email', purchaseEmailRoutes);
 app.use('/api/profile', profileRoutes);
+// Друзья (UPDATES-PLAN F2, 27.11.2026).
+app.use('/api/friends', friendsRoutes);
 
 // Пользователи (Фаза 6, A1): блокировка участника участником, список
 // заблокированных, жалоба на пользователя. Apple Guideline 1.2 (UGC).

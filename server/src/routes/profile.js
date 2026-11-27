@@ -40,7 +40,10 @@ function forClient(user) {
       offers: !!(user.pushSettings && user.pushSettings.offers === true),
       // clubAll (15.11.2026): нет поля → включено (как считает сервер пушей).
       clubAll: !(user.pushSettings && user.pushSettings.clubAll === false),
+      // friends (F3, 27.11.2026): нет поля → включено.
+      friends: !(user.pushSettings && user.pushSettings.friends === false),
     },
+    bio: user.bio || '',
   };
 }
 
@@ -89,6 +92,8 @@ const updateSchema = z.object({
   city: z.string().max(100).trim().optional(),
   marketingEmail: z.string().max(200).trim().email('Некорректный email').optional(),
   marketingConsent: z.boolean().optional(),
+  // F1 (27.11.2026): описание профиля, пустая строка — стереть.
+  bio: z.string().max(300, 'Описание — до 300 символов').trim().optional(),
 });
 
 router.patch('/', validate(updateSchema), async (req, res, next) => {
@@ -103,6 +108,7 @@ router.patch('/', validate(updateSchema), async (req, res, next) => {
     if (typeof req.body.marketingConsent === 'boolean') {
       update.marketingConsent = req.body.marketingConsent;
     }
+    if (typeof req.body.bio === 'string') update.bio = req.body.bio;
 
     if (Object.keys(update).length === 0) {
       throw new AppError('VALIDATION_ERROR', 'Нечего обновлять', 400);
@@ -230,6 +236,8 @@ const pushSettingsSchema = z.object({
   clubDigest: z.boolean().optional(),
   // «Предложения и акции» (K0, Apple 4.5.4): по умолчанию выкл.
   offers: z.boolean().optional(),
+  // Заявки в друзья (F3, 27.11.2026).
+  friends: z.boolean().optional(),
 });
 
 router.patch(

@@ -501,9 +501,24 @@ async function attachClient(client, user, { who = 'Система', how = 'по 
  * аккаунт, — доступ появляется при первом входе.
  */
 async function linkUser(user) {
-  const email = normEmail(user && user.email);
-  if (!email || !user._id) {return { linked: 0, applied: 0 };}
+  if (!user || !user._id) {return { linked: 0, applied: 0 };}
+  // Почта аккаунта + подтверждённые почты оплаты (User.purchaseEmails).
+  const emails = [...new Set([user.email, ...(user.purchaseEmails || [])].map(normEmail).filter(Boolean))];
+  let linked = 0;
+  let applied = 0;
+  for (const email of emails) {
+    const r = await linkByEmail(user, email, email === normEmail(user.email) ? 'по почте при входе' : 'по почте оплаты');
+    linked += r.linked;
+    applied += r.applied;
+  }
+  return { linked, applied };
+}
 
+/**
+ * Связать с аккаунтом клиенток CRM с этой почтой и выдать оплаченное.
+ * conflicts — сколько клиенток с этой почтой уже связаны с другим аккаунтом.
+ */
+async function linkByEmail(user, email, how) {
   // Подарки на эту почту, по которым ещё не заведена получательница.
   const gifts = await CrmOrder.find({
     'gift.email': email,
@@ -522,21 +537,28 @@ async function linkUser(user) {
   });
   let linked = 0;
   let applied = 0;
+  let conflicts = 0;
   for (const client of clients) {
     if (client.appUserId && !sameId(client.appUserId, user._id)) {
       logger.warn('CRM linkUser: клиентка уже связана с другим аккаунтом', {
         clientId: String(client._id),
         userId: String(user._id),
       });
+      conflicts += 1;
       continue;
     }
     if (!client.appUserId) {
-      await attachClient(client, user, { how: 'по почте при входе' });
+      await attachClient(client, user, { how });
       linked += 1;
     }
     applied += await applyClientOrders(client._id);
   }
-  return { linked, applied };
+  return { found: clients.length, linked, applied, conflicts };
+}
+
+/** Почта оплаты подтверждена кодом: связать её клиенток с аккаунтом. */
+function linkPurchaseEmail(user, email) {
+  return linkByEmail(user, normEmail(email), 'по почте оплаты, подтверждена кодом');
 }
 
 /** Вызов из входа/регистрации/админки: ошибка CRM вход не ломает. */
@@ -687,6 +709,7 @@ module.exports = {
   applyClientOrders,
   attachClient,
   linkUser,
+  linkPurchaseEmail,
   linkUserSafe,
   linkUserForAuth,
   unlinkClient,

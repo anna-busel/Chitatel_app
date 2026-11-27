@@ -6,6 +6,7 @@ const { requireAuth } = require('../middleware/auth');
 const { success } = require('../utils/response');
 const { AppError } = require('../middleware/error');
 const User = require('../models/User');
+const Friendship = require('../models/Friendship');
 const Report = require('../models/Report');
 
 /**
@@ -101,6 +102,8 @@ router.post('/:id/block', async (req, res, next) => {
       { _id: req.user.userId },
       { $addToSet: { blockedUsers: targetId } }
     );
+    // F2 (27.11.2026): блокировка рвёт дружбу и снимает заявку в обе стороны.
+    await Friendship.deleteOne({ pairKey: Friendship.pairKeyOf(req.user.userId, targetId) });
 
     return success(res, { blocked: true, userId: targetId });
   } catch (err) {

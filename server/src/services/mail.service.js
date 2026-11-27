@@ -80,9 +80,29 @@ function sendPasswordResetCode(email, code, ttlMinutes) {
   });
 }
 
+/** Код подтверждения почты, с которой участница оплачивала (27.11.2026). */
+function sendPurchaseEmailCode(email, code, ttlMinutes) {
+  const text = [
+    'Здравствуйте!',
+    '',
+    'Код для подтверждения почты в приложении «ЧИТАТЕЛЬ»:',
+    '',
+    code,
+    '',
+    `Код действует ${ttlMinutes} минут. Введите его в приложении, и мы откроем покупки, оплаченные с этой почты.`,
+    '',
+    'Если вы ничего не запрашивали, просто не отвечайте на это письмо.',
+    '',
+    'Команда «ЧИТАТЕЛЬ»',
+    'support.chitatel@gmail.com',
+  ].join('\n');
+
+  return sendMail({ to: email, subject: `Код подтверждения почты: ${code}`, text });
+}
+
 /** Только для тестов: сбросить закэшированный транспорт. */
 function _resetForTests() {
   transport = null;
 }
 
-module.exports = { sendMail, sendPasswordResetCode, _resetForTests };
+module.exports = { sendMail, sendPasswordResetCode, sendPurchaseEmailCode, _resetForTests };
