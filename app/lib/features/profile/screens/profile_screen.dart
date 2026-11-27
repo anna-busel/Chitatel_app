@@ -184,7 +184,7 @@ class _ProfileBody extends ConsumerWidget {
               // 27.11.2026: доступ оформлен на другую почту — подтверждение кодом.
               _MenuItem(
                 icon: Icons.alternate_email,
-                title: 'Покупки с другой почты',
+                title: 'Привязать другую почту',
                 onTap: () => context.push(Routes.purchaseEmail),
               ),
               _MenuItem(
