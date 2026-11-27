@@ -15,7 +15,7 @@ import '../providers/profile_provider.dart';
 
 /// Почта, с которой оплачивали (27.11.2026).
 ///
-/// Профиль → «Покупки с другой почты». Участница вводит почту, получает код
+/// Профиль → «Привязать другую почту». Участница вводит почту, получает код
 /// в письме, вводит его — сервер запоминает почту и открывает всё, что на неё
 /// оплачено. Нужно, когда почта аккаунта другая (вход через Apple со «Скрыть
 /// e-mail», оплата с рабочей почты).
@@ -142,12 +142,12 @@ class _PurchaseEmailScreenState extends ConsumerState<PurchaseEmailScreen> {
       ref.invalidate(profileProvider);
       _snack(
         conflicts > 0
-            ? 'Почта подтверждена, но часть покупок уже привязана к другому '
+            ? 'Почта подтверждена, но часть доступа уже привязана к другому '
                 'аккаунту. Напишите в поддержку, мы поможем'
             : applied > 0
-                ? 'Готово, покупки с этой почты открыты'
-                : 'Почта подтверждена. Если покупки появятся позже, '
-                    'они откроются сами',
+                ? 'Готово, доступ с этой почты открыт'
+                : 'Почта подтверждена. Если доступ появится позже, '
+                    'он откроется сам',
         ok: conflicts == 0,
       );
       context.pop();
@@ -180,7 +180,7 @@ class _PurchaseEmailScreenState extends ConsumerState<PurchaseEmailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Покупки с другой почты',
+                      'Привязать другую почту',
                       style: AppTypography.serifSectionTitle,
                     ),
                     const SizedBox(height: 8),

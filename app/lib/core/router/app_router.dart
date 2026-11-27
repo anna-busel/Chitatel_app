@@ -361,7 +361,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const ChangePasswordScreen(),
       ),
-      // Покупки с другой почты (27.11.2026).
+      // «Привязать другую почту» (27.11.2026).
       GoRoute(
         path: Routes.purchaseEmail,
         parentNavigatorKey: _rootNavigatorKey,

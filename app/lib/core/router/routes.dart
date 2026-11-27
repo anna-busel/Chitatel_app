@@ -42,7 +42,7 @@ class Routes {
   /// Смена пароля (P4, 05.11.2026) — только для входа по почте.
   static const String changePassword = '/change-password';
 
-  /// Покупки с другой почты (27.11.2026): подтверждение почты кодом.
+  /// «Привязать другую почту» (27.11.2026): подтверждение почты кодом.
   static const String purchaseEmail = '/purchase-email';
 
   // — Дневник (Фаза 5) —
