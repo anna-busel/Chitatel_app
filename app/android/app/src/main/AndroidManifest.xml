@@ -19,6 +19,9 @@
          иначе Play спрячет его от устройств без камеры. -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.microphone" android:required="false"/>
+    <!-- 27.11.2026: UCropActivity (обрезка аватара) объявлена portrait — без этого
+         Google Play требует android.hardware.screen.portrait и сужает список устройств. -->
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false"/>
 
     <application
         android:label="ЧИТАТЕЛЬ"

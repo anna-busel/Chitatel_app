@@ -47,8 +47,9 @@ class ProfileNotifier extends StateNotifier<AsyncValue<UserProfile>> {
   }
 
   /// Имя / город (экран 4.46). Бросает исключение наверх — экран покажет ошибку.
-  Future<void> updateProfile({String? name, String? city}) async {
-    final updated = await _service.updateProfile(name: name, city: city);
+  Future<void> updateProfile({String? name, String? city, String? bio}) async {
+    final updated =
+        await _service.updateProfile(name: name, city: city, bio: bio);
     if (!mounted) return;
     state = AsyncValue.data(updated);
   }

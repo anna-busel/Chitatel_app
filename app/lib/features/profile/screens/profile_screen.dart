@@ -181,6 +181,12 @@ class _ProfileBody extends ConsumerWidget {
                   title: 'Сменить пароль',
                   onTap: () => context.push(Routes.changePassword),
                 ),
+              // 27.11.2026: доступ оформлен на другую почту — подтверждение кодом.
+              _MenuItem(
+                icon: Icons.alternate_email,
+                title: 'Покупки с другой почты',
+                onTap: () => context.push(Routes.purchaseEmail),
+              ),
               _MenuItem(
                 icon: Icons.block_outlined,
                 title: 'Заблокированные',

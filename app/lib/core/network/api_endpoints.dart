@@ -36,6 +36,19 @@ class ApiEndpoints {
   /// Ошибки: WRONG_PASSWORD, NOT_EMAIL_ACCOUNT, VALIDATION_ERROR.
   static const String changePassword = '/auth/change-password';
 
+  /// Почта, с которой оплачивали (27.11.2026): GET → { emails };
+  /// request { email } → код в письме; confirm { email, code } → покупки
+  /// с этой почты открываются в аккаунте.
+  static const String purchaseEmail = '/profile/purchase-email';
+  static const String purchaseEmailRequest = '/profile/purchase-email/request';
+  static const String purchaseEmailConfirm = '/profile/purchase-email/confirm';
+
+  /// Друзья (UPDATES-PLAN F2, 27.11.2026).
+  static const String friends = '/friends';
+  static const String friendRequests = '/friends/requests';
+  static String friendRequestAccept(String id) => '/friends/requests/$id/accept';
+  static String friendRequestDecline(String id) => '/friends/requests/$id/decline';
+
   /// DELETE /api/auth/account — удаление аккаунта (Apple 5.1.1(v), экран 4.34).
   /// Body: { confirm: 'УДАЛИТЬ' }. Аккаунт помечается удалённым, PII стирается,
   /// цитаты/отчёты/прогресс удаляются, сообщения чата анонимизируются.

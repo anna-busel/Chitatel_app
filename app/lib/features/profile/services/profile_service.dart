@@ -12,6 +12,7 @@ class UserProfile {
     this.email,
     this.avatarUrl,
     this.city,
+    this.bio = '',
     required this.authProvider,
     required this.subscriptionStatus,
     this.subscriptionPlan,
@@ -27,6 +28,9 @@ class UserProfile {
   final String? email;
   final String? avatarUrl;
   final String? city;
+
+  /// Описание профиля «О себе» (F1, 27.11.2026), до 300 символов.
+  final String bio;
 
   /// apple | google | email — определяет, можно ли менять почту.
   final String authProvider;
@@ -58,6 +62,7 @@ class UserProfile {
       email: email,
       avatarUrl: avatarUrl,
       city: city,
+      bio: bio,
       authProvider: authProvider,
       subscriptionStatus: subscriptionStatus,
       subscriptionPlan: subscriptionPlan,
@@ -93,6 +98,7 @@ class UserProfile {
       email: j['email']?.toString(),
       avatarUrl: j['avatarUrl']?.toString(),
       city: j['city']?.toString(),
+      bio: (j['bio'] ?? '').toString(),
       authProvider: (j['authProvider'] ?? 'email').toString(),
       subscriptionStatus: (j['subscriptionStatus'] ?? 'free').toString(),
       subscriptionPlan: j['subscriptionPlan']?.toString(),
@@ -299,6 +305,7 @@ class ProfileService {
     String? name,
     String? country,
     String? city,
+    String? bio,
     String? marketingEmail,
     bool? marketingConsent,
   }) async {
@@ -308,6 +315,7 @@ class ProfileService {
         if (name != null) 'name': name,
         if (country != null) 'country': country,
         if (city != null) 'city': city,
+        if (bio != null) 'bio': bio,
         if (marketingEmail != null) 'marketingEmail': marketingEmail,
         if (marketingConsent != null) 'marketingConsent': marketingConsent,
       },
