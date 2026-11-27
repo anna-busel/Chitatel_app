@@ -342,6 +342,25 @@ async function seedChatForArchiveClub(club, users) {
   await club.save();
 }
 
+// --- Защита от запуска на рабочей базе (27.11.2026) ---
+
+const MAX_TEST_USERS = 50;
+
+/**
+ * Бросает ошибку, если это рабочий сервер: NODE_ENV=production или в базе
+ * больше MAX_TEST_USERS пользователей (живая база, даже если NODE_ENV забыли).
+ */
+function assertNotProduction({ nodeEnv, usersCount } = {}) {
+  if (nodeEnv === 'production') {
+    throw new Error('seed-club.js нельзя запускать на рабочем сервере (NODE_ENV=production).');
+  }
+  if (typeof usersCount === 'number' && usersCount > MAX_TEST_USERS) {
+    throw new Error(
+      `В базе ${usersCount} пользователей — это рабочая база. seed-club.js только для тестовой.`
+    );
+  }
+}
+
 // --- Основная функция ---
 
 async function seed() {
@@ -349,9 +368,14 @@ async function seed() {
   console.log('🌱 Seed клуба ЧИТАТЕЛЬ (задача 4.5 prep)');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-  console.log(`\n📡 Подключение к MongoDB: ${config.mongoUri}`);
+  // 27.11.2026: на рабочем сервере скрипт запрещён — он вытирает чат клуба и
+  // создаёт админа anna@chitatel.app со слабым паролем из этого файла.
+  assertNotProduction({ nodeEnv: config.nodeEnv });
+
+  console.log('\n📡 Подключение к MongoDB');
   await mongoose.connect(config.mongoUri);
   console.log('✅ Подключено');
+  assertNotProduction({ usersCount: await User.estimatedDocumentCount() });
 
   // 1. Проверяем что в БД есть книги.
   const booksCount = await Book.countDocuments({ isPublished: true });
@@ -497,12 +521,16 @@ async function seed() {
   console.log('\n👋 Отключено от MongoDB');
 }
 
-seed()
-  .then(() => {
-    console.log('\n✅ Seed клуба завершён успешно');
-    process.exit(0);
-  })
-  .catch((err) => {
-    console.error('\n❌ Seed клуба упал:', err);
-    mongoose.disconnect().finally(() => process.exit(1));
-  });
+if (require.main === module) {
+  seed()
+    .then(() => {
+      console.log('\n✅ Seed клуба завершён успешно');
+      process.exit(0);
+    })
+    .catch((err) => {
+      console.error('\n❌ Seed клуба упал:', err.message || err);
+      mongoose.disconnect().finally(() => process.exit(1));
+    });
+}
+
+module.exports = { assertNotProduction, MAX_TEST_USERS };
