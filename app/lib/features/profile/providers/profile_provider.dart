@@ -102,7 +102,7 @@ final progressStatsProvider =
 /// мини-карточек под статистикой.
 ///
 /// ⚠️ 24.07.2026 — autoDispose по той же причине, что и статистика: свежие
-/// данные при каждом раскрытии списка, без ожидания перезапуска.
+/// данные при каждом раскрытии списка, без ожидания перезапуска приложения.
 final progressListProvider =
     FutureProvider.autoDispose<List<ProgressItem>>((ref) async {
   return ref.read(profileServiceProvider).fetchProgressList();

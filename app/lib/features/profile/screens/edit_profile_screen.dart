@@ -33,6 +33,8 @@ class EditProfileScreen extends ConsumerStatefulWidget {
 
 class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   final TextEditingController _nameController = TextEditingController();
+  // «О себе» (F1, 27.11.2026).
+  final TextEditingController _bioController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
 
   bool _initialized = false;
@@ -42,6 +44,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _bioController.dispose();
     super.dispose();
   }
 
@@ -160,7 +163,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
     setState(() => _isSaving = true);
     try {
-      await ref.read(profileProvider.notifier).updateProfile(name: name);
+      await ref
+          .read(profileProvider.notifier)
+          .updateProfile(name: name, bio: _bioController.text.trim());
       if (!mounted) return;
       Navigator.of(context).maybePop();
     } catch (_) {
@@ -201,6 +206,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         data: (profile) {
           if (!_initialized) {
             _nameController.text = profile.name;
+            _bioController.text = profile.bio;
             _initialized = true;
           }
           return _buildForm(profile);
@@ -285,6 +291,30 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             style: AppTypography.body,
             decoration: InputDecoration(
               counterText: '',
+              filled: true,
+              fillColor: AppColors.cardBackground,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppColors.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppColors.border),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          Text('О себе', style: AppTypography.captionMedium),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _bioController,
+            maxLength: 300,
+            minLines: 2,
+            maxLines: 5,
+            style: AppTypography.body,
+            decoration: InputDecoration(
+              hintText: 'Пара слов о себе и о том, что вы любите читать',
               filled: true,
               fillColor: AppColors.cardBackground,
               border: OutlineInputBorder(

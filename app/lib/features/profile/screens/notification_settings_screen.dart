@@ -76,6 +76,12 @@ class NotificationSettingsScreen extends ConsumerWidget {
       title: 'Вечерняя сводка чата',
       subtitle: 'Сколько новых сообщений за день',
     ),
+    // Друзья (F3, 27.11.2026): заявки в друзья и «приняла заявку».
+    _Setting(
+      key: 'friends',
+      title: 'Друзья',
+      subtitle: 'Заявки в друзья и ответы на ваши заявки',
+    ),
     _Setting(
       key: 'reminders',
       title: 'Напоминания',
