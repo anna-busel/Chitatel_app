@@ -93,6 +93,12 @@ function mockModel(name, { unique = [] } = {}) {
   Model.findById = jest.fn((id) =>
     mockChain(() => mockDb[name].find((d) => String(d._id) === String(id)) || null)
   );
+  Model.collection = {
+    updateOne: jest.fn(async (f, u) => {
+      const d = mockDb[name].find((x) => String(x._id) === String(f._id));
+      if (d) {Object.assign(d, u.$set || {});}
+    }),
+  };
   return Model;
 }
 
@@ -142,6 +148,7 @@ const logger = require('../src/config/logger');
 const { applyTransaction } = require('../src/services/purchase.service');
 const ingest = require('../src/crm/services/store-ingest.service');
 const access = require('../src/crm/services/access.service');
+const entitlement = require('../src/services/entitlement.service');
 
 const orders = () => mockDb.CrmOrder;
 const clients = () => mockDb.CrmClient;
@@ -460,5 +467,95 @@ describe('C3: перенос прошлых покупок', () => {
     const s = await ingest.backfillStorePurchases({ apply: true });
     expect(s).toMatchObject({ store: 0, exists: 1 });
     expect(orders()).toHaveLength(1);
+  });
+});
+
+describe('C3: даты перенесённых заказов (27.11)', () => {
+  test('перенос: дата заказа = дата покупки (стор и ручная выдача)', async () => {
+    const user = await makeUser();
+    await Purchase.create({ userId: user._id, itemType: 'subscription', itemId: 'monthly', platform: 'apple', environment: 'production', transactionId: 'otx-d', appleProductId: 'club.basic.monthly', priceUsd: 9.99, status: 'active', purchasedAt: new Date(2026, 5, 10) });
+    await Purchase.create({ userId: user._id, itemType: 'book', itemId: 'war', platform: 'web', environment: 'production', transactionId: 'manual-book-d', status: 'active', purchasedAt: new Date(2026, 6, 20) });
+    await ingest.backfillStorePurchases({ apply: true });
+    const store = orders().find((o) => o.storeTxId === 'otx-d');
+    const admin = orders().find((o) => o.source === 'admin');
+    expect(store.createdAt).toEqual(new Date(2026, 5, 10));
+    expect(admin.createdAt).toEqual(new Date(2026, 6, 20));
+    expect(admin.history[0]).toMatchObject({ who: 'Импорт' });
+  });
+
+  test('fixBackfillDates: заказы с датой переноса получают дату покупки; повтор — 0', async () => {
+    const user = await makeUser();
+    const p1 = await Purchase.create({ userId: user._id, itemType: 'book', itemId: 'war', platform: 'web', transactionId: 'manual-book-f', status: 'active', purchasedAt: new Date(2026, 3, 1) });
+    const CrmOrder = require('../src/crm/models/CrmOrder');
+    const late = new Date(2026, 10, 27, 15, 3);
+    await new CrmOrder({ source: 'admin', status: 'free', purchaseId: p1._id, createdAt: late }).save();
+    await new CrmOrder({ source: 'app_store', status: 'paid', purchaseId: 'p-x', storeTxId: 'k1', payments: [{ amount: 1, at: new Date(2026, 4, 5) }], createdAt: late }).save();
+    await new CrmOrder({ source: 'app_store', status: 'paid', purchaseId: 'p-y', storeTxId: 'k2', payments: [{ amount: 1, at: late }], createdAt: late }).save();
+    await new CrmOrder({ source: 'site', status: 'paid', createdAt: late }).save();
+
+    const dry = await ingest.fixBackfillDates({ apply: false });
+    expect(dry).toMatchObject({ total: 3, fixed: 2, ok: 1, noDate: 0 });
+    expect(CrmOrder.collection.updateOne).not.toHaveBeenCalled();
+
+    const s1 = await ingest.fixBackfillDates({ apply: true });
+    expect(s1).toMatchObject({ fixed: 2, ok: 1 });
+    expect(orders().find((o) => o.source === 'admin').createdAt).toEqual(new Date(2026, 3, 1));
+    expect(orders().find((o) => o.storeTxId === 'k1').createdAt).toEqual(new Date(2026, 4, 5));
+    expect(orders().find((o) => o.source === 'site').createdAt).toEqual(late);
+
+    const s2 = await ingest.fixBackfillDates({ apply: true });
+    expect(s2).toMatchObject({ fixed: 0, ok: 3 });
+  });
+});
+
+describe('C3a: выдача в админке сразу попадает в CRM (27.11)', () => {
+  const flush = async () => {
+    for (let i = 0; i < 20; i += 1) {await new Promise((r) => setImmediate(r));}
+  };
+
+  test('разбор из админки → заказ «Ручная выдача», источник «Админка»; повтор той же записи — без дубля', async () => {
+    const user = await makeUser();
+    await entitlement.grantBooks(user, [{ _id: 'b-war', bookSlug: 'war', priceUsd: 4.99 }]);
+    await flush();
+    const admin = orders().filter((o) => o.source === 'admin');
+    expect(admin).toHaveLength(1);
+    expect(admin[0]).toMatchObject({ status: 'free', price: 0, productTitle: 'Ручная выдача: разбор war' });
+    expect(admin[0].history[0]).toMatchObject({ who: 'Админка' });
+    expect(clients()).toHaveLength(1);
+
+    const purchase = mockDb.Purchase[0];
+    await entitlement.manualToCrm(purchase);
+    expect(orders().filter((o) => o.source === 'admin')).toHaveLength(1);
+
+    // перенос потом этот заказ не дублирует
+    const s = await ingest.backfillStorePurchases({ apply: true });
+    expect(s).toMatchObject({ admin: 0, exists: 1 });
+  });
+
+  test('Тариф 2 из админки → «Ручная выдача: Тариф 2»', async () => {
+    const user = await makeUser({ clubMonthsEntitled: ['2026-11'] });
+    await entitlement.grantTier2Month(user._id, '2026-11');
+    await flush();
+    const admin = orders().filter((o) => o.source === 'admin');
+    expect(admin).toHaveLength(1);
+    expect(admin[0].productTitle).toBe('Ручная выдача: Тариф 2');
+  });
+
+  test('выдача по заказу CRM ручной заказ не создаёт', async () => {
+    const user = await makeUser();
+    await entitlement.grantBooks(user, [{ _id: 'b-war', bookSlug: 'war' }], { source: 'crm', orderId: 'o1' });
+    await flush();
+    expect(orders().filter((o) => o.source === 'admin')).toHaveLength(0);
+  });
+
+  test('ошибка CRM выдачу не ломает', async () => {
+    const user = await makeUser();
+    const CrmCounterM = require('../src/crm/models/CrmCounter');
+    CrmCounterM.nextOrderNum.mockRejectedValueOnce(new Error('boom'));
+    await entitlement.grantBooks(user, [{ _id: 'b-war', bookSlug: 'war' }]);
+    await flush();
+    expect(user.purchasedBooks).toEqual(['b-war']);
+    expect(mockDb.Purchase).toHaveLength(1);
+    expect(logger.warn).toHaveBeenCalledWith('CRM: ручная выдача не записана заказом', expect.any(Object));
   });
 });
